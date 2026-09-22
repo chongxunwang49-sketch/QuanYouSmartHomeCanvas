@@ -252,8 +252,37 @@ def attach_capabilities(layout: dict[str, Any]) -> dict[str, Any]:
     return layout
 
 
+def check_operation(layout_data: dict[str, Any], operation: str) -> Capability:
+    """
+    检查单个操作是否可执行。**这是 API 层最常用的入口。**
+
+    用法（FastAPI 依赖或路由内）：
+
+        cap = check_operation(layout, "generate_plan")
+        if not cap.allowed:
+            raise HTTPException(400, detail={
+                "code": 4002,
+                "msg": cap.reason,
+                "data": {"operation": "generate_plan",
+                         "missing": cap.missing,
+                         "suggestion": cap.suggestion},
+            })
+
+    注意：判据是**字段里有没有数据**，不是 `mode` 字符串。
+    这样即使某天完整模式也返回空面积，守卫依然生效。
+    """
+    if operation not in _REQUIREMENTS and operation not in Operation.__args__:  # type: ignore[attr-defined]
+        raise UnknownOperationError(f"未知操作: {operation}")
+
+    report = evaluate_capabilities(layout_data)
+    cap = report.operations.get(operation)
+    if cap is None:
+        raise UnknownOperationError(f"未知操作: {operation}")
+    return cap
+
+
 __all__ = [
     "Operation", "Capability", "CapabilityReport",
     "OperationNotAllowedError", "UnknownOperationError",
-    "evaluate_capabilities", "attach_capabilities",
+    "evaluate_capabilities", "attach_capabilities", "check_operation",
 ]

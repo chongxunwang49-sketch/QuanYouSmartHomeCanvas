@@ -333,37 +333,8 @@ class TestLayoutParserAgent:
 # ══════════════════════════════════════════════════════════════════
 
 
-class TestProviderChain:
-    def _client(self):
-        from backend.app.core.llm_client import LLMClient
-
-        return LLMClient()
-
-    def test_force_local_excludes_cloud(self):
-        """隐私模式：链路里绝不能出现 deepseek。"""
-        chain = self._client()._chain(vision=True, force_local=True)
-        assert chain, "本地链路不应为空"
-        assert all(p.name == "ollama" for p in chain), \
-            f"隐私模式下不应包含云端提供方，实际: {[p.name for p in chain]}"
-
-    def test_allow_degrade_false_excludes_local(self):
-        """全量解析：链路里只应有主模型（避免小模型硬编结构化数据）。"""
-        chain = self._client()._chain(vision=True, allow_degrade=False)
-        assert chain, "即使禁止降级，主模型也应在链中"
-        assert all(p.name != "ollama" for p in chain), \
-            f"禁止降级时不应包含本地提供方，实际: {[p.name for p in chain]}"
-
-    def test_default_chain_prefers_cloud_then_local(self):
-        """默认链路：云端优先，本地兜底。"""
-        chain = self._client()._chain(vision=True)
-        names = [p.name for p in chain]
-        assert names[0] == "deepseek"
-        assert "ollama" in names
-
-    def test_force_local_wins_over_allow_degrade(self):
-        """两个开关同时给时，force_local 优先（隐私不可被其它参数绕过）。"""
-        chain = self._client()._chain(vision=True, allow_degrade=True, force_local=True)
-        assert all(p.name == "ollama" for p in chain)
+# 说明：提供方选择（隐私 / 降级）的测试已移至 tests/test_llm_client.py。
+# 那些断言必须打在 LLMClient 层——Agent 层的 Fake 客户端看不见 provider。
 
 
 # ══════════════════════════════════════════════════════════════════

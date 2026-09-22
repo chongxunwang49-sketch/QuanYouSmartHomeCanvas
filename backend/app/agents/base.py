@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from ..core.config import settings
 from ..core.llm_client import ImagePart, LLMClient, LLMError, LLMResult, get_llm_client
+from ..core.logger import log_llm_call, logger
 from ..graph.state import HomeDecoState
 
 
@@ -168,7 +169,16 @@ class BaseAgent(abc.ABC):
         return result.text, result
 
     def _note_llm(self, result: LLMResult) -> None:
-        """把本次 LLM 调用的元信息暂存，供 _finalize 写入 trace。"""
+        """
+        记录本次 LLM 调用的元信息。
+
+        做两件事：
+        1. 暂存到 self._last_llm_meta，供 _finalize 写入 trace（前端可见）；
+        2. **输出一条结构化日志**，供审计与性能统计（AC-14 / AC-23）。
+
+        第 2 步不能省：审计日志要求记录 model_used 与 degraded，
+        且降级事件要以 WARNING 级别落盘，便于事后 grep 统计降级率。
+        """
         self._last_llm_meta: dict[str, Any] = {
             "provider": result.provider,
             "model": result.model_used,
@@ -179,6 +189,7 @@ class BaseAgent(abc.ABC):
             "reasoning_tokens": result.reasoning_tokens,
             "elapsed_ms": result.elapsed_ms,
         }
+        log_llm_call(agent=self.code, **self._last_llm_meta)
 
     async def _call_mcp_tool(self, tool_name: str, arguments: dict[str, Any]) -> Any:
         """
