@@ -33,21 +33,34 @@
 
 ## 当前进度
 
-**已可用（M0 垂直切片，已实测跑通）**
+**已可用（M0 + M2 前半，已实测跑通）**
 
-- ✅ 多模态户型图解析 —— 真实调用 DeepSeek，6.1s，输出结构化 JSON
+- ✅ 多模态户型图解析（A-01）—— 真实调用 DeepSeek，输出结构化 JSON
+- ✅ 户型诊断（A-02）—— 采光/通风/动线/利用率/环保五维评分
+- ✅ **空间规划 + 三路并发 fan-out**（A-03）—— 3 套方案并发生成，实测 19.4s 出 3 套
 - ✅ 三级降级链 —— DeepSeek → 本地 Ollama，断网自动切换（已实测）
 - ✅ 本地隐私模式 —— `prefer_local=true` 时图像不出本机（**抓包验证**）
-- ✅ 业务连续性守卫 —— 降级结果禁止触发预算/方案/诊断，后端 400 拦截
+- ✅ 业务连续性守卫 —— 数据不达标时禁止触发下游操作，拒绝时说明缺什么
 - ✅ MCP Server —— `parse_house_layout` 可被外部 MCP 客户端调用
 - ✅ **AI 出图基准跑通** —— SD1.5 + ControlNet @512，连续 10/10 张不 OOM
-- ✅ **66 个自动化测试全绿**
+- ✅ **218 个自动化测试全绿**（14.8s，全程不联网）
 
 **未开始**
 
-- ⬜ 户型诊断、多 Agent 方案生成（M2–M3）
+- ⬜ 分支内其余 Agent：预算（规则引擎）/ 材料 / 避坑（M3）
+- ⬜ FastAPI 接口层（目前只有 LangGraph 图，可 `scripts/e2e_smoke.py` 直跑）
 - ⬜ 矢量图渲染与热区（M5）
 - ⬜ 前端（Vue3，M2 起）
+
+### 真实链路一次完整跑通（`scripts/e2e_smoke.py`）
+
+```
+A-01 解析   15.7s   3 房间 / 2 窗 / 3 门 / 3 段墙 / 45.9㎡
+A-02 诊断   18.1s   综合 5.5   通风·动线·环保 标记为「数据不足」
+A-03 规划   19.4s   3 套方案并发（分支 max 19.3s，sum 52.1s → 比值 1.00×）
+fan-in       ~0s    对比表可用，3/3 套，房间对齐无误、无幻觉房间
+总墙钟      53.2s
+```
 
 ### M0 出图基准实测结果
 
@@ -134,6 +147,28 @@ $PY -m mcp_servers.parse_house_layout
 └────────────────────────────────────────────────────────────┘
 ```
 
+**关键设计：LangGraph 工作流（当前实现到 fan-in 汇总）**
+
+```
+START
+  │
+parse_layout        A-01 多模态解析（质量预检 + 能力匹配降级）
+  │  条件路由：无数据 / 降级 => 短路 END
+diagnose_layout     A-02 五维诊断
+  │  条件路由：不支撑方案生成 => 短路 END
+  ├──────────────┬──────────────┐          fan-out（Send）
+generate_plan  generate_plan  generate_plan   A-03 ×3，同节点并发三实例
+(现代+经济)     (北欧+中档)     (中式+高端)
+  └──────────────┴──────────────┘
+  │                                          fan-in
+aggregate_plans     三方案汇总 + 对比表（纯代码，无 LLM）
+  │
+ END
+```
+
+分支内的其余 Agent（A-04 预算 / A-05 材料 / A-06 避坑）在此骨架上增量添加。
+图像与热区节点位于 **fan-in 之后**，不在并行分支内 —— 3 路并发调图会打爆显存。
+
 **关键设计：能力匹配的降级链**
 
 ```
@@ -181,20 +216,22 @@ calc_budget(area=0)  →  {"total": 0, "breakdown": {...}}   # 不报错，但�
 ```
 backend/app/
   core/        config.py  llm_client.py  mcp_client.py
-               capabilities.py  logging_setup.py
+               capabilities.py  logger.py  redis_client.py
   agents/      base.py  layout_parser.py         ← A-01
-  schemas/     layout.py
-  graph/       state.py  workflow.py
+               layout_diagnoser.py                ← A-02
+               space_planner.py                   ← A-03（fan-out 分支内）
+  schemas/     layout.py  plan.py
+  graph/       state.py  workflow.py              ← fan-out / fan-in 编排
   services/
-    image/     base.py  local_sd15.py            ← 出图 Provider（M0 已验证）
+    image/     base.py  local_sd15.py             ← 出图 Provider（M0 已验证）
 mcp_servers/   parse_house_layout.py
-scripts/       bench_image.py     M0 出图基准（放行门槛）
-               bench_vision.py    解析基准
+scripts/       e2e_smoke.py      真实链路端到端（会花钱，慎跑）
+               bench_image.py     M0 出图基准（放行门槛）
                warmup.py          演示前预热（必须，避免 40s 冷启动）
                download_models.py / fetch_sd15_files.py
 skills/        Skill 文档（Agent 的 System Prompt + 边界定义）
-tests/         71 个测试
-需求文档.md     2400+ 行完整需求与决策记录（含 4 轮修订）
+tests/         218 个测试（conftest.py 有网络绊线，禁止测试打真实 API）
+需求文档.md     2400+ 行完整需求与决策记录（含 5 轮修订）
 开源项目链接.md  开源项目逐条核实清单
 ```
 

@@ -1,9 +1,12 @@
 """
-LangGraph 工作流测试（当前为「解析 → 诊断」两节点线性链路）。
+LangGraph 工作流测试（解析 → 诊断 → 3 路 fan-out → fan-in）。
 
-重点覆盖**条件路由**：什么时候该继续诊断，什么时候该短路。
+重点覆盖**条件路由**：什么时候该继续，什么时候该短路。
 短路的两种情形都不能让下游节点抛错——错误要由上游写进 errors，
 由前端从那里读，而不是让图崩在半路。
+
+fan-out / fan-in 的语义细节（分支隔离、汇总阈值、对比表门槛）
+单独放在 tests/test_fanout.py。
 """
 
 from __future__ import annotations
@@ -16,10 +19,12 @@ import pytest
 
 from backend.app.agents.layout_diagnoser import LayoutDiagnoserAgent
 from backend.app.agents.layout_parser import LayoutParserAgent
+from backend.app.agents.space_planner import SpacePlannerAgent
 from backend.app.core.llm_client import LLMResult
 from backend.app.graph import workflow
 from backend.app.graph.state import initial_state
 from backend.app.schemas.layout import LayoutDiagnosis, LayoutSchema
+from backend.app.schemas.plan import SpacePlan
 
 # ══════════════════════════════════════════════════════════════════
 # 假 LLM：按请求的 Schema 分派不同响应
@@ -53,6 +58,19 @@ DIAGNOSIS_PAYLOAD = {
     "confidence": 0.8,
 }
 
+SPACE_PLAN_PAYLOAD = {
+    "summary": "以家具摆放实现分区。",
+    "zones": [
+        {"room_name": "客厅", "function": "起居", "rationale": "面积充裕", "furniture": ["沙发"]},
+        {"room_name": "主卧", "function": "睡眠", "rationale": "朝南", "furniture": ["床"]},
+    ],
+    "storage_plans": [{"location": "主卧", "kind": "ready_made", "note": "成品衣柜"}],
+    "circulation_fixes": [],
+    "key_moves": ["客餐厅一体"],
+    "data_gaps": [],
+    "confidence": 0.8,
+}
+
 
 class _DispatchLLM:
     """
@@ -63,9 +81,10 @@ class _DispatchLLM:
     """
 
     def __init__(self, layout: dict | None = None, diagnosis: dict | None = None,
-                 fail_layout: bool = False):
+                 space_plan: dict | None = None, fail_layout: bool = False):
         self.layout = layout if layout is not None else LAYOUT_PAYLOAD
         self.diagnosis = diagnosis if diagnosis is not None else DIAGNOSIS_PAYLOAD
+        self.space_plan = space_plan if space_plan is not None else SPACE_PLAN_PAYLOAD
         self.fail_layout = fail_layout
         self.seen: list[str] = []
 
@@ -80,6 +99,10 @@ class _DispatchLLM:
         if schema is LayoutDiagnosis:
             self.seen.append("A-02")
             return schema.model_validate(self.diagnosis), self._res()
+        if schema is SpacePlan:
+            # 三分支并发调用，这里会被调用 3 次
+            self.seen.append("A-03")
+            return schema.model_validate(self.space_plan), self._res()
         raise AssertionError(f"未预期的 Schema: {schema}")
 
     def _res(self) -> LLMResult:
@@ -100,12 +123,22 @@ def _state(**over) -> dict[str, Any]:
 
 @pytest.fixture
 def patched(monkeypatch):
-    """把两个节点都换成假 LLM，返回 (llm, graph)。"""
+    """
+    把**所有**节点换成假 LLM，返回 (llm, graph)。
+
+    ⚠️ 必须覆盖 `workflow._AGENTS` 里的每一个 Agent。
+    漏掉任何一个，它就会拿着 import 时构造的真实 LLMClient 去打真实 API——
+    而测试**照样会绿**，只是变慢、花钱、且结果依赖网络。
+    conftest.py 里的绊线专门用来把这种漏网当场炸出来。
+    """
     def _build(**llm_kw):
         llm = _DispatchLLM(**llm_kw)
-        monkeypatch.setitem(workflow._AGENTS, "parse_layout", LayoutParserAgent(llm=llm))
-        monkeypatch.setitem(workflow._AGENTS, "diagnose_layout",
-                            LayoutDiagnoserAgent(llm=llm))
+        for node, cls in (
+            ("parse_layout", LayoutParserAgent),
+            ("diagnose_layout", LayoutDiagnoserAgent),
+            ("generate_plan", SpacePlannerAgent),
+        ):
+            monkeypatch.setitem(workflow._AGENTS, node, cls(llm=llm))
         return llm, workflow.build_graph(with_checkpointer=False)
 
     return _build
@@ -117,8 +150,10 @@ def patched(monkeypatch):
 
 
 class TestGraphStructure:
-    def test_two_agents_registered(self):
-        assert set(workflow._AGENTS) == {"parse_layout", "diagnose_layout"}
+    def test_all_agents_registered(self):
+        assert set(workflow._AGENTS) == {
+            "parse_layout", "diagnose_layout", "generate_plan",
+        }
 
     def test_compiles_without_checkpointer(self):
         assert workflow.build_graph(with_checkpointer=False) is not None
@@ -135,23 +170,30 @@ class TestGraphStructure:
 # ══════════════════════════════════════════════════════════════════
 
 
-class TestTwoNodeFlow:
-    def test_parse_then_diagnose(self, patched):
-        """两个节点都跑，两个 Agent 都被调用。"""
+class TestFullFlow:
+    def test_parse_diagnose_then_three_plans(self, patched):
+        """全链路跑通：解析一次、诊断一次、方案三次。"""
         llm, graph = patched()
         out = asyncio.run(graph.ainvoke(_state()))
 
-        assert llm.seen == ["A-01", "A-02"], f"调用顺序异常: {llm.seen}"
+        assert llm.seen[0] == "A-01", f"调用顺序异常: {llm.seen}"
+        assert llm.seen[1] == "A-02", f"调用顺序异常: {llm.seen}"
+        # 三个分支并发，完成顺序不确定，因此比较次数而不是序列
+        assert llm.seen.count("A-03") == 3, f"A-03 应被调用 3 次，实际 {llm.seen}"
+
         assert out["layout"]["rooms"][0]["name"] == "客厅"
         assert out["diagnosis"]["overall_score"] > 0
-        assert out["phase"] == "diagnosed"
+        assert len(out["plans"]) == 3
+        assert out["phase"] == "finalizing"
 
-    def test_trace_has_both_nodes(self, patched):
+    def test_trace_has_five_entries(self, patched):
+        """A-01 + A-02 + A-03×3 = 5 条 trace。"""
         _, graph = patched()
         out = asyncio.run(graph.ainvoke(_state()))
 
-        assert len(out["trace"]) == 2
-        assert [t["agent"] for t in out["trace"]] == ["A-01", "A-02"]
+        agents = [t["agent"] for t in out["trace"]]
+        assert len(agents) == 5
+        assert sorted(agents) == ["A-01", "A-02", "A-03", "A-03", "A-03"]
         assert all(t["ok"] for t in out["trace"])
 
     def test_layout_id_generated(self, patched):
@@ -266,14 +308,15 @@ class TestStateMerge:
     def test_reducers_append_not_overwrite(self, patched):
         """
         trace / errors / degrade_reasons 用 operator.add 归约，
-        必须是拼接而不是覆盖——否则两个节点的记录会互相顶掉。
+        必须是拼接而不是覆盖——否则并发分支的记录会互相顶掉，
+        最后只剩一份，排查问题时完全看不出发生过什么。
         """
         _, graph = patched()
         out = asyncio.run(graph.ainvoke(_state()))
-        assert len(out["trace"]) == 2, "两个节点的 trace 应都保留"
+        assert len(out["trace"]) == 5, "三个分支的 trace 与上游两条都应保留"
 
     def test_degrade_reasons_accumulate(self, monkeypatch):
-        """两个节点都降级时，两条原因都要留下。"""
+        """五个节点全部降级时，五条原因一条都不能丢。"""
         llm = _DispatchLLM()
 
         async def degraded_json(schema, **kw):
@@ -284,25 +327,29 @@ class TestStateMerge:
                 prompt_tokens=1, completion_tokens=1, elapsed_ms=1)
 
         llm.complete_json = degraded_json  # type: ignore[method-assign]
-        monkeypatch.setitem(workflow._AGENTS, "parse_layout", LayoutParserAgent(llm=llm))
-        monkeypatch.setitem(workflow._AGENTS, "diagnose_layout",
-                            LayoutDiagnoserAgent(llm=llm))
+        for node, cls in (
+            ("parse_layout", LayoutParserAgent),
+            ("diagnose_layout", LayoutDiagnoserAgent),
+            ("generate_plan", SpacePlannerAgent),
+        ):
+            monkeypatch.setitem(workflow._AGENTS, node, cls(llm=llm))
 
         out = asyncio.run(workflow.build_graph(with_checkpointer=False).ainvoke(_state()))
-        assert len(out["degrade_reasons"]) == 2
+        # A-01 + A-02 + A-03×3
+        assert len(out["degrade_reasons"]) == 5
         assert all("降级" in r for r in out["degrade_reasons"])
+        # 任一分支降级 => 整体降级（OrBool reducer）
+        assert out["degraded"] is True
 
     def test_checkpointer_resumes_by_thread_id(self, patched):
         """挂了 checkpointer 时应能按 thread_id 取回状态（AC-12 基础）。"""
         from langgraph.checkpoint.memory import InMemorySaver
 
-        llm = _DispatchLLM()
-        workflow._AGENTS["parse_layout"] = LayoutParserAgent(llm=llm)
-        workflow._AGENTS["diagnose_layout"] = LayoutDiagnoserAgent(llm=llm)
-
+        llm, _ = patched()
         g = workflow.build_graph(checkpointer=InMemorySaver())
         cfg = {"configurable": {"thread_id": "thread-1"}}
         out = asyncio.run(g.ainvoke(_state(), cfg))
 
         snap = g.get_state(cfg)
         assert snap.values.get("layout_id") == out["layout_id"]
+        assert len(snap.values.get("plans") or []) == 3
