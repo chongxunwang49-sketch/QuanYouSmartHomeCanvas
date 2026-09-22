@@ -116,7 +116,7 @@ class LayoutParserAgent(BaseAgent):
             "layout_id": layout_id,
             "degraded": llm_result.degraded,
             "degrade_reasons": [llm_result.degrade_reason] if llm_result.degrade_reason else [],
-            "phase": "parsed",
+            "phase": "analyzing",
             "_llm_meta": self._last_llm_meta,
         }
 

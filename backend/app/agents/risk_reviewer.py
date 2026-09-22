@@ -179,7 +179,7 @@ class RiskReviewAgent(BaseAgent):
             "degrade_reasons": (
                 [f"[A-06] {r}" for r in reasons] if reasons else []
             ),
-            "phase": "reviewed",
+            "phase": "planning",
             "_llm_meta": getattr(self, "_last_llm_meta", None),
         }
 
@@ -256,7 +256,7 @@ class RiskReviewAgent(BaseAgent):
         out: dict[str, Any] = {
             "plan_bundles": bundles,
             "degraded": any_degraded,
-            "phase": "reviewed",
+            "phase": "planning",
             "_llm_meta": getattr(self, "_last_llm_meta", None),
         }
         if all_reasons:

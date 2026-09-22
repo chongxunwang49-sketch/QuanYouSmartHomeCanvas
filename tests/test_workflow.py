@@ -275,6 +275,48 @@ class TestGraphStructure:
     def test_compiles_without_checkpointer(self):
         assert workflow.build_graph(with_checkpointer=False) is not None
 
+    def test_所有Agent写的phase都在枚举内(self):
+        """
+        ⚠️ AST 静态扫描，不跑任何节点。
+
+        实测踩过：A-01 写 `parsed`、A-02 写 `diagnosed`、A-06 写 `reviewed` ——
+        **三个都不在 `Phase` 枚举里**。
+
+        而 `PHASE_TEXT.get(phase, phase)` 对枚举外的值是**原样返回**的，
+        于是前端会看到英文的 "diagnosed"。更麻烦的是需求文档明确告诉前端
+        「不必自己维护映射表，直接展示 phase_text」—— 也就是说，
+        前端**没有任何机会**发现这个值是错的。
+
+        这个 bug 存在了很久都没暴露，因为**直到接口层出现之前，
+        没有任何东西真的消费 `phase`**。写状态而没人读，错了也不会有症状。
+        """
+        import ast
+        from pathlib import Path
+
+        from backend.app.core.redis_client import Phase
+
+        allowed = set(Phase.__args__)  # type: ignore[attr-defined]
+        agents_dir = Path(workflow.__file__).resolve().parents[1] / "agents"
+
+        offenders: list[str] = []
+        for py in sorted(agents_dir.glob("*.py")):
+            tree = ast.parse(py.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Dict):
+                    continue
+                for k, v in zip(node.keys, node.values):
+                    # 只找 {"phase": "字面量"} 这种写法
+                    if not (isinstance(k, ast.Constant) and k.value == "phase"):
+                        continue
+                    if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                        if v.value not in allowed:
+                            offenders.append(f"{py.name}: {v.value!r}")
+
+        assert not offenders, (
+            f"以下 Agent 写了 Phase 枚举外的值，前端会看到英文原文：{offenders}。"
+            f"合法取值：{sorted(allowed)}"
+        )
+
     def test_compiles_with_memory_checkpointer(self):
         from langgraph.checkpoint.memory import InMemorySaver
 

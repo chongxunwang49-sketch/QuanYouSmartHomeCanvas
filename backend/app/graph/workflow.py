@@ -535,13 +535,38 @@ def aggregate_plans(state: HomeDecoState) -> dict[str, Any]:
 # ══════════════════════════════════════════════════════════════════
 
 
-def build_graph(*, checkpointer: Any = None, with_checkpointer: bool = True):
+def _route_after_diagnosis_parse_only(state: HomeDecoState) -> str:
+    """
+    只做解析链路时的终点：诊断完就结束。
+
+    4.2 的 `/layout/parse` 与 4.3 的 `/design/generate` 是两个接口 ——
+    前者只要「户型 + 诊断」，后者才要方案。共用一张图跑全链的话，
+    一次解析会顺带触发 10 次 LLM 调用、耗掉 100 秒，**而调用方并不需要**。
+
+    所以解析链路是完整链路的一个**前缀**：同一批节点，不同的终点。
+    """
+    return "end"
+
+
+def build_graph(
+    *,
+    checkpointer: Any = None,
+    with_checkpointer: bool = True,
+    stages: Literal["full", "parse"] = "full",
+):
     """
     构建并编译工作流。
 
     Args:
         checkpointer: 显式传入（测试用，通常传 InMemorySaver）。
         with_checkpointer: False 时不挂载 checkpointer，纯粹跑一次无状态图。
+        stages:
+            "full"  —— 解析 → 诊断 → 3 路 fan-out → 汇聚审查 → fan-in（完整链路）
+            "parse" —— 解析 → 诊断，到此为止（对应 4.2 的 `/layout/parse`）
+
+    `stages="parse"` 存在的理由：解析与方案生成是两个独立的 API。
+    让 `/layout/parse` 顺带跑完整条链，会白白花掉十几次 LLM 调用和一百多秒 ——
+    而调用方只要那份户型 JSON。
     """
     from langgraph.graph import END, START, StateGraph
 
@@ -569,6 +594,14 @@ def build_graph(*, checkpointer: Any = None, with_checkpointer: bool = True):
         {"diagnose": "diagnose_layout", "end": END},
     )
 
+    # 只跑解析链路：诊断完就收工（4.2 的 `/layout/parse`）
+    if stages == "parse":
+        builder.add_edge("diagnose_layout", END)
+        if not with_checkpointer:
+            return builder.compile()
+        cp = checkpointer if checkpointer is not None else _build_checkpointer()
+        return builder.compile(checkpointer=cp)
+
     # ⚡ fan-out 点：返回 list[Send] 时 LangGraph 并发执行 N×M 个分支任务；
     # 返回 "end" 时正常结束。两种返回类型混用是允许的。
     builder.add_conditional_edges(
@@ -595,19 +628,34 @@ def build_graph(*, checkpointer: Any = None, with_checkpointer: bool = True):
     return builder.compile(checkpointer=cp)
 
 
-_compiled: Any = None
+_compiled: dict[str, Any] = {}
 
 
-def get_compiled_graph():
-    """进程级单例编译图（避免每次请求重建 checkpointer 连接）。"""
-    global _compiled
-    if _compiled is None:
-        _compiled = build_graph()
-    return _compiled
+def get_compiled_graph(stages: Literal["full", "parse"] = "full"):
+    """
+    进程级单例编译图（避免每次请求重建 checkpointer 连接）。
+
+    两种 stages 各缓存一份 —— 解析接口与方案接口会同时存在，
+    不能互相覆盖。
+    """
+    if stages not in _compiled:
+        _compiled[stages] = build_graph(stages=stages)
+    return _compiled[stages]
+
+
+def reset_compiled_graphs() -> None:
+    """
+    清掉编译图缓存。
+
+    **给 checkpointer 留的接口**：`_build_checkpointer` 会在 Redis 不可用时
+    静默降级到内存版。若 Redis 后来恢复，缓存的图仍挂着内存 checkpointer ——
+    此时需要显式重建。测试里也用它来隔离用例之间的缓存。
+    """
+    _compiled.clear()
 
 
 __all__ = [
-    "build_graph", "get_compiled_graph", "get_agent", "NODES",
+    "build_graph", "get_compiled_graph", "reset_compiled_graphs", "get_agent", "NODES",
     "build_branch_specs", "aggregate_plans",
     "DEFAULT_BRANCH_PAIRS", "MAX_PLAN_BRANCHES", "MIN_PLANS_FOR_COMPARISON",
     "BRANCH_ARTIFACTS",

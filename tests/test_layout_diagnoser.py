@@ -201,7 +201,7 @@ class TestHappyPath:
                     "space_utilization", "green_score"):
             assert dim in d and "score" in d[dim]
         assert 0 <= d["overall_score"] <= 10
-        assert out["phase"] == "diagnosed"
+        assert out["phase"] == "diagnosing"
 
     def test_prompt_carries_data_summary(self):
         """提示词里应带上数据概览，让模型一眼看出有没有数据。"""

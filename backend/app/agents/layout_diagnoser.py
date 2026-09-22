@@ -132,7 +132,7 @@ class LayoutDiagnoserAgent(BaseAgent):
                 [f"[A-02] 诊断由本地文本模型完成：{llm_result.degrade_reason}"]
                 if llm_result.degrade_reason else []
             ),
-            "phase": "diagnosed",
+            "phase": "diagnosing",
             "_llm_meta": self._last_llm_meta,
         }
 
