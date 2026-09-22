@@ -1,0 +1,152 @@
+# 参考语料清单（A-06 避坑审查的知识库输入）
+#
+# ═══════════════════════════════════════════════════════════════════
+# 为什么这份清单在项目仓库里，而语料不在
+# ═══════════════════════════════════════════════════════════════════
+# 语料是**第三方数据**（MIT 协议的开源知识库），不该提交进本项目仓库：
+# 体积大、有独立版本、且上游更新时我们希望直接拉新而不是合并 diff。
+# 所以语料落在 `E:/quanyou/references/`（与模型权重同级，见 ADR-12）。
+#
+# 但**这份清单必须版本化** —— 它记录的是我们自己的判断：
+# 哪些入库、哪些排除、**以及为什么**。半年后有人问"为什么没把
+# 装修方案诊断喂进去"，答案在这里，而不是在某个人的记忆里。
+#
+# ═══════════════════════════════════════════════════════════════════
+# 两条纪律
+# ═══════════════════════════════════════════════════════════════════
+# 【1】上游文件**原样保留，一个字节都不改**。
+#      不使用"往每个 md 开头写 YAML front-matter"的做法 ——
+#      改了上游文件，就再也没法 diff 上游更新了。
+#      元数据由本清单在切块时注入（见 scripts/validate_references.py）。
+#
+# 【2】语料里的**规则**可以入，**价格数字一律不准入**。
+#      这个仓库的语料带着西安/北方的价格口径，而 A-04 的价格表是按
+#      内江（三线城市）标定的，且有测试断言三档折合单价必须落在
+#      ¥800-1200 / 1500-2000 / 2500-3500 区间内。
+#      混入第二套价格口径，会让 A-06 引用出与 A-04 算的互相矛盾的数字。
+
+version: 1
+
+# ── 上游来源（版本锁定）─────────────────────────────────
+sources:
+  - id: zhuangxiu-skills
+    kind: upstream
+    repo: https://github.com/zx029w/zhuangxiu-skills
+    commit: 3d53ed7a5a100f85796cd9206fb4a634fef67649
+    commit_date: "2026-09-11"
+    license: MIT
+    stars: 66
+    local_path: E:/quanyou/references/zhuangxiu-skills
+    size_md: "4350 个 .md / 19.5 MB"
+    note: >
+      该仓库共 38 个顶层目录、4350 个 markdown 文件。其中 22 个是拼音命名的
+      产品/空间知识库（每个 120-257 个 `references/ref-NNN.md`），
+      15 个是中文命名的专题知识库（文件名即内容摘要）。
+      本轮**只用中文命名的专题库**，理由见下。
+
+# ── 入库白名单 ──────────────────────────────────────────
+ingest:
+  - path: zhuangxiu-skills/装修报价审核
+    doc_type: avoid_pit
+    tags: [报价审核, 单价陷阱, 隐形消费, 增项]
+    priority: core
+    note: AC-06 主战场。报价单里"只给单价不给总价""倒角按两块砖算"这类套路
+
+  - path: zhuangxiu-skills/装修增项避雷
+    doc_type: avoid_pit
+    tags: [增项, 漏项, 偷项, 施工环节]
+    priority: core
+    note: PO-05 明确要求的"增项、漏项"两类风险的直接来源
+
+  - path: zhuangxiu-skills/装修合同审核
+    doc_type: avoid_pit
+    tags: [合同, 付款方式, 定金, 保修, 套餐陷阱]
+    priority: core
+    note: 对应 4.6 节 POST /avoid-pit/review 的"合同审查"分支
+
+  - path: zhuangxiu-skills/装修环保避坑
+    doc_type: avoid_pit
+    tags: [环保, 甲醛, 板材, 儿童房, 老人房]
+    priority: core
+    note: >
+      对应 M4 的"环保评估"。且与 requirements 里的
+      has_children / has_elderly / eco_level 直接呼应 ——
+      A-06 能据此给出针对性的环保风险提示
+
+  - path: zhuangxiu-skills/装修流程不踩坑
+    doc_type: avoid_pit
+    tags: [施工流程, 工期, 验收, 阶段]
+    priority: support
+    note: >
+      **判"漏项"必须有基准** —— 不知道标准工序有哪些，
+      就无法判断一份报价单漏了什么。这个目录提供的就是那套基准
+
+# ── 排除（附理由）───────────────────────────────────────
+exclude:
+  - path: zhuangxiu-skills/装修预算计算器
+    reason: >
+      含 `references/西安参考价目表.md`。**会与 A-04 的内江价格表直接冲突** ——
+      两个 Agent 在同一个方案里给出互相矛盾的价格，用户会信哪个？
+      其中的"标准预算结构"有价值，但目录太小（3 个文件）、拆开入库不值当。
+      等真要扩展 A-04 的多地区支持时再单独议。
+
+  - path: zhuangxiu-skills/装修方案诊断
+    reason: >
+      内容为户型改造思路、设计布局方法、风格搭配原则 —— 那是 **A-02（诊断）
+      与 A-03（空间规划）的活**。喂给 A-06 会让它越界成设计顾问，
+      而 A-06 的定位是**站在业主立场质疑报价**（需求文档 2.2.2：对抗式 Agent）。
+      职责边界比知识量重要。
+
+  - path: zhuangxiu-skills/装修公司避雷指南
+    reason: >
+      内容是"怎么选装修公司"（公开信息查询、淘汰红线、36 法则），
+      属于**签约前的决策辅助**，不在 AC-06 的"报价单/合同审查"范围内。
+      质量很高，倾向等 A-06 跑通后评估是否作为独立能力加回来，而不是
+      混进 A-06 稀释它的定位。
+
+  - path: zhuangxiu-skills/装修避坑问答
+    reason: >
+      136 KB、内容最杂的一个（含"买房避坑""家具家电软装"等偏题章节，
+      其中"选公司与合同避坑"单独就有 24 KB）。**需要按章节筛选才能入库**，
+      整目录入库会把大量无关内容带进检索结果。留待 A-06 跑通后按需补。
+
+  - path: zhuangxiu-skills/装修翻车急救
+    reason: >
+      内容是**事后补救**（已经翻车了怎么办），而 A-06 是**事前审查**。
+      场景不匹配，入库后会在"该提醒什么风险"时召回一堆补救措施。
+
+  - path: "zhuangxiu-skills/*拼音命名目录"
+    reason: >
+      22 个拼音目录（chugui-dingzhi / jiadian / ciguo-mudiban / dengguang …
+      共约 4000 个文件）是**产品与空间维度**的知识（瓷砖怎么选、灯光怎么布），
+      不是报价审查。它们对应的是 A-05 选材的深化、或将来"按空间避坑"的独立能力。
+      此外这批文件名是 `ref-NNN.md` 这种不可读的形式 ——
+      AC-06 要求"引用知识库来源"，**`ref-037.md` 这种名字做溯源等于没有溯源**。
+      这是选中文专题库而非拼音库的一条硬理由，不只是审美偏好。
+
+# ── 自建语料（本清单之外另行维护）───────────────────────
+# 这三类是我们自己的产出，放在 E:/quanyou/references/ 下的独立目录，
+# 各自带 YAML front-matter（它们不是上游文件，可以自由加元数据）。
+self_authored:
+  - path: national_standards
+    doc_type: regulation
+    status: pending        # 待整理：需先确认引用口径（法条不能出错）
+    planned:
+      - GB50327_施工规范_摘要.md
+      - GB18580_甲醛限量_摘要.md
+      - GB-T39600_环保分级_摘要.md
+
+  - path: report_rules
+    doc_type: avoid_pit
+    status: pending
+    planned:
+      - 常见增项清单.md
+      - 常见漏项清单.md
+      - 单价异常判定规则.md
+
+  - path: quanyou_official
+    doc_type: quanyou_official
+    status: pending
+    planned:
+      - 产品分类.md
+      - 服务承诺.md
