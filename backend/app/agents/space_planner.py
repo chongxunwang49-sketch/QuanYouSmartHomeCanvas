@@ -321,20 +321,26 @@ class SpacePlannerAgent(BaseAgent):
         known_rooms = [n for n in known_rooms if n]
 
         # ── 1. 房间对齐 ────────────────────────────────────
+        # 「编造的房间」与「同一房间被写了两遍」是**两类不同的问题**，
+        # 必须分开记 —— 实测踩过：模型对同一间卧室同时输出了「卧室」和
+        # 「主卧室」，两者都归一到「卧室」，于是第二份被判成重复。
+        # 若把重复也塞进 invented_rooms，就会对外宣称"模型编了一个户型里
+        # 不存在的房间"——而那个房间明明存在。报错误的原因比报错更糟。
         kept_zones: list[dict[str, Any]] = []
-        invented: list[str] = []
+        invented: list[str] = []      # 户型里根本没有的房间
+        duplicates: list[str] = []    # 户型里有，但被安排了不止一次
         covered: set[str] = set()
 
         for zone in payload["zones"]:
-            canonical = _match_room(zone.get("room_name", ""), known_rooms)
+            raw_name = zone.get("room_name", "")
+            canonical = _match_room(raw_name, known_rooms)
             if canonical is None:
                 # 对不上 = 模型编的房间（或写了个完全无关的名字）。
                 # 剔除而不是留下：不存在的房间无法落地。
-                invented.append(zone.get("room_name", ""))
+                invented.append(raw_name)
                 continue
             if canonical in covered:
-                # 同一个房间被安排了两次 —— 保留第一份，后者视为重复
-                invented.append(f"{zone.get('room_name')}（重复安排）")
+                duplicates.append(raw_name)
                 continue
             zone["room_name"] = canonical      # 统一成户型数据里的原名
             covered.add(canonical)
@@ -359,6 +365,7 @@ class SpacePlannerAgent(BaseAgent):
         payload["plan_index"] = spec.get("index", 0)
 
         payload["invented_rooms"] = invented
+        payload["duplicate_zones"] = duplicates
         payload["unassigned_rooms"] = unassigned
 
         # ── 5. 数据缺口兜底 + 置信度联动 ───────────────────
@@ -367,6 +374,11 @@ class SpacePlannerAgent(BaseAgent):
             gaps.append(
                 f"模型输出了 {len(invented)} 个户型中不存在的房间"
                 f"（{'、'.join(invented[:3])}），已由系统剔除"
+            )
+        if duplicates:
+            gaps.append(
+                f"有 {len(duplicates)} 个房间被重复安排"
+                f"（{'、'.join(duplicates[:3])}），已保留第一份"
             )
         if unassigned:
             gaps.append(f"有 {len(unassigned)} 个房间未获功能安排：{'、'.join(unassigned)}")

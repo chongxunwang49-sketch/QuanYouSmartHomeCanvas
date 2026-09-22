@@ -165,12 +165,18 @@ def _has_bbox(layout: dict) -> bool:
     return any(bool(r.get("bbox")) for r in layout.get("rooms") or [])
 
 
-def _effective_total_area(layout: dict) -> float:
+def effective_total_area(layout: dict) -> float:
     """
-    套内总面积。
+    套内总面积。**公开函数**，供守卫与下游 Agent 共用同一个数。
 
     优先用 total_area；为 0 时**回退到房间面积之和**——
     这是合理的推导，不是编造。反之若房间面积也全为 0，就真的是没有数据。
+
+    ⚠️ 为什么必须公开而不是各自实现一遍：
+    守卫用它判断 `has_total_area`，A-04 预算用它做乘法。如果两边算法不一致，
+    就会出现最坏的情况 —— **守卫放行，但引擎拿到 0**，于是算出一个 ¥0 的预算。
+    那正是本项目花了整个 capabilities 模块去避免的失败形态。
+    判据与用量必须同源。
     """
     total = layout.get("total_area") or 0.0
     if total > 0:
@@ -179,7 +185,7 @@ def _effective_total_area(layout: dict) -> float:
 
 
 def _has_total_area(layout: dict) -> bool:
-    return _effective_total_area(layout) > 0
+    return effective_total_area(layout) > 0
 
 
 _PROBES = {
@@ -288,4 +294,5 @@ __all__ = [
     "Operation", "Capability", "CapabilityReport",
     "OperationNotAllowedError", "UnknownOperationError",
     "evaluate_capabilities", "attach_capabilities", "check_operation",
+    "effective_total_area",
 ]

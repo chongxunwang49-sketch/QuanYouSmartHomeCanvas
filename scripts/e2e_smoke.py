@@ -159,48 +159,85 @@ async def main() -> int:
     plans = out.get("plans") or []
     banner(f"fan-in 汇总：{len(plans)} 套方案")
     for p in plans:
-        print(f"\n  【{p.get('plan_id')}】{p.get('style')} + {p.get('budget_grade')}")
-        print(f"    {p.get('summary', '')[:80]}")
-        zone_names = [z.get("room_name") for z in (p.get("zones") or [])]
-        print(f"    分区: {zone_names}")
-        print(f"    收纳 {len(p.get('storage_plans') or [])} 处，"
-              f"动线优化 {len(p.get('circulation_fixes') or [])} 项，"
-              f"置信度 {p.get('confidence')}")
+        sp = p.get("space_plan") or {}
+        bg = p.get("budget") or {}
 
-        # ⚠️ 这两个字段是真实模型输出上最该看的
-        invented = p.get("invented_rooms") or []
-        unassigned = p.get("unassigned_rooms") or []
-        if invented:
-            print(f"    ⚠ 幻觉房间被剔除 {len(invented)} 个: {invented}")
-        if unassigned:
-            print(f"    ⚠ 未安排房间: {unassigned}")
-        if not invented and not unassigned:
-            print("    ✓ 房间对齐无误")
+        print(f"\n  【{p.get('plan_id')}】{p.get('style')} + {p.get('budget_grade')}")
+
+        # ── A-03 空间规划 ──
+        if sp:
+            print(f"    规划: {sp.get('summary', '')[:70]}")
+            zone_names = [z.get("room_name") for z in (sp.get("zones") or [])]
+            print(f"    分区: {zone_names}")
+            print(f"    收纳 {len(sp.get('storage_plans') or [])} 处，"
+                  f"动线优化 {len(sp.get('circulation_fixes') or [])} 项，"
+                  f"置信度 {sp.get('confidence')}")
+            invented = sp.get("invented_rooms") or []
+            unassigned = sp.get("unassigned_rooms") or []
+            duplicates = sp.get("duplicate_zones") or []
+            if invented:
+                print(f"    ⚠ 幻觉房间被剔除 {len(invented)} 个: {invented}")
+            if duplicates:
+                print(f"    ⚠ 重复安排被去掉 {len(duplicates)} 个: {duplicates}")
+            if unassigned:
+                print(f"    ⚠ 未安排房间: {unassigned}")
+        else:
+            print("    ⚠ 空间规划未产出")
+
+        # ── A-04 预算（规则引擎，不经模型）──
+        if bg:
+            flag = "  ⚠解说降级" if bg.get("narrative_degraded") else ""
+            print(f"    预算: {bg.get('total_min', 0):,.0f} - {bg.get('total_max', 0):,.0f} 元"
+                  f"  ({bg.get('price_per_sqm_min', 0):.0f}-{bg.get('price_per_sqm_max', 0):.0f} 元/㎡)"
+                  f"  [{len(bg.get('lines') or [])} 项 / {bg.get('computed_by')}]{flag}")
+            tips = (bg.get("narrative") or {}).get("negotiation_tips") or []
+            if tips:
+                print(f"    砍价: {tips[0][:60]}")
+        else:
+            print("    ⚠ 预算未产出")
+
+        if p.get("missing_artifacts"):
+            print(f"    ⚠ 缺失产物: {p['missing_artifacts']}")
 
     comp = out.get("comparison") or {}
     banner("对比表")
     print(f"  可用: {comp.get('available')}  "
           f"实际/请求: {comp.get('plan_count')}/{comp.get('requested_count')}")
+    print(f"  {'方案':<22}{'档位':<10}{'预算下限':>12}{'预算上限':>12}{'元/㎡':>14}")
+    for row in comp.get("rows") or []:
+        lo, hi = row.get("budget_total_min"), row.get("budget_total_max")
+        ps_lo, ps_hi = row.get("budget_per_sqm_min"), row.get("budget_per_sqm_max")
+        print(f"  {row['plan_id']:<22}{row['budget_grade']:<10}"
+              f"{lo:>12,.0f}{hi:>12,.0f}" if lo else f"  {row['plan_id']:<22}(无预算)")
+        if ps_lo:
+            print(f"  {'':<32}{ps_lo:>10.0f}-{ps_hi:<10.0f} 元/㎡")
     for note in comp.get("notes") or []:
         print(f"  ⚠ {note}")
 
     # ── 汇总 ─────────────────────────────────────────────────
     banner("总览")
-    branch_ms = [t["elapsed_ms"] for t in out["trace"] if t["agent"] == "A-03"]
+    branch_ms = [t["elapsed_ms"] for t in out["trace"] if t["agent"] in ("A-03", "A-04")]
+    a03 = [t["elapsed_ms"] for t in out["trace"] if t["agent"] == "A-03"]
+    a04 = [t["elapsed_ms"] for t in out["trace"] if t["agent"] == "A-04"]
     print(f"  墙钟总耗时 : {wall:.1f}s")
 
     if branch_ms:
-        print(f"  A-03 分支  : {branch_ms}  (max {max(branch_ms)}ms / sum {sum(branch_ms)}ms)")
+        if a03:
+            print(f"  A-03 分支  : {a03}  (max {max(a03)}ms / sum {sum(a03)}ms)")
+        if a04:
+            print(f"  A-04 分支  : {a04}  (max {max(a04)}ms / sum {sum(a04)}ms)")
 
         # ⚠️ 并发判定必须量「fan-out 阶段的时长」，不能拿总墙钟去比。
         # 总墙钟含 A-01 + A-02，把它们算进去会得出"疑似串行"的错误结论。
         # fan-out 阶段 ≈ 总墙钟 − 上游各节点耗时（fan-in 是纯计算，可忽略）。
         upstream_ms = sum(t["elapsed_ms"] for t in out["trace"] if t["agent"] in ("A-01", "A-02"))
         fanout_s = wall - upstream_ms / 1000
-        ratio = fanout_s / (max(branch_ms) / 1000) if max(branch_ms) else 0
-        # 并发时 ratio ≈ 1.0（略大于 1，含调度开销）；串行时会接近分支数
-        verdict = "并发" if ratio < 1.6 else f"疑似串行（{ratio:.1f}× 于单分支）"
-        print(f"  fan-out 阶段: {fanout_s:.1f}s  (比值 {ratio:.2f}× 单分支最慢值)")
+        slowest = max(branch_ms) / 1000
+        ratio = fanout_s / slowest if slowest else 0
+        # 并发时 ratio ≈ 1.0（略大于 1，含调度开销）；串行时会接近任务数
+        verdict = "并发" if ratio < 1.6 else f"疑似串行（{ratio:.1f}× 于最慢任务）"
+        print(f"  fan-out 阶段: {fanout_s:.1f}s  "
+              f"({len(branch_ms)} 个任务，最慢 {slowest:.1f}s，比值 {ratio:.2f}×)")
         print(f"  并发判定   : {verdict}")
     print(f"  phase      : {out.get('phase')}")
     print(f"  degraded   : {out.get('degraded')}")

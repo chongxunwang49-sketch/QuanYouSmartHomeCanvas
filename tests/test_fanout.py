@@ -19,12 +19,14 @@ import time
 
 import pytest
 
+from backend.app.agents.budget_agent import BudgetAgent
 from backend.app.agents.layout_diagnoser import LayoutDiagnoserAgent
 from backend.app.agents.layout_parser import LayoutParserAgent
 from backend.app.agents.space_planner import SpacePlannerAgent
 from backend.app.core.llm_client import LLMError, LLMResult
 from backend.app.graph import workflow
 from backend.app.graph.state import initial_state
+from backend.app.schemas.budget import BudgetNarrative
 from backend.app.schemas.layout import LayoutDiagnosis, LayoutSchema
 from backend.app.schemas.plan import SpacePlan
 
@@ -75,23 +77,51 @@ SPACE_PLAN = {
 }
 
 
+NARRATIVE = {
+    "summary": "经济档预算。",
+    "grade_rationale": "省在定制柜上。",
+    "cost_drivers": ["主材"],
+    "negotiation_tips": ["水电按实测结算"],
+    "saving_tips": ["成品柜替代定制"],
+    "warnings": [],
+    "confidence": 0.7,
+}
+
+_BRANCH_TOKENS = ("plan_modern_economy", "plan_nordic_medium", "plan_chinese_high")
+
+
 class _FanoutLLM:
     """
     可控的假 LLM。
 
-    `delay` 用来验证并发性；`fail_on` 用来模拟单个分支失败——
-    A-03 会把 plan_id 写进用户提示词，因此这里靠提示词内容区分是哪个分支。
+    `delay` 用来验证并发性；`fail_on` / `fail_budget_on` 用来模拟单个分支失败——
+    两个 Agent 都会把 plan_id 写进用户提示词，因此靠提示词内容区分分支。
+
+    ⚠️ A-04 的**数字不经过这里**。它只找 LLM 要一段文字（BudgetNarrative），
+    金额全部由规则引擎算好。所以下面 `fail_budget_on` 模拟的是"解说词写不出来"，
+    此时预算数字仍然必须完好无损 —— 这正是要测的行为。
     """
 
     def __init__(self, *, delay: float = 0.0, fail_on: str | None = None,
-                 fail_all_plans: bool = False, layout: dict | None = None):
+                 fail_budget_on: str | None = None, fail_all_plans: bool = False,
+                 fail_all_budgets: bool = False, layout: dict | None = None):
         self.delay = delay
         self.fail_on = fail_on
+        self.fail_budget_on = fail_budget_on
         self.fail_all_plans = fail_all_plans
+        self.fail_all_budgets = fail_all_budgets
         #: 覆盖 A-01 的产出。要让布局"缺东西"，必须改这里而不是 state——
         #: A-01 跑完会用它的产出整体覆盖 state 里的 layout。
         self.layout = layout if layout is not None else LAYOUT
         self.plan_calls: list[str] = []
+        self.budget_calls: list[str] = []
+
+    @staticmethod
+    def _branch_of(user: str) -> str | None:
+        for token in _BRANCH_TOKENS:
+            if token in user:
+                return token
+        return None
 
     async def complete_json(self, schema, **kwargs):
         user = kwargs.get("user") or ""
@@ -100,17 +130,24 @@ class _FanoutLLM:
             return schema.model_validate(self.layout), self._res()
         if schema is LayoutDiagnosis:
             return schema.model_validate(DIAGNOSIS), self._res()
+
         if schema is SpacePlan:
             if self.delay:
                 await asyncio.sleep(self.delay)
-            # 提示词里带着「方案 ID：plan_xxx」，据此识别分支
-            for token in ("plan_modern_economy", "plan_nordic_medium", "plan_chinese_high"):
-                if token in user:
-                    self.plan_calls.append(token)
-                    if self.fail_all_plans or token == self.fail_on:
-                        raise LLMError(f"模拟分支 {token} 失败")
-                    break
+            token = self._branch_of(user)
+            if token:
+                self.plan_calls.append(token)
+                if self.fail_all_plans or token == self.fail_on:
+                    raise LLMError(f"模拟分支 {token} 的空间规划失败")
             return schema.model_validate(SPACE_PLAN), self._res()
+
+        if schema is BudgetNarrative:
+            token = self._branch_of(user)
+            if token:
+                self.budget_calls.append(token)
+                if self.fail_all_budgets or token == self.fail_budget_on:
+                    raise LLMError(f"模拟分支 {token} 的预算解说失败")
+            return schema.model_validate(NARRATIVE), self._res()
 
         raise AssertionError(f"未预期的 Schema: {schema}")
 
@@ -127,6 +164,7 @@ def _patch_all(monkeypatch, llm):
         ("parse_layout", LayoutParserAgent),
         ("diagnose_layout", LayoutDiagnoserAgent),
         ("generate_plan", SpacePlannerAgent),
+        ("estimate_budget", BudgetAgent),
     ):
         monkeypatch.setitem(workflow._AGENTS, node, cls(llm=llm))
 
@@ -205,23 +243,33 @@ class TestSendPayload:
             layout=LAYOUT, diagnosis=DIAGNOSIS,
             styles=["modern"], budget_grades=["economy"]))
 
-        assert len(sends) == 1
-        send = sends[0]
-        assert send.node == "generate_plan"
-        assert send.arg["layout"] == LAYOUT
-        assert send.arg["diagnosis"] == DIAGNOSIS
-        assert send.arg["branch_spec"]["plan_id"] == "plan_modern_economy"
+        # 1 套方案 × 2 个分支 Agent
+        assert len(sends) == 2
+        assert {s.node for s in sends} == {"generate_plan", "estimate_budget"}
+        for send in sends:
+            assert send.arg["layout"] == LAYOUT, f"{send.node} 拿不到 layout"
+            assert send.arg["diagnosis"] == DIAGNOSIS
+            assert send.arg["branch_spec"]["plan_id"] == "plan_modern_economy"
+
+    def test_每个Send是独立对象(self):
+        """
+        不能让多个 Send 共用同一个 payload dict —— LangGraph 内部处理时
+        可能产生别名问题，而复制一份的成本可以忽略。
+        """
+        sends = workflow._fan_out_plans(_state(
+            layout=LAYOUT, styles=["modern"], budget_grades=["economy"]))
+        assert sends[0].arg is not sends[1].arg
 
     def test_payload不带无关字段(self):
         """
-        payload 会随 checkpointer 序列化落盘，塞整份 state 会白白放大 N 倍。
+        payload 会随 checkpointer 序列化落盘，塞整份 state 会白白放大 N×M 倍。
         这里反向确认：图像 base64 这类大字段不该出现在分支 payload 里。
         """
         sends = workflow._fan_out_plans(_state(
             layout=LAYOUT, diagnosis=DIAGNOSIS,
             styles=["modern"], budget_grades=["economy"]))
 
-        assert "image_ref" not in sends[0].arg
+        assert all("image_ref" not in s.arg for s in sends)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -243,9 +291,10 @@ class TestConcurrency:
         out = _run(monkeypatch, llm)
         elapsed = time.perf_counter() - started
 
-        assert len(llm.plan_calls) == 3, f"三个分支都应执行，实际 {llm.plan_calls}"
+        assert len(llm.plan_calls) == 3, f"三个方案分支都应执行，实际 {llm.plan_calls}"
         assert len(out["plans"]) == 3
-        assert elapsed < 0.5, f"三分支疑似串行执行，耗时 {elapsed:.2f}s"
+        # 6 个任务（3 方案 × 2 Agent）并发，每个睡 0.25s，串行要 1.5s
+        assert elapsed < 0.6, f"分支疑似串行执行，耗时 {elapsed:.2f}s"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -254,41 +303,99 @@ class TestConcurrency:
 
 
 class TestBranchIsolation:
-    def test_单分支失败不影响其余(self, monkeypatch):
-        """3 套里出 2 套是可用结果——失败的那个如实记录，其余照常交付。"""
+    def test_单分支空间规划失败不影响其余(self, monkeypatch):
+        """A-03 挂在某套方案上，其余两套照常交付。"""
         out = _run(monkeypatch, _FanoutLLM(fail_on="plan_nordic_medium"))
 
-        assert len(out["plans"]) == 2
-        assert {p["plan_id"] for p in out["plans"]} == {
-            "plan_modern_economy", "plan_chinese_high",
-        }
+        assert len(out["plans"]) == 3, "失败的方案**仍应列出**，只是缺 space_plan"
+        by_id = {p["plan_id"]: p for p in out["plans"]}
+        assert by_id["plan_nordic_medium"]["space_plan"] is None
+        assert by_id["plan_modern_economy"]["space_plan"] is not None
 
         failed = [e for e in out["errors"] if e["agent"] == "A-03"]
         assert len(failed) == 1
         assert "plan_nordic_medium" in failed[0]["message"]
 
-    def test_单分支失败仍产出可用对比表(self, monkeypatch):
+    def test_空间规划失败时预算仍在(self, monkeypatch):
+        """
+        这是本文件最重要的一条 —— 分支内两个 Agent **互相独立**。
+
+        A-03 失败不该连累 A-04：预算只需要面积和档位，不需要空间规划。
+        旧实现按 space_plan 是否存在来收集方案，这种分支会被整个丢掉，
+        连带把已经算好的预算也扔了。
+        """
+        out = _run(monkeypatch, _FanoutLLM(fail_on="plan_nordic_medium"))
+        plan = next(p for p in out["plans"] if p["plan_id"] == "plan_nordic_medium")
+
+        assert plan["budget"] is not None, "A-03 失败不该连带丢掉预算"
+        assert len(plan["budget"]["lines"]) >= 7
+        assert plan["missing_artifacts"] == ["space_plan"]
+
+    def test_预算解说失败时数字仍在(self, monkeypatch):
+        """
+        A-04 的 LLM 只负责写解说词。它挂了，**数字必须完好无损** ——
+        数字来自规则引擎，压根不经过模型。
+
+        这条守住的是本 Agent 最核心的设计：失败方向是反的。
+        """
+        out = _run(monkeypatch, _FanoutLLM(fail_budget_on="plan_modern_economy"))
+        plan = next(p for p in out["plans"] if p["plan_id"] == "plan_modern_economy")
+
+        assert plan["budget"] is not None
+        assert plan["budget"]["total_min"] > 0, "解说失败不该影响金额"
+        assert plan["budget"]["computed_by"].startswith("rule_engine")
+        assert plan["budget"]["narrative_degraded"] is True, "应标记为降级"
+        # 回退文案要如实说明缺了什么，而不是假装正常
+        assert plan["budget"]["narrative"]["warnings"]
+
+    def test_部分产出时对比表仍可用(self, monkeypatch):
         out = _run(monkeypatch, _FanoutLLM(fail_on="plan_nordic_medium"))
         comp = out["comparison"]
 
-        assert comp["available"] is True, "2 套仍可对比"
-        assert comp["plan_count"] == 2
-        assert comp["requested_count"] == 3
-        assert any("实际产出 2 套" in n for n in comp["notes"])
+        assert comp["available"] is True
+        assert comp["plan_count"] == 3
+        assert len(comp["rows"]) == 3
+        # 缺产物要显式标出，不能让字段静默为空
+        row = next(r for r in comp["rows"] if r["plan_id"] == "plan_nordic_medium")
+        assert row["missing_artifacts"] == ["space_plan"]
+        assert any("只产出了部分内容" in n for n in comp["notes"])
 
-    def test_全部失败时降级且带原因(self, monkeypatch):
-        out = _run(monkeypatch, _FanoutLLM(fail_all_plans=True))
+    def test_两个Agent都失败时方案才消失(self, monkeypatch):
+        """
+        方案从列表里消失的条件是「**两个** Agent 都没产出」。
+
+        注意 fail_all_budgets 只让**解说词**失败，A-04 的数字照常产出，
+        所以方案**仍应保留** —— 这是设计如此，不是缺陷。
+        真正让 A-04 整个失败的只有守卫不通过或引擎异常。
+        """
+        out = _run(monkeypatch, _FanoutLLM(fail_all_plans=True, fail_all_budgets=True))
+
+        # A-03 全挂，但 A-04 的预算还在
+        assert len(out["plans"]) == 3
+        for plan in out["plans"]:
+            assert plan["space_plan"] is None
+            assert plan["budget"]["total_min"] > 0, "解说失败不该影响金额"
+            assert plan["missing_artifacts"] == ["space_plan"]
+
+    def test_分支完全无产出时方案不列出(self):
+        """
+        直接测 fan-in 的契约：plan_bundles 为空时，不编造方案行。
+
+        这是"方案消失"的唯一条件，用纯函数测最精确 ——
+        走整图反而要靠桩节点才构造得出这个状态。
+        """
+        out = workflow.aggregate_plans(_state(plan_bundles={}))
 
         assert out["plans"] == []
         assert out["comparison"]["available"] is False
+        assert out["comparison"]["plan_count"] == 0
         assert out["degraded"] is True
         assert any("fan-in" in r for r in out["degrade_reasons"])
-        # 三条分支各自的失败都要留下，不能只剩一条
-        assert len([e for e in out["errors"] if e["agent"] == "A-03"]) == 3
+        assert out["errors"], "无产出必须记错误，不能静默返回空"
 
     def test_全部失败时图不崩(self, monkeypatch):
         """这是最要紧的一条：0 套方案是业务失败，不是系统崩溃。"""
-        out = _run(monkeypatch, _FanoutLLM(fail_all_plans=True))
+        out = _run(monkeypatch, _FanoutLLM(fail_all_plans=True, fail_all_budgets=True))
         assert out["phase"] == "finalizing"
         assert out["layout"] is not None, "上游成果不应因下游失败而丢失"
 
@@ -336,11 +443,23 @@ class TestAggregation:
         assert out["comparison"]["available"] is False
         assert "仅产出 1 套" in out["comparison"]["unavailable_reason"]
 
+    def test_对比表含预算列(self, monkeypatch):
+        """对比表要能一眼看出三套方案的预算差距——这是用户最关心的对比维度。"""
+        out = _run(monkeypatch, _FanoutLLM())
+        rows = out["comparison"]["rows"]
+
+        totals = [r["budget_total_min"] for r in rows]
+        assert all(t and t > 0 for t in totals), f"每行都应有预算下限，实际 {totals}"
+        # 经济 < 中档 < 高端
+        assert totals[0] < totals[1] < totals[2], f"预算未随档位递增: {totals}"
+        assert all(r["budget_computed_by"].startswith("rule_engine") for r in rows)
+
     def test_对比表字段含数据质量信号(self, monkeypatch):
         out = _run(monkeypatch, _FanoutLLM())
         row = out["comparison"]["rows"][0]
         assert "unassigned_rooms" in row
         assert "invented_rooms" in row
+        assert "missing_artifacts" in row
 
     def test_自定义分支数(self, monkeypatch):
         out = _run(monkeypatch, _FanoutLLM(),
@@ -357,9 +476,11 @@ class TestAggregation:
 
 class TestRouteAfterDiagnosis:
     def test_能出方案时返回Send列表(self):
+        """3 套方案 × 2 个分支 Agent = 6 个 Send。"""
         result = workflow._route_after_diagnosis(_state(layout=LAYOUT, diagnosis=DIAGNOSIS))
         assert isinstance(result, list)
-        assert len(result) == 3
+        assert len(result) == 3 * len(workflow._BRANCH_NODES)
+        assert {s.node for s in result} == set(workflow._BRANCH_NODES)
 
     def test_缺墙体时短路到END(self):
         """
@@ -406,9 +527,29 @@ class TestCrossCuttingUnderConcurrency:
             "plan_modern_economy", "plan_nordic_medium", "plan_chinese_high",
         }
 
+    def test_同一plan_id下两个Agent的产物共存(self, monkeypatch):
+        """
+        ⚠️ 回归防线 —— 一个曾经静默丢数据的 bug。
+
+        A-03 与 A-04 会**并发写同一个 plan_id**：
+            A-03 → {"plan_x": {"space_plan": …}}
+            A-04 → {"plan_x": {"budget":     …}}
+
+        MergeDict 原先是**浅合并**，实测结果是 {"plan_x": {"budget": …}} ——
+        space_plan 被整个顶掉，**不报错、不告警**，用户拿到一份只有预算的"方案"。
+
+        这条测试与 `test_每套方案同时含规划与预算` 一起守住这个行为。
+        """
+        out = _run(monkeypatch, _FanoutLLM())
+
+        for plan_id, bundle in out["plan_bundles"].items():
+            assert set(bundle) == {"space_plan", "budget"}, (
+                f"{plan_id} 的产物被覆盖了，只剩 {set(bundle)}"
+            )
+
     def test_phase与degraded并发写入不报错(self, monkeypatch):
         """
-        degraded / phase 是标量，没有 reducer 时三个分支同时写会直接报错。
+        degraded / phase 是标量，没有 reducer 时多个分支同时写会直接报错。
         前者用 OrBool，后者用 LastWrite（见 state.py）。
         """
         out = _run(monkeypatch, _FanoutLLM())

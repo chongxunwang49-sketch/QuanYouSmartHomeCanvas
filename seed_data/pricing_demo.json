@@ -1,0 +1,130 @@
+{
+  "_meta": {
+    "data_kind": "DEMO_ONLY",
+    "disclaimer": "本文件全部为演示数据，非全友家居或任何厂商的真实报价，也不构成任何价格承诺。单价区间按公开市场行情量级估设，仅用于跑通系统链路与展示计算过程。实际装修价格必须以当地装修公司的实地量房报价为准。",
+    "calibrated_for": "四川省内江市（三线城市）",
+    "currency": "CNY",
+    "price_basis_date": "2026-09",
+    "engine_version": "rule_engine_v1",
+    "wall_area_factor": 2.6,
+    "region_coefficient": 1.0,
+    "region_coefficient_note": "本表的单价区间已按内江当地行情标定，故系数为 1.0。保留该字段是为了将来支持「同一份方案在不同城市大概差多少」的对比，届时换表或调系数即可，不必改代码。",
+    "grade_ranges_cny_per_sqm": {
+      "economy": [800, 1200],
+      "medium": [1500, 2000],
+      "high": [2500, 3500]
+    },
+    "grade_range_note": "以上区间来自需求文档 2.2.2 的方案 A/B/C 定义。engine.py 有一组测试断言「按本表算出的总价必须落在这三个区间内」——改单价时若跑挂了，说明价格表已偏离文档口径。"
+  },
+
+  "items": [
+    {
+      "key": "demolition",
+      "label": "拆除与砌筑",
+      "unit": "元/㎡",
+      "basis": "area",
+      "note": "拆除非承重墙、铲墙皮、砌新墙。经济档尽量不动结构，所以这一项低。",
+      "unit_price": {
+        "economy": [25, 40],
+        "medium": [45, 65],
+        "high": [80, 125]
+      }
+    },
+    {
+      "key": "plumbing_electrical",
+      "label": "水电改造",
+      "unit": "元/㎡",
+      "basis": "area",
+      "note": "强弱电布线、给排水改造。属于隐蔽工程，报价单上最容易被做增项的一项。",
+      "unit_price": {
+        "economy": [105, 145],
+        "medium": [165, 215],
+        "high": [240, 330]
+      }
+    },
+    {
+      "key": "masonry",
+      "label": "瓦工与防水",
+      "unit": "元/㎡",
+      "basis": "area",
+      "note": "墙地砖铺贴、卫生间与阳台防水。防水面积按套内面积折算。",
+      "unit_price": {
+        "economy": [115, 155],
+        "medium": [175, 230],
+        "high": [245, 340]
+      }
+    },
+    {
+      "key": "carpentry",
+      "label": "木工与定制柜体",
+      "unit": "元/㎡",
+      "basis": "area",
+      "note": "吊顶、隔断、定制柜。**三档差距最大的一项**：经济档基本用成品柜，高端档才是全屋定制。",
+      "unit_price": {
+        "economy": [80, 120],
+        "medium": [180, 240],
+        "high": [310, 460]
+      }
+    },
+    {
+      "key": "painting",
+      "label": "油漆涂料",
+      "unit": "元/㎡墙面",
+      "basis": "wall_area",
+      "note": "墙面面积按 套内面积 × wall_area_factor(2.6) 折算，这是行业惯用的估算比例。",
+      "unit_price": {
+        "economy": [20, 32],
+        "medium": [34, 48],
+        "high": [58, 85]
+      }
+    },
+    {
+      "key": "main_materials",
+      "label": "主材",
+      "unit": "元/㎡",
+      "basis": "area",
+      "note": "地板/瓷砖、洁具、室内门、橱柜等业主看得见摸得着的大件。",
+      "unit_price": {
+        "economy": [340, 470],
+        "medium": [625, 800],
+        "high": [1080, 1390]
+      }
+    },
+    {
+      "key": "auxiliary_materials",
+      "label": "辅材",
+      "unit": "元/㎡",
+      "basis": "area",
+      "note": "水泥砂浆、腻子、水电管线、防水涂料等。单价低但用量大，也是增项高发区。",
+      "unit_price": {
+        "economy": [60, 85],
+        "medium": [95, 140],
+        "high": [150, 215]
+      }
+    },
+    {
+      "key": "management",
+      "label": "管理费",
+      "unit": "占施工费比例 %",
+      "basis": "subtotal_pct",
+      "note": "装修公司按施工费（不含管理费/设计费本身）计取。",
+      "unit_price": {
+        "economy": [5, 5],
+        "medium": [6.5, 6.5],
+        "high": [8, 8]
+      }
+    },
+    {
+      "key": "design",
+      "label": "设计费",
+      "unit": "占施工费比例 %",
+      "basis": "subtotal_pct",
+      "note": "经济档常做免设计费的套餐，所以只有象征性的 1.5%。",
+      "unit_price": {
+        "economy": [1.5, 1.5],
+        "medium": [3, 3],
+        "high": [5, 5]
+      }
+    }
+  ]
+}

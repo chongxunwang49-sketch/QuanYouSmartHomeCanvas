@@ -18,8 +18,37 @@ from typing import Annotated, Any, Literal, TypedDict
 
 
 def _merge_dict(left: dict, right: dict) -> dict:
-    """dict 字段的合并 reducer：浅合并，右侧覆盖同名键。"""
-    return {**(left or {}), **(right or {})}
+    """
+    dict 字段的合并 reducer：**深合并一层**，右侧覆盖同名叶子键。
+
+    ═══════════════════════════════════════════════════════════════
+    为什么必须是深合并一层 —— 一次实测出来的静默数据丢失
+    ═══════════════════════════════════════════════════════════════
+
+    原先这里是浅合并（`{**left, **right}`）。当分支内**只有一个** Agent 时
+    它完全够用，所以一直没暴露。接入 A-04 预算、分支内变成两个 Agent 后：
+
+        A-03 写 {"plan_x": {"space_plan": …}}
+        A-04 写 {"plan_x": {"budget":     …}}
+        浅合并结果 {"plan_x": {"budget": …}}      ← space_plan 没了
+
+    实测探针确认：合并后 `"space_plan" in inner` 为 **False**。
+
+    **它不报错、不告警，只是把方案正文丢了** —— 用户拿到一份只有预算、
+    没有空间规划的"方案"。这类静默失败比崩溃危险得多，正是本项目
+    （见 capabilities.py 的模块说明）一直在防的东西。
+
+    注意 `plan_bundles` 的结构是 `{plan_id: {产物名: 内容}}` 两层，
+    所以深合并不需要递归到底 —— 一层正好，多一层反而会让两个分支
+    往同名产物里写时互相污染。`images` / `hotspots` 同理。
+    """
+    out = {**(left or {})}
+    for key, value in (right or {}).items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = {**out[key], **value}
+        else:
+            out[key] = value
+    return out
 
 
 def _or_bool(left: bool, right: bool) -> bool:

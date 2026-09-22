@@ -17,12 +17,14 @@ from typing import Any
 
 import pytest
 
+from backend.app.agents.budget_agent import BudgetAgent
 from backend.app.agents.layout_diagnoser import LayoutDiagnoserAgent
 from backend.app.agents.layout_parser import LayoutParserAgent
 from backend.app.agents.space_planner import SpacePlannerAgent
 from backend.app.core.llm_client import LLMResult
 from backend.app.graph import workflow
 from backend.app.graph.state import initial_state
+from backend.app.schemas.budget import BudgetNarrative
 from backend.app.schemas.layout import LayoutDiagnosis, LayoutSchema
 from backend.app.schemas.plan import SpacePlan
 
@@ -71,6 +73,16 @@ SPACE_PLAN_PAYLOAD = {
     "confidence": 0.8,
 }
 
+NARRATIVE_PAYLOAD = {
+    "summary": "经济档预算，主要花在主材与水电上。",
+    "grade_rationale": "把钱省在定制柜上，改用成品柜。",
+    "cost_drivers": ["主材", "水电改造"],
+    "negotiation_tips": ["水电按实测结算，合同写明单价上限"],
+    "saving_tips": ["成品柜替代全屋定制"],
+    "warnings": ["水电易增项"],
+    "confidence": 0.7,
+}
+
 
 class _DispatchLLM:
     """
@@ -81,10 +93,12 @@ class _DispatchLLM:
     """
 
     def __init__(self, layout: dict | None = None, diagnosis: dict | None = None,
-                 space_plan: dict | None = None, fail_layout: bool = False):
+                 space_plan: dict | None = None, narrative: dict | None = None,
+                 fail_layout: bool = False):
         self.layout = layout if layout is not None else LAYOUT_PAYLOAD
         self.diagnosis = diagnosis if diagnosis is not None else DIAGNOSIS_PAYLOAD
         self.space_plan = space_plan if space_plan is not None else SPACE_PLAN_PAYLOAD
+        self.narrative = narrative if narrative is not None else NARRATIVE_PAYLOAD
         self.fail_layout = fail_layout
         self.seen: list[str] = []
 
@@ -103,6 +117,11 @@ class _DispatchLLM:
             # 三分支并发调用，这里会被调用 3 次
             self.seen.append("A-03")
             return schema.model_validate(self.space_plan), self._res()
+        if schema is BudgetNarrative:
+            # 同样三分支并发。注意 A-04 的**数字**不经过这里——
+            # 它只调 LLM 要这段文字，见 budget_agent.py
+            self.seen.append("A-04")
+            return schema.model_validate(self.narrative), self._res()
         raise AssertionError(f"未预期的 Schema: {schema}")
 
     def _res(self) -> LLMResult:
@@ -137,6 +156,7 @@ def patched(monkeypatch):
             ("parse_layout", LayoutParserAgent),
             ("diagnose_layout", LayoutDiagnoserAgent),
             ("generate_plan", SpacePlannerAgent),
+            ("estimate_budget", BudgetAgent),
         ):
             monkeypatch.setitem(workflow._AGENTS, node, cls(llm=llm))
         return llm, workflow.build_graph(with_checkpointer=False)
@@ -152,8 +172,21 @@ def patched(monkeypatch):
 class TestGraphStructure:
     def test_all_agents_registered(self):
         assert set(workflow._AGENTS) == {
-            "parse_layout", "diagnose_layout", "generate_plan",
+            "parse_layout", "diagnose_layout",
+            "generate_plan", "estimate_budget",
         }
+
+    def test_branch_nodes_match_artifacts(self):
+        """
+        分支节点数与产物键数必须一致 —— 一个分支 Agent 对应一个产物键。
+        这条断言防的是"加了 Agent 却忘了在 BRANCH_ARTIFACTS 登记"，
+        那样 fan-in 会把它的产物当成不存在，静默丢掉。
+        """
+        assert len(workflow._BRANCH_NODES) == len(workflow.BRANCH_ARTIFACTS)
+
+    def test_branch_nodes_registered(self):
+        for node in workflow._BRANCH_NODES:
+            assert node in workflow._AGENTS, f"分支节点 {node} 未注册"
 
     def test_compiles_without_checkpointer(self):
         assert workflow.build_graph(with_checkpointer=False) is not None
@@ -172,28 +205,55 @@ class TestGraphStructure:
 
 class TestFullFlow:
     def test_parse_diagnose_then_three_plans(self, patched):
-        """全链路跑通：解析一次、诊断一次、方案三次。"""
+        """全链路跑通：解析 1 次、诊断 1 次、每套方案 2 个 Agent × 3 套。"""
         llm, graph = patched()
         out = asyncio.run(graph.ainvoke(_state()))
 
         assert llm.seen[0] == "A-01", f"调用顺序异常: {llm.seen}"
         assert llm.seen[1] == "A-02", f"调用顺序异常: {llm.seen}"
-        # 三个分支并发，完成顺序不确定，因此比较次数而不是序列
+        # 分支内并发，完成顺序不确定，因此比较次数而不是序列
         assert llm.seen.count("A-03") == 3, f"A-03 应被调用 3 次，实际 {llm.seen}"
+        assert llm.seen.count("A-04") == 3, f"A-04 应被调用 3 次，实际 {llm.seen}"
 
         assert out["layout"]["rooms"][0]["name"] == "客厅"
         assert out["diagnosis"]["overall_score"] > 0
         assert len(out["plans"]) == 3
         assert out["phase"] == "finalizing"
 
-    def test_trace_has_five_entries(self, patched):
-        """A-01 + A-02 + A-03×3 = 5 条 trace。"""
+    def test_每套方案同时含规划与预算(self, patched):
+        """
+        A-03 与 A-04 并行写同一个 plan_id。
+        两者都必须留下来 —— 浅合并 reducer 会把先写的那份整个顶掉。
+        """
+        _, graph = patched()
+        out = asyncio.run(graph.ainvoke(_state()))
+
+        for plan in out["plans"]:
+            assert plan["space_plan"] is not None, f"{plan['plan_id']} 缺空间规划"
+            assert plan["budget"] is not None, f"{plan['plan_id']} 缺预算"
+            assert plan["missing_artifacts"] == []
+
+    def test_预算由规则引擎算而非模型(self, patched):
+        """AC-05 / ADR-07：预算数字必须来自 rule_engine，且分项 ≥7。"""
+        _, graph = patched()
+        out = asyncio.run(graph.ainvoke(_state()))
+
+        for plan in out["plans"]:
+            bg = plan["budget"]
+            assert bg["computed_by"].startswith("rule_engine")
+            assert len(bg["lines"]) >= 7
+            assert 0 < bg["total_min"] < bg["total_max"]
+            assert bg["disclaimer"], "演示数据声明必须透出"
+
+    def test_trace_covers_all_nodes(self, patched):
+        """A-01 + A-02 + (A-03 + A-04) × 3 = 8 条 trace。"""
         _, graph = patched()
         out = asyncio.run(graph.ainvoke(_state()))
 
         agents = [t["agent"] for t in out["trace"]]
-        assert len(agents) == 5
-        assert sorted(agents) == ["A-01", "A-02", "A-03", "A-03", "A-03"]
+        assert len(agents) == 8
+        assert agents.count("A-03") == 3
+        assert agents.count("A-04") == 3
         assert all(t["ok"] for t in out["trace"])
 
     def test_layout_id_generated(self, patched):
@@ -313,10 +373,10 @@ class TestStateMerge:
         """
         _, graph = patched()
         out = asyncio.run(graph.ainvoke(_state()))
-        assert len(out["trace"]) == 5, "三个分支的 trace 与上游两条都应保留"
+        assert len(out["trace"]) == 8, "六个分支任务的 trace 与上游两条都应保留"
 
     def test_degrade_reasons_accumulate(self, monkeypatch):
-        """五个节点全部降级时，五条原因一条都不能丢。"""
+        """八个节点全部降级时，八条原因一条都不能丢。"""
         llm = _DispatchLLM()
 
         async def degraded_json(schema, **kw):
@@ -331,12 +391,13 @@ class TestStateMerge:
             ("parse_layout", LayoutParserAgent),
             ("diagnose_layout", LayoutDiagnoserAgent),
             ("generate_plan", SpacePlannerAgent),
+            ("estimate_budget", BudgetAgent),
         ):
             monkeypatch.setitem(workflow._AGENTS, node, cls(llm=llm))
 
         out = asyncio.run(workflow.build_graph(with_checkpointer=False).ainvoke(_state()))
-        # A-01 + A-02 + A-03×3
-        assert len(out["degrade_reasons"]) == 5
+        # A-01 + A-02 + (A-03 + A-04) × 3
+        assert len(out["degrade_reasons"]) == 8
         assert all("降级" in r for r in out["degrade_reasons"])
         # 任一分支降级 => 整体降级（OrBool reducer）
         assert out["degraded"] is True

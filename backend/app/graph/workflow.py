@@ -11,17 +11,28 @@ LangGraph 工作流编排。
       │  条件路由：无数据 / 降级 => 短路 END
     diagnose_layout     A-02 五维诊断
       │  条件路由：不支撑方案生成 => 短路 END
-      ├──────────────┬──────────────┐        fan-out（Send）
-    generate_plan  generate_plan  generate_plan   A-03 空间规划 ×3
-    (现代+经济)     (北欧+中档)     (中式+高端)     同节点、并发三个实例
-      └──────────────┴──────────────┘
-      │                                    fan-in
+      │
+      │  fan-out（Send）：3 套方案 × 2 个分支 Agent = 6 个并发任务
+      │
+      ├─ plan_modern_economy ─┬─ generate_plan   A-03 空间规划
+      │                       └─ estimate_budget A-04 预算（规则引擎）
+      ├─ plan_nordic_medium ──┬─ generate_plan
+      │                       └─ estimate_budget
+      └─ plan_chinese_high ───┬─ generate_plan
+                              └─ estimate_budget
+      │
+      │  fan-in：所有分支任务汇聚（同一 plan_id 下的产物由深合并 reducer 合并）
+      │
     aggregate_plans     三方案汇总 + 对比表（纯代码，无 LLM）
       │
      END
 
-分支内的其余 Agent（A-04 预算 / A-05 材料 / A-06 避坑）在此骨架上增量添加。
-图像与热区节点位于 **fan-in 之后**，不在并行分支内 —— 3 路并发调图会打爆显存
+**分支内各 Agent 互相独立**：A-03 失败不影响 A-04，反之亦然。
+fan-in 按分支规格列出方案，缺哪个产物写进 `missing_artifacts`。
+
+分支内的其余 Agent（A-05 材料 / A-06 避坑）在此骨架上增量添加——
+登记 `_AGENTS` + `_BRANCH_NODES` + `BRANCH_ARTIFACTS` 三处即可。
+图像与热区节点位于 **fan-in 之后**，不在并行分支内 —— 6 路并发调图会打爆显存
 （需求文档 3.3 的关键结构调整）。
 
 ═══════════════════════════════════════════════════════════════════
@@ -54,12 +65,21 @@ from typing import Any, Literal
 
 from loguru import logger
 
+from ..agents.budget_agent import BudgetAgent
 from ..agents.layout_diagnoser import LayoutDiagnoserAgent
 from ..agents.layout_parser import LayoutParserAgent
 from ..agents.space_planner import SpacePlannerAgent
 from ..core.capabilities import check_operation
 from ..core.config import settings
 from .state import HomeDecoState
+
+# ══════════════════════════════════════════════════════════════════
+# 分支内的 Agent（每个方案分支里各跑一份）
+# ══════════════════════════════════════════════════════════════════
+
+#: 分支内 Agent 产出在 `plan_bundles[plan_id]` 下的键名。
+#: 加新分支 Agent 时在这里登记，fan-in 会自动把它纳入对比表。
+BRANCH_ARTIFACTS: tuple[str, ...] = ("space_plan", "budget")
 
 # ══════════════════════════════════════════════════════════════════
 # 节点注册表
@@ -69,10 +89,12 @@ from .state import HomeDecoState
 _AGENTS: dict[str, Any] = {
     "parse_layout": LayoutParserAgent(),
     "diagnose_layout": LayoutDiagnoserAgent(),
+    # ── 以下两个在 fan-out 分支内并发执行 ──
     "generate_plan": SpacePlannerAgent(),
+    "estimate_budget": BudgetAgent(),
 }
 
-NODES = Literal["parse_layout", "diagnose_layout", "generate_plan"]
+NODES = Literal["parse_layout", "diagnose_layout", "generate_plan", "estimate_budget"]
 
 
 def get_agent(node: str):
@@ -233,18 +255,20 @@ def _route_after_diagnosis(state: HomeDecoState) -> str | list[Any]:
 
 def _fan_out_plans(state: HomeDecoState) -> list[Any]:
     """
-    展开成 N 个并发的 A-03 实例。
+    展开成 N 套方案 × M 个分支内 Agent 的并发任务。
+
+    当前 N=3（三套方案）、M=2（A-03 空间规划 + A-04 预算），共 6 个并发任务。
 
     ⚠️ 每个 Send 的 payload 必须**自带分支所需的一切**——
     payload 会替换掉节点看到的状态（见文件头「关键约定 1」）。
-    layout / diagnosis 不塞进去，A-03 里 `state.get("layout")` 就是 None。
+    layout / diagnosis 不塞进去，分支里 `state.get("layout")` 就是 None。
     """
     from langgraph.types import Send
 
     specs = build_branch_specs(state)
 
     # 分支共用的只读输入。**只放分支真正会读的字段**——
-    # payload 会随 checkpointer 一起序列化落盘，塞整份 state 会白白放大 3 倍。
+    # payload 会随 checkpointer 一起序列化落盘，塞整份 state 会白白放大 N×M 倍。
     shared = {
         "layout": state.get("layout"),
         "diagnosis": state.get("diagnosis"),
@@ -254,11 +278,22 @@ def _fan_out_plans(state: HomeDecoState) -> list[Any]:
         "detail_level": state.get("detail_level", "full"),
     }
 
+    sends: list[Any] = []
+    for spec in specs:
+        for node in _BRANCH_NODES:
+            # 每个 Send 用**独立的 dict**：共享同一个对象会在 LangGraph
+            # 内部处理时产生意料之外的别名问题，而复制一份的成本可以忽略。
+            sends.append(Send(node, {**shared, "branch_spec": spec}))
+
     logger.info(
-        f"[fan-out] 展开 {len(specs)} 套方案："
-        f"{', '.join(s['plan_id'] for s in specs)}"
+        f"[fan-out] 展开 {len(specs)} 套方案 × {len(_BRANCH_NODES)} 个 Agent "
+        f"= {len(sends)} 个并发任务：{', '.join(s['plan_id'] for s in specs)}"
     )
-    return [Send("generate_plan", {**shared, "branch_spec": spec}) for spec in specs]
+    return sends
+
+
+#: 分支内的节点名。与 _AGENTS 里登记的分支 Agent 对应。
+_BRANCH_NODES: tuple[str, ...] = ("generate_plan", "estimate_budget")
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -269,6 +304,8 @@ def _fan_out_plans(state: HomeDecoState) -> list[Any]:
 _COMPARISON_FIELDS: list[tuple[str, str]] = [
     ("style", "风格"),
     ("budget_grade", "预算档"),
+    ("budget_total_min", "预算下限"),
+    ("budget_total_max", "预算上限"),
     ("summary", "设计思路"),
     ("key_moves", "核心改动"),
     ("storage_count", "收纳处数"),
@@ -277,20 +314,38 @@ _COMPARISON_FIELDS: list[tuple[str, str]] = [
 
 
 def _comparison_row(plan: dict[str, Any]) -> dict[str, Any]:
-    """把一个方案压成对比表的一行。"""
+    """
+    把一个方案包压成对比表的一行。
+
+    两个产物都用 `or {}` 兜住 —— 分支内各 Agent 是**互相独立**的，
+    完全可能一个成功一个失败。缺的那个在这里表现为该组字段为空，
+    并由 `missing_artifacts` 显式标出，而不是让整行消失。
+    """
+    sp = plan.get("space_plan") or {}
+    bg = plan.get("budget") or {}
+
     return {
         "plan_id": plan.get("plan_id"),
         "style": plan.get("style"),
         "budget_grade": plan.get("budget_grade"),
-        "summary": plan.get("summary", ""),
-        "key_moves": plan.get("key_moves") or [],
-        "storage_count": len(plan.get("storage_plans") or []),
-        "circulation_fix_count": len(plan.get("circulation_fixes") or []),
-        "zone_count": len(plan.get("zones") or []),
-        "confidence": plan.get("confidence", 0.0),
-        # 数据质量信号一并带出，便于前端标灰或提示
-        "unassigned_rooms": plan.get("unassigned_rooms") or [],
-        "invented_rooms": plan.get("invented_rooms") or [],
+        # ── 来自 A-03 ──
+        "summary": sp.get("summary", ""),
+        "key_moves": sp.get("key_moves") or [],
+        "storage_count": len(sp.get("storage_plans") or []),
+        "circulation_fix_count": len(sp.get("circulation_fixes") or []),
+        "zone_count": len(sp.get("zones") or []),
+        "confidence": sp.get("confidence"),
+        "unassigned_rooms": sp.get("unassigned_rooms") or [],
+        "invented_rooms": sp.get("invented_rooms") or [],
+        "duplicate_zones": sp.get("duplicate_zones") or [],
+        # ── 来自 A-04 ──
+        "budget_total_min": bg.get("total_min"),
+        "budget_total_max": bg.get("total_max"),
+        "budget_per_sqm_min": bg.get("price_per_sqm_min"),
+        "budget_per_sqm_max": bg.get("price_per_sqm_max"),
+        "budget_computed_by": bg.get("computed_by"),
+        # ── 数据完整性 ──
+        "missing_artifacts": plan.get("missing_artifacts") or [],
     }
 
 
@@ -302,39 +357,65 @@ def aggregate_plans(state: HomeDecoState) -> dict[str, Any]:
     没有任何需要"生成"的内容；交给模型反而会引入不一致
     （例如把三套方案的风格说反）。这与预算必须由规则引擎算是同一个原则。
 
-    三条设计要点：
-    1. **分支可能失败，且不拖垮整体**。BaseAgent.execute 已保证单分支异常
+    四条设计要点：
+    1. **方案的身份来自分支规格，而不是"碰巧活下来的产物"。**
+       分支内各 Agent 独立成败，可能只出了预算没出方案。若按产物反推计划列表，
+       这种分支就会被整个丢掉，而它其实是有部分价值的。
+       改为遍历 `build_branch_specs()`，顺序天然正确，也不必再排序。
+    2. **缺哪个产物要显式标出**（`missing_artifacts`），而不是让字段静默为空。
+       前端据此标灰，用户据此知道"这套方案的预算还没算出来"。
+    3. **分支可能失败，且不拖垮整体**。BaseAgent.execute 已保证单分支异常
        不会中断图；这里只需容忍 plan_bundles 里少于预期份数。
        "3 套里出了 2 套"是可用结果，"0 套"才是失败。
-    2. **不排优劣**。没有业主的优先级信息（更看重预算还是环保？），
+    4. **不排优劣**。没有业主的优先级信息（更看重预算还是环保？），
        任何"推荐方案"都是无依据的。只给数据质量信号，把选择权交回用户。
-    3. 这是普通函数节点，异常不会被 BaseAgent 兜住，因此整体包了 try。
+
+    这是普通函数节点，异常不会被 BaseAgent 兜住，因此整体包了 try。
     """
     try:
         bundles = state.get("plan_bundles") or {}
+        specs = build_branch_specs(state)
 
         plans: list[dict[str, Any]] = []
-        broken: list[str] = []
-        for plan_id, bundle in bundles.items():
-            space_plan = (bundle or {}).get("space_plan")
-            if space_plan:
-                plans.append(space_plan)
-            else:
-                broken.append(plan_id)
+        empty_branches: list[str] = []
 
-        # 按分支顺序排，而不是按 plan_id 字典序——
-        # 字典序会得到「中式、现代、北欧」这种与请求顺序无关的排列。
-        plans.sort(key=lambda p: (p.get("plan_index", 99), p.get("plan_id") or ""))
+        for spec in specs:
+            plan_id = spec["plan_id"]
+            bundle = bundles.get(plan_id) or {}
+            space_plan = bundle.get("space_plan")
+            budget = bundle.get("budget")
 
-        expected = len(build_branch_specs(state))
+            if not space_plan and not budget:
+                empty_branches.append(plan_id)
+                continue
+
+            plans.append({
+                "plan_id": plan_id,
+                "plan_index": spec["index"],
+                "style": spec["style"],
+                "budget_grade": spec["budget_grade"],
+                "space_plan": space_plan,
+                "budget": budget,
+                "missing_artifacts": [
+                    key for key in BRANCH_ARTIFACTS if not bundle.get(key)
+                ],
+            })
+
+        expected = len(specs)
         got = len(plans)
 
         notes: list[str] = []
         if got < expected:
             notes.append(
                 f"请求生成 {expected} 套方案，实际产出 {got} 套"
-                + (f"（未产出：{'、'.join(broken)}）" if broken else "")
+                + (f"（完全无产出：{'、'.join(empty_branches)}）" if empty_branches else "")
                 + "，可能是个别分支失败或超时"
+            )
+        partial = [p["plan_id"] for p in plans if p["missing_artifacts"]]
+        if partial:
+            notes.append(
+                f"有 {len(partial)} 套方案只产出了部分内容"
+                f"（{'、'.join(partial)}），缺失项见各行 missing_artifacts"
             )
 
         comparison: dict[str, Any] = {
@@ -439,17 +520,19 @@ def build_graph(*, checkpointer: Any = None, with_checkpointer: bool = True):
         {"diagnose": "diagnose_layout", "end": END},
     )
 
-    # ⚡ fan-out 点：返回 list[Send] 时 LangGraph 并发执行三个 generate_plan
-    # 实例；返回 "end" 时正常结束。两种返回类型混用是允许的。
+    # ⚡ fan-out 点：返回 list[Send] 时 LangGraph 并发执行 N×M 个分支任务；
+    # 返回 "end" 时正常结束。两种返回类型混用是允许的。
     builder.add_conditional_edges(
         "diagnose_layout",
         _route_after_diagnosis,
         {"end": END},
     )
 
-    # ⚡ fan-in 点：三个分支都指向 aggregate_plans，LangGraph 自动等待
-    # 全部完成（或全部失败）后才执行它。
-    builder.add_edge("generate_plan", "aggregate_plans")
+    # ⚡ fan-in 点：分支内的每个 Agent 都指向 aggregate_plans，
+    # LangGraph 自动等待**全部**完成（或全部失败）后才执行它。
+    # 加新分支 Agent 时，除了 _AGENTS 与 _BRANCH_NODES，这里也要补一条边。
+    for node in _BRANCH_NODES:
+        builder.add_edge(node, "aggregate_plans")
     builder.add_edge("aggregate_plans", END)
 
     if not with_checkpointer:
@@ -474,4 +557,5 @@ __all__ = [
     "build_graph", "get_compiled_graph", "get_agent", "NODES",
     "build_branch_specs", "aggregate_plans",
     "DEFAULT_BRANCH_PAIRS", "MAX_PLAN_BRANCHES", "MIN_PLANS_FOR_COMPARISON",
+    "BRANCH_ARTIFACTS",
 ]

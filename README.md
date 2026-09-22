@@ -37,17 +37,19 @@
 
 - ✅ 多模态户型图解析（A-01）—— 真实调用 DeepSeek，输出结构化 JSON
 - ✅ 户型诊断（A-02）—— 采光/通风/动线/利用率/环保五维评分
-- ✅ **空间规划 + 三路并发 fan-out**（A-03）—— 3 套方案并发生成，实测 19.4s 出 3 套
+- ✅ 空间规划（A-03）—— 功能分区 / 动线优化 / 收纳设计，幻觉房间由代码剔除
+- ✅ **预算造价（A-04）—— 规则引擎算钱，LLM 只管文字**（ADR-07）
+- ✅ **fan-out / fan-in** —— 3 套方案 × 2 个 Agent = 6 个并发任务
 - ✅ 三级降级链 —— DeepSeek → 本地 Ollama，断网自动切换（已实测）
 - ✅ 本地隐私模式 —— `prefer_local=true` 时图像不出本机（**抓包验证**）
 - ✅ 业务连续性守卫 —— 数据不达标时禁止触发下游操作，拒绝时说明缺什么
 - ✅ MCP Server —— `parse_house_layout` 可被外部 MCP 客户端调用
 - ✅ **AI 出图基准跑通** —— SD1.5 + ControlNet @512，连续 10/10 张不 OOM
-- ✅ **218 个自动化测试全绿**（14.8s，全程不联网）
+- ✅ **311 个自动化测试全绿**（15.4s，全程不联网）
 
 **未开始**
 
-- ⬜ 分支内其余 Agent：预算（规则引擎）/ 材料 / 避坑（M3）
+- ⬜ 分支内其余 Agent：材料选型 / 避坑审查（M3）
 - ⬜ FastAPI 接口层（目前只有 LangGraph 图，可 `scripts/e2e_smoke.py` 直跑）
 - ⬜ 矢量图渲染与热区（M5）
 - ⬜ 前端（Vue3，M2 起）
@@ -55,12 +57,26 @@
 ### 真实链路一次完整跑通（`scripts/e2e_smoke.py`）
 
 ```
-A-01 解析   15.7s   3 房间 / 2 窗 / 3 门 / 3 段墙 / 45.9㎡
-A-02 诊断   18.1s   综合 5.5   通风·动线·环保 标记为「数据不足」
-A-03 规划   19.4s   3 套方案并发（分支 max 19.3s，sum 52.1s → 比值 1.00×）
-fan-in       ~0s    对比表可用，3/3 套，房间对齐无误、无幻觉房间
-总墙钟      53.2s
+A-01 解析     15.7s   4 房间 / 2 窗 / 3 门 / 45.9㎡
+A-02 诊断     18.1s   综合 4.3   通风·环保 标记为「数据不足」
+  ↓ fan-out：6 个任务并发
+A-03 规划     19.3s   [15763, 14929, 19283]ms   3 套方案
+A-04 预算     10.3s   [10327,  8763, 10016]ms   3 份预算（规则引擎）
+fan-in         ~0s    对比表 3/3 可用
+总墙钟        58.8s   fan-out 阶段 19.3s，比值 1.00× 于最慢任务
 ```
+
+**三套方案的预算**（89㎡ 合成户型，全部由规则引擎算出）：
+
+| 方案 | 档位 | 总价区间 | 折合单价 |
+|---|---|---|---|
+| plan_modern_economy | 经济 | ¥37,982 – 53,684 | 828–1170 元/㎡ |
+| plan_nordic_medium | 中档 | ¥69,028 – 91,213 | 1504–1987 元/㎡ |
+| plan_chinese_high | 高端 | ¥117,002 – 159,802 | 2549–3482 元/㎡ |
+
+> **A-04 完全躲在 A-03 的影子里**（最慢 10.3s vs 19.3s），
+> 所以加上一整个 Agent 之后，fan-out 阶段仍是 19.3s —— **墙钟零增长**。
+> 这是并行 fan-out 的直接回报。
 
 ### M0 出图基准实测结果
 
@@ -156,18 +172,29 @@ parse_layout        A-01 多模态解析（质量预检 + 能力匹配降级）
   │  条件路由：无数据 / 降级 => 短路 END
 diagnose_layout     A-02 五维诊断
   │  条件路由：不支撑方案生成 => 短路 END
-  ├──────────────┬──────────────┐          fan-out（Send）
-generate_plan  generate_plan  generate_plan   A-03 ×3，同节点并发三实例
-(现代+经济)     (北欧+中档)     (中式+高端)
-  └──────────────┴──────────────┘
-  │                                          fan-in
+  │
+  │  fan-out（Send）：3 套方案 × 2 个分支 Agent = 6 个并发任务
+  │
+  ├─ plan_modern_economy ─┬─ generate_plan   A-03 空间规划
+  │                       └─ estimate_budget A-04 预算（规则引擎）
+  ├─ plan_nordic_medium ──┬─ generate_plan
+  │                       └─ estimate_budget
+  └─ plan_chinese_high ───┬─ generate_plan
+                          └─ estimate_budget
+  │
+  │  fan-in：按 plan_id 汇聚（深合并 reducer）
+  │
 aggregate_plans     三方案汇总 + 对比表（纯代码，无 LLM）
   │
  END
 ```
 
-分支内的其余 Agent（A-04 预算 / A-05 材料 / A-06 避坑）在此骨架上增量添加。
-图像与热区节点位于 **fan-in 之后**，不在并行分支内 —— 3 路并发调图会打爆显存。
+**分支内各 Agent 互相独立**：A-03 失败不影响 A-04，反之亦然。
+fan-in 按分支规格列出方案，缺哪个产物写进 `missing_artifacts`。
+
+分支内的其余 Agent（A-05 材料 / A-06 避坑）在此骨架上增量添加 ——
+登记 `_AGENTS` + `_BRANCH_NODES` + `BRANCH_ARTIFACTS` 三处即可。
+图像与热区节点位于 **fan-in 之后**，不在并行分支内 —— 6 路并发调图会打爆显存。
 
 **关键设计：能力匹配的降级链**
 
@@ -220,17 +247,20 @@ backend/app/
   agents/      base.py  layout_parser.py         ← A-01
                layout_diagnoser.py                ← A-02
                space_planner.py                   ← A-03（fan-out 分支内）
-  schemas/     layout.py  plan.py
+               budget_agent.py                    ← A-04（fan-out 分支内）
+  schemas/     layout.py  plan.py  budget.py
   graph/       state.py  workflow.py              ← fan-out / fan-in 编排
   services/
     image/     base.py  local_sd15.py             ← 出图 Provider（M0 已验证）
+    budget/    engine.py                          ← 预算规则引擎（纯函数，零 LLM 依赖）
+seed_data/     pricing_demo.json                  ← 价格表（演示数据，文件内已声明）
 mcp_servers/   parse_house_layout.py
 scripts/       e2e_smoke.py      真实链路端到端（会花钱，慎跑）
                bench_image.py     M0 出图基准（放行门槛）
                warmup.py          演示前预热（必须，避免 40s 冷启动）
                download_models.py / fetch_sd15_files.py
 skills/        Skill 文档（Agent 的 System Prompt + 边界定义）
-tests/         218 个测试（conftest.py 有网络绊线，禁止测试打真实 API）
+tests/         311 个测试（conftest.py 有网络绊线，禁止测试打真实 API）
 docs/          非代码文档（与功能文件分开存放）
   需求/         需求文档.md          2400+ 行需求与决策记录（含 4 轮修订说明）
   参考/         开源项目链接.md       开源项目逐条核实清单

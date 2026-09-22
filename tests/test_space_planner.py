@@ -215,6 +215,14 @@ class TestRoomAlignment:
         assert any("未获功能安排" in g for g in plan["data_gaps"])
 
     def test_重复安排同一房间只保留一次(self):
+        """
+        重复与幻觉是**两类问题**，必须分开记。
+
+        实测踩过：模型对同一间卧室同时输出了「卧室」和「主卧室」，
+        两者都归一到「卧室」。若把重复也塞进 invented_rooms，
+        对外就会宣称"模型编了一个户型里不存在的房间"——而那个房间明明存在。
+        **报错误的原因，比报错本身更糟。**
+        """
         llm = _FakeLLM(_response(zones=[
             {"room_name": "客厅", "function": "起居", "rationale": "a", "furniture": []},
             {"room_name": "客厅", "function": "书房", "rationale": "b", "furniture": []},
@@ -223,7 +231,37 @@ class TestRoomAlignment:
         plan = _plan(_run(llm))
 
         assert [z["room_name"] for z in plan["zones"]] == ["客厅", "主卧"]
-        assert any("重复安排" in r for r in plan["invented_rooms"])
+        assert plan["duplicate_zones"] == ["客厅"]
+        assert plan["invented_rooms"] == [], "重复不算幻觉"
+
+    def test_表述差异导致的重复也归为重复(self):
+        """
+        真实链路里出现过的一种情况（合成户型图的 A-01 产出就是这些名字）：
+        户型里叫「卧室」，模型同时写了「卧室」与「主卧室」，
+        归一后是同一个房间 —— 属于重复，不是幻觉。
+        """
+        layout = {
+            **LAYOUT,
+            "rooms": [
+                {"name": "客厅", "type": "living_room", "area": 22.8, "orientation": "south"},
+                {"name": "卧室", "type": "bedroom", "area": 13.7, "orientation": "south"},
+                {"name": "次卧", "type": "bedroom", "area": 9.1, "orientation": "north"},
+            ],
+        }
+        llm = _FakeLLM(_response(zones=[
+            {"room_name": "客厅", "function": "起居", "rationale": "a", "furniture": []},
+            {"room_name": "卧室", "function": "睡眠", "rationale": "b", "furniture": []},
+            {"room_name": "主卧室", "function": "睡眠+收纳", "rationale": "c", "furniture": []},
+            {"room_name": "次卧", "function": "单人房", "rationale": "d", "furniture": []},
+        ]))
+        plan = _plan(_run(llm, layout=layout))
+
+        assert [z["room_name"] for z in plan["zones"]] == ["客厅", "卧室", "次卧"]
+        assert plan["duplicate_zones"] == ["主卧室"]
+        assert plan["invented_rooms"] == [], "表述差异不算幻觉"
+        assert any("重复安排" in g for g in plan["data_gaps"])
+        # 不能谎称"输出了户型中不存在的房间"
+        assert not any("不存在的房间" in g for g in plan["data_gaps"])
 
     def test_房间名被规范成户型里的原名(self):
         """
