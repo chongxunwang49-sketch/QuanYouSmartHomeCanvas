@@ -333,36 +333,10 @@ class TestLayoutParserAgent:
 # ══════════════════════════════════════════════════════════════════
 
 
-# 说明：提供方选择（隐私 / 降级）的测试已移至 tests/test_llm_client.py。
-# 那些断言必须打在 LLMClient 层——Agent 层的 Fake 客户端看不见 provider。
-
-
-# ══════════════════════════════════════════════════════════════════
-# 工作流
-# ══════════════════════════════════════════════════════════════════
-
-
-class TestWorkflow:
-    def test_graph_compiles_and_runs(self, monkeypatch):
-        """编译图结构并跑一次（用假 LLM 替换真实 Agent）。"""
-        from backend.app.graph import workflow
-
-        fake = _FakeLLM([{
-            "rooms": [{"name": "客厅", "type": "living_room", "area": 28.5}],
-            "confidence": 0.9, "total_area": 90.0,
-        }])
-        monkeypatch.setitem(workflow._AGENTS, "parse_layout", LayoutParserAgent(llm=fake))
-
-        graph = workflow.build_graph(with_checkpointer=False)
-        # ⚠️ 必须用 ainvoke：LangGraph 的节点级 timeout 仅对异步节点生效，
-        #    同步 invoke() 会抛 "Node timeouts are only supported for async nodes"。
-        #    生产路径（FastAPI）本就是全异步，此处保持一致。
-        out = asyncio.run(graph.ainvoke(_state()))
-
-        assert out["layout"]["rooms"][0]["name"] == "客厅"
-        assert out["layout_id"].startswith("layout_")
-        assert len(out["trace"]) == 1
-        assert out["trace"][0]["agent"] == "A-01"
+# 说明：
+#  - 提供方选择（隐私 / 降级）的测试在 tests/test_llm_client.py
+#    那些断言必须打在 LLMClient 层——Agent 层的 Fake 客户端看不见 provider。
+#  - 工作流（解析 → 诊断）的测试在 tests/test_workflow.py
 
 
 # ══════════════════════════════════════════════════════════════════

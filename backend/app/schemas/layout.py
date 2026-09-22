@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 RoomType = Literal[
     "living_room", "bedroom", "kitchen", "bathroom", "balcony",
@@ -73,11 +73,43 @@ class Dimension(BaseModel):
 
 
 class DiagnosisItem(BaseModel):
-    """单个诊断维度的结果。"""
+    """
+    单个诊断维度的结果。
 
-    score: float = Field(ge=0.0, le=10.0, description="该维度评分，0 到 10 分")
+    ⚠️ `insufficient_data` 是本 Schema 最重要的字段。
+    诊断依赖具体数据：采光看窗户、利用率看面积。某项数据缺失时，
+    **一个编造的"采光 7.5 分"比"无法评估"糟糕得多**——用户会拿它当依据。
+
+    因此允许维度显式声明"数据不足"，而不是被迫给一个假分数填位。
+    这与 ADR-07（预算必须由规则引擎算）是同一个原则：
+    凡是会产出「看起来合理的错误数字」的地方，都必须留出"不知道"的出口。
+    """
+
+    score: float = Field(
+        default=0.0, ge=0.0, le=10.0,
+        description="该维度评分 0-10；insufficient_data 为 true 时必须填 0",
+    )
+    insufficient_data: bool = Field(
+        default=False,
+        description=(
+            "该维度是否因数据不足而无法评估。"
+            "为 true 时 score 必须为 0，且 issues 中要写明缺什么数据"
+        ),
+    )
     issues: list[str] = Field(default_factory=list, description="发现的问题列表，无问题则为空数组")
     suggestions: list[str] = Field(default_factory=list, description="改进建议列表")
+
+    @model_validator(mode="after")
+    def _insufficient_implies_zero(self):
+        """
+        数据不足时不允许有分数。
+
+        模型偶尔会一边标 insufficient_data=true 一边给个 7 分——
+        那种"既说不知道又给结论"的输出最容易误导人。
+        """
+        if self.insufficient_data and self.score != 0.0:
+            object.__setattr__(self, "score", 0.0)
+        return self
 
 
 class LayoutSchema(BaseModel):
@@ -160,21 +192,51 @@ class DegradedLayout(BaseModel):
 
 
 class LayoutDiagnosis(BaseModel):
-    """A-02 户型诊断结构化输出。五个维度与 API 契约 4.2 一致。"""
+    """
+    A-02 户型诊断结构化输出。
 
-    lighting: DiagnosisItem = Field(description="采光诊断")
-    ventilation: DiagnosisItem = Field(description="通风诊断")
-    circulation: DiagnosisItem = Field(description="动线诊断")
-    space_utilization: DiagnosisItem = Field(description="空间利用率诊断")
-    green_score: DiagnosisItem = Field(description="绿色环保诊断")
+    五个维度与 API 契约 4.2 中的 `diagnosis` 字段一一对应。
 
-    overall_score: float = Field(default=0.0, ge=0.0, le=10.0, description="综合评分")
-    summary: str = Field(default="", description="整体评价，2-4 句话")
+    ⚠️ **诊断与解析的本质区别**：解析是"提取图中已有的信息"，诊断是"基于信息做推理"。
+    推理允许有观点，但**不允许凭空造依据**——评分必须能说清是基于哪条数据得出的。
+    因此 `data_gaps` 是必填项：缺什么数据、因此哪个维度不可靠，都要如实写出来。
+    """
+
+    lighting: DiagnosisItem = Field(description="采光诊断：依据窗户数量、朝向与开窗面积")
+    ventilation: DiagnosisItem = Field(description="通风诊断：依据朝向与是否存在对流通风条件")
+    circulation: DiagnosisItem = Field(description="动线诊断：依据房间相邻关系与入户到各功能区路径")
+    space_utilization: DiagnosisItem = Field(
+        description="空间利用率：依据各房间面积占比与走廊/过道占比",
+    )
+    green_score: DiagnosisItem = Field(
+        description="绿色环保：依据户型本身的采光通风条件与建材用量估算",
+    )
+
+    overall_score: float = Field(
+        default=0.0, ge=0.0, le=10.0, description="综合评分，应为各维度加权而非简单平均",
+    )
+    summary: str = Field(default="", description="整体评价，2-4 句话，面向业主而非设计师")
+    highlights: list[str] = Field(
+        default_factory=list, description="该户型的优点，1-3 条；没有明显优点则留空",
+    )
     load_bearing_warning: list[str] = Field(
         default_factory=list,
-        description="涉及承重墙的风险提示，必须提醒用户由专业人员现场复核",
+        description=(
+            "涉及承重墙的风险提示。**识别到承重墙时必须非空**，"
+            "且必须包含「由专业人员现场复核」的表述"
+        ),
     )
-    confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="诊断置信度")
+    data_gaps: list[str] = Field(
+        default_factory=list,
+        description=(
+            "本次诊断中数据不足或推断成分较大的地方，必须如实列出，"
+            "例如「图中未标注窗宽，采光评分基于窗洞数量估算」"
+        ),
+    )
+    confidence: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="诊断置信度。输入数据越完整、推断成分越少，分数越高",
+    )
 
 
 __all__ = [

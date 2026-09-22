@@ -45,9 +45,12 @@ Operation = Literal[
 
 #: 每个操作的数据前置条件：字段路径 -> 人类可读的名称
 _REQUIREMENTS: dict[str, dict[str, str]] = {
+    # 诊断的最低门槛是「有房间 + 有面积」——这是动线与空间利用率的基础。
+    # 窗户**刻意不列为必需**：没有窗户数据时，采光/通风两个维度会被
+    # A-02 标记为 insufficient_data（见 DiagnosisItem），其余三个维度照常评估。
+    # 整个拒掉会丢掉本可给出的动线/利用率分析，粒度太粗。
     "diagnose": {
         "rooms": "房间信息",
-        "windows": "门窗位置",
         "has_area": "房间面积",
     },
     "generate_plan": {
