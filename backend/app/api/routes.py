@@ -57,7 +57,7 @@ async def parse_layout(req: ParseRequest, request: Request) -> ApiResponse:
     """
     提交户型图解析。**立即返回 task_id**，结果经 `/task/{id}/status` 轮询。
 
-    只跑「解析 → 诊断」这一段（约 40 秒）。方案生成是另一个接口 ——
+    只跑「解析 → 诊断」这一段（实测 33–48 秒）。方案生成是另一个接口 ——
     在这里顺带跑完会多花 90 秒、多调十几次 LLM，而调用方只要那份户型 JSON。
     """
     if not req.image.strip():
@@ -81,7 +81,10 @@ async def parse_layout(req: ParseRequest, request: Request) -> ApiResponse:
         "trace_id": rec.trace_id,
         "status": "processing",
         "poll": f"/api/v1/task/{rec.task_id}/status",
-        # 前端据此设计轮询节奏（2.2.4）；给个参考值省得它自己猜
+        # 前端据此设计轮询节奏（2.2.4）；给个参考值省得它自己猜。
+        # ⚠️ 这是**实测区间** 33–48s 的中位估计，不是承诺值 ——
+        # 两次真实解析分别是 33s 与 48s，差异来自模型侧延迟波动。
+        # 轮询策略仍要按 2.2.4 的 2 秒节奏走，前端不能依赖这个数。
         "estimated_seconds": 40,
     })
 
@@ -145,6 +148,9 @@ async def design_generate(req: GenerateRequest, request: Request) -> ApiResponse
         "status": "processing",
         "poll": f"/api/v1/task/{rec.task_id}/status",
         "plan_count": min(len(req.styles), len(req.budget_grades)),
+        # ⚠️ 需求文档 4.3 的示例写的是 45 秒，那是**实现前**的估计。
+        # 实测整条链 110s / generate 段约 95s，这里按实测给。
+        # 文档不改（它是决策记录），差异在此标注。
         "estimated_seconds": 100,
     })
 
@@ -181,7 +187,7 @@ async def avoid_pit_review(req: ReviewRequest, request: Request) -> ApiResponse:
         "trace_id": rec.trace_id,
         "status": "processing",
         "poll": f"/api/v1/task/{rec.task_id}/status",
-        "estimated_seconds": 25,
+        "estimated_seconds": 25,   # 单次 A-06 实测约 19s（REVIEW_TIMEOUT 45s 为上限）
     })
 
 

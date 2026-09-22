@@ -161,9 +161,9 @@ $PY -m mcp_servers.parse_house_layout
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/v1/layout/parse` | 户型解析（异步，约 35s） |
-| POST | `/api/v1/design/generate` | 方案生成（异步，约 100s） |
-| POST | `/api/v1/avoid-pit/review` | 报价单/合同审查（异步，约 20s） |
+| POST | `/api/v1/layout/parse` | 户型解析（异步，实测 33–48s） |
+| POST | `/api/v1/design/generate` | 方案生成（异步，实测 ~100s） |
+| POST | `/api/v1/avoid-pit/review` | 报价单/合同审查（异步，实测 ~19s） |
 | GET | `/api/v1/task/{task_id}/status` | 任务状态轮询 |
 | GET | `/api/v1/material/price` | 材料价格（同步） |
 | GET | `/api/v1/system/health` | 健康检查 |
