@@ -81,3 +81,33 @@ class TestMeasuredConstraints:
         # 无 DashScope key；且云端出图与隐私条款冲突
         assert settings.IMAGE_PROVIDER in ("vector", "local_sd15"), \
             "图像生成只允许本地实现，不存在云端兜底"
+
+
+class TestSd15TunedDefaults:
+    """
+    把 M0 出图基准调出来的参数固化，防止被无意改回。
+
+    完整依据见 ADR-01「V2.3 最终结论」与 scripts/bench_image.py 的实测报告。
+    """
+
+    def test_lcm_disabled_by_default(self):
+        # 实测：LCM-LoRA 跨种子极不稳定（seed=7 出 3D 图、seed=42 出噪声图）。
+        # 演示不能赌运气，故默认关闭，走标准采样。
+        assert settings.SD15_USE_LCM is False
+
+    def test_steps_adequate_for_standard_sampler(self):
+        # 标准采样下 6-10 步不够；实测 20 步 / CFG 7.0 稳定
+        assert settings.SD15_STEPS >= 20
+
+    def test_guidance_high_enough(self):
+        # LCM 时代用的 1.0-2.5 在标准采样下会让画面发散
+        assert settings.SD15_GUIDANCE >= 5.0
+
+    def test_offload_enabled(self):
+        # 实测：模型级 offload 既省 3GB 显存又更快（6.58s → 5.33s）
+        assert settings.SD15_OFFLOAD_MODE in ("model", "sequential"), \
+            "全量上卡会让显存撑满到 4.0GB、空闲 0.00GB"
+
+    def test_controlnet_scale_not_full(self):
+        # 1.0 会强制逐像素复刻 conditioning 图，输出退化成带纹理的平面图
+        assert settings.SD15_CONTROLNET_SCALE <= 0.7

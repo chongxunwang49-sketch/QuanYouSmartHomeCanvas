@@ -121,9 +121,25 @@ class Settings(BaseSettings):
     SD15_CONTROLNET_PATH: Path = Path("E:/quanyou/models/controlnet_sd15_canny")
     SD15_LCM_LORA_PATH: Path = Path("E:/quanyou/models/lcm-lora-sdv15")
     SD15_IMAGE_SIZE: int = 512          # 768 会溢出 3.5GB 可用显存
-    SD15_STEPS: int = 6                 # LCM-LoRA 4-8 步
-    SD15_GUIDANCE: float = 1.0          # LCM 需低 CFG
+    # ⚠️ 以下默认值来自 2026-09-22 的画质消融实验，**不是照抄教程**。
+    #    完整结论见 ADR-01「V2.3 任务范围与采样器修正」。核心三条：
+    #    1. LCM-LoRA 默认关闭——它把出图从 13s 降到 7s，但**跨种子极不稳定**
+    #       （同一提示词，seed=7 出 3D 等轴测、seed=42 退化成平面噪声图）。
+    #       演示不能靠运气。标准采样 13.4s，仍在 25s 目标内。
+    #    2. CFG 必须是 7.0 而不是 LCM 时代的 1.0/2.5——低 CFG 下画面会发散。
+    #    3. ControlNet scale 0.5，1.0 会强制逐像素复刻 conditioning 图。
+    SD15_USE_LCM: bool = False
+    SD15_STEPS: int = 20                # LCM 下的 6-10 步在标准采样下不够
+    SD15_GUIDANCE: float = 7.0          # 标准 SD1.5 的惯用值
+    SD15_CONTROLNET_SCALE: float = 0.5
     IMAGE_SERIAL_LOCK: bool = True      # 全局串行锁，禁止并发调图（否则 OOM）
+
+    # ⚠️ 实测（2026-09-22 bench_image.py）：offload 模式是显存与速度的**双赢**
+    #     none（全量上卡）: 加载后占用 3.63GB，出图峰值 4.00GB / 空闲 0.00GB，6.58s
+    #     model（模型级offload）: 加载后 0.82GB，出图峰值 0.91GB / 空闲 3.09GB，5.33s
+    # 全量上卡时显存压力 100%，分配器颠簸反而更慢；offload 后压力低、跑得更顺。
+    # 这推翻了 ADR-01 原假设「offload 会把单图拖到分钟级」——对 SD1.5@512 几乎零代价。
+    SD15_OFFLOAD_MODE: Literal["model", "sequential", "none"] = "model"
 
     # AI 图上的热区 —— ⚠️ 默认关闭（ADR-10）
     # ControlNet 不保证几何精确对齐，而 conditioning 边缘图与生成图 Canny 边缘图

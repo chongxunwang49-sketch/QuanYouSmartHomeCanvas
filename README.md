@@ -17,7 +17,10 @@
 
 | 曾计划 | 实测结论 | 改为 |
 |---|---|---|
-| 本地 SDXL + ControlNet | 底模 fp16 6.9GB，本机可用显存仅 **3.22GB** | SD1.5 + LCM-LoRA + **矢量图常驻兜底** |
+| 本地 SDXL + ControlNet | 底模 fp16 6.9GB，本机可用显存仅 **3.22GB** | SD1.5 + ControlNet + **矢量图常驻兜底** |
+| ~~用 SD1.5 生成「室内效果图」~~ | **任务错配**——输入是俯视平面图，输出只能是灰块或噪声 | 交付物重新定义为「**3D 户型渲染图**」，实测 0.97GB / 12.2s |
+| ~~LCM-LoRA 4–8 步加速~~ | **跨种子极不稳定**：同一提示词 seed=7 出 3D 图、seed=42 出噪声图 | **默认关闭**，改标准采样 20 步。用 4.5s 换确定性 |
+| ~~`offload` 会把出图拖到分钟级~~ | 实测**既省 3GB 显存又更快**（6.58s → 5.33s），全量上卡时分配器在颠簸 | `enable_model_cpu_offload()` 设为默认 |
 | Qwen3-VL 主 → DeepSeek 备 | 本机**无 DashScope key**；实测 DeepSeek 可读图 | **主备对调** |
 | YOLOv8 检测生成图物品 | **COCO 80 类里没有地板、墙纸、空调** | 户型 JSON 坐标映射（零检测模型） |
 | Docker 6 服务全部 Healthy | Docker VM 上限 **7.63GB**，本机已有多条 `exit(137)` OOM 记录 | **4 容器** + Chroma 内嵌 + Ollama 走宿主机 |
@@ -37,6 +40,7 @@
 - ✅ 本地隐私模式 —— `prefer_local=true` 时图像不出本机（**抓包验证**）
 - ✅ 业务连续性守卫 —— 降级结果禁止触发预算/方案/诊断，后端 400 拦截
 - ✅ MCP Server —— `parse_house_layout` 可被外部 MCP 客户端调用
+- ✅ **AI 出图基准跑通** —— SD1.5 + ControlNet @512，连续 10/10 张不 OOM
 - ✅ **66 个自动化测试全绿**
 
 **未开始**
@@ -44,7 +48,21 @@
 - ⬜ 户型诊断、多 Agent 方案生成（M2–M3）
 - ⬜ 矢量图渲染与热区（M5）
 - ⬜ 前端（Vue3，M2 起）
-- ⚠️ AI 效果图 —— **待 M0 基准实测决定是否纳入**（见下文「已知限制」）
+
+### M0 出图基准实测结果
+
+```
+级别：L0（期望状态，无需任何降级）
+连续 10/10 张不 OOM
+峰值显存 0.968GB   ← 阈值 3.2GB，用不到三成
+均耗时   12.23s    ← P95 目标 25s，不到一半
+```
+
+**输出的是「3D 等轴测户型渲染图」，不是「装修效果图」。** 这个措辞差别必须守住——
+输入是俯视平面图，让人眼视角实景从平面图里长出来是研究级任务，本机做不到；
+而把平面"立起来"做 3D 渲染正是 SD1.5 擅长的。
+
+复现：`python scripts/bench_image.py`，报告落在 `E:/quanyou/outputs/bench/bench_report.json`。
 
 ---
 
@@ -162,15 +180,21 @@ calc_budget(area=0)  →  {"total": 0, "breakdown": {...}}   # 不报错，但�
 
 ```
 backend/app/
-  core/       config.py  llm_client.py  mcp_client.py
-              capabilities.py  logging_setup.py
-  agents/     base.py  layout_parser.py          ← A-01
-  schemas/    layout.py
-  graph/      state.py  workflow.py
-mcp_servers/  parse_house_layout.py
-skills/       Skill 文档（Agent 的 System Prompt + 边界定义）
-tests/        66 个测试
-需求文档.md     2350+ 行完整需求与决策记录
+  core/        config.py  llm_client.py  mcp_client.py
+               capabilities.py  logging_setup.py
+  agents/      base.py  layout_parser.py         ← A-01
+  schemas/     layout.py
+  graph/       state.py  workflow.py
+  services/
+    image/     base.py  local_sd15.py            ← 出图 Provider（M0 已验证）
+mcp_servers/   parse_house_layout.py
+scripts/       bench_image.py     M0 出图基准（放行门槛）
+               bench_vision.py    解析基准
+               warmup.py          演示前预热（必须，避免 40s 冷启动）
+               download_models.py / fetch_sd15_files.py
+skills/        Skill 文档（Agent 的 System Prompt + 边界定义）
+tests/         71 个测试
+需求文档.md     2400+ 行完整需求与决策记录（含 4 轮修订）
 开源项目链接.md  开源项目逐条核实清单
 ```
 
@@ -182,11 +206,12 @@ tests/        66 个测试
 
 | 限制 | 原因 | 处理 |
 |---|---|---|
-| AI 效果图可能不上线 | 显存余量极紧，需 M0 基准实测决定 | 矢量图兜底可 100% 覆盖 AC-07 |
-| AI 图默认无热区 | IoU 指标未经标定，可能无法判别 | 热区全部走矢量图，AI 图仅风格示意 |
+| **只做 3D 户型渲染图，不做室内实景效果图** | 输入是俯视平面图，转人眼视角是任务错配，实测失败 | 交付物定义收窄；UI/文档措辞统一（AC-39） |
+| AI 图默认无热区 | 几何非精确对齐，IoU 指标未经标定 | 热区全部走矢量图，AI 图仅作视觉呈现 |
 | 本地兜底只能读房间名 | 实测小模型结构化能力不足 | 质量闸门 + 能力守卫，不假装完整 |
 | 全友产品为演示数据 | 无公开结构化价格接口 | 显著标注为演示数据，不表述为真实报价 |
 | 户型识别准确率未标定 | 尚无标注测试集 | M2 用 ResPlan 子集构建 |
+| 出图未做批量并发 | 全局串行锁，禁止并发调图 | 单张 12.2s，3 套方案约 37s，在方案生成总时长内可接受 |
 
 ---
 
