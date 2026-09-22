@@ -29,6 +29,8 @@ from backend.app.schemas.budget import BudgetNarrative
 from backend.app.schemas.layout import LayoutDiagnosis, LayoutSchema
 from backend.app.schemas.material import MaterialPlan
 from backend.app.schemas.plan import SpacePlan
+from backend.app.schemas.risk import RiskReview
+from backend.app.agents.risk_reviewer import RiskReviewAgent
 
 # ══════════════════════════════════════════════════════════════════
 # 假 LLM：按请求的 Schema 分派不同响应
@@ -95,6 +97,32 @@ _MATERIAL_BY_GRADE: dict[str, list[str]] = {
 }
 
 
+RISK_PAYLOAD = {
+    "summary": "这份预算存在 5 类风险，最该盯住的是管理费的计费基数。",
+    "findings": [
+        {"risk_type": "计价陷阱", "severity": "high", "title": "管理费计费基数不对",
+         "where": "管理费", "detail": "按含主材的总价计取，主材部分被重复计费。",
+         "suggestion": "要求改为按施工费计取。", "source_ids": ["S1"]},
+        {"risk_type": "合同条款风险", "severity": "high", "title": "水电按实结算无上限",
+         "where": "水电改造", "detail": "只给单价不给总价，实际做完容易大幅超支。",
+         "suggestion": "合同写明单价上限。", "source_ids": ["S1", "S9"]},
+        {"risk_type": "漏项", "severity": "medium", "title": "垃圾清运推给业主",
+         "where": "拆除", "detail": "垃圾外运未计费，实际是拆除的大头。",
+         "suggestion": "要求列入报价。", "source_ids": ["S2"]},
+        {"risk_type": "模糊计量", "severity": "medium", "title": "防水未写遍数与高度",
+         "where": "防水施工", "detail": "规格不清会给后期增项留口子。",
+         "suggestion": "写清遍数与淋浴区高度。", "source_ids": []},
+        {"risk_type": "环保风险", "severity": "low", "title": "定制柜板材等级偏低",
+         "where": "木工", "detail": "标注 E1，而需求是 E0。",
+         "suggestion": "要求升级到 E0。", "source_ids": []},
+    ],
+    "overall_risk": "high",
+    "negotiation_points": ["管理费改按施工费计取", "水电写明单价上限"],
+    "data_gaps": [],
+    "confidence": 0.7,
+}
+
+
 def _material_payload(prompt: str) -> dict:
     """按提示词里的档位，返回该档位下合法的商品选择。"""
     grade = "economy"
@@ -131,11 +159,12 @@ class _DispatchLLM:
 
     def __init__(self, layout: dict | None = None, diagnosis: dict | None = None,
                  space_plan: dict | None = None, narrative: dict | None = None,
-                 fail_layout: bool = False):
+                 risk: dict | None = None, fail_layout: bool = False):
         self.layout = layout if layout is not None else LAYOUT_PAYLOAD
         self.diagnosis = diagnosis if diagnosis is not None else DIAGNOSIS_PAYLOAD
         self.space_plan = space_plan if space_plan is not None else SPACE_PLAN_PAYLOAD
         self.narrative = narrative if narrative is not None else NARRATIVE_PAYLOAD
+        self.risk = risk if risk is not None else RISK_PAYLOAD
         self.fail_layout = fail_layout
         self.seen: list[str] = []
 
@@ -164,6 +193,9 @@ class _DispatchLLM:
             # 这里必须按提示词里的档位给 id —— 见 _material_payload 的说明。
             self.seen.append("A-05")
             return schema.model_validate(_material_payload(kwargs.get("user") or "")), self._res()
+        if schema is RiskReview:
+            self.seen.append("A-06")
+            return schema.model_validate(self.risk), self._res()
         raise AssertionError(f"未预期的 Schema: {schema}")
 
     def _res(self) -> LLMResult:
@@ -183,7 +215,7 @@ def _state(**over) -> dict[str, Any]:
 
 
 @pytest.fixture
-def patched(monkeypatch):
+def patched(stub_knowledge, monkeypatch):
     """
     把**所有**节点换成假 LLM，返回 (llm, graph)。
 
@@ -200,6 +232,7 @@ def patched(monkeypatch):
             ("generate_plan", SpacePlannerAgent),
             ("estimate_budget", BudgetAgent),
             ("select_materials", MaterialAgent),
+            ("review_risks", RiskReviewAgent),
         ):
             monkeypatch.setitem(workflow._AGENTS, node, cls(llm=llm))
         return llm, workflow.build_graph(with_checkpointer=False)
@@ -217,15 +250,23 @@ class TestGraphStructure:
         assert set(workflow._AGENTS) == {
             "parse_layout", "diagnose_layout",
             "generate_plan", "estimate_budget", "select_materials",
+            "review_risks",
         }
 
-    def test_branch_nodes_match_artifacts(self):
+    def test_产出者与审查者分开登记(self):
         """
-        分支节点数与产物键数必须一致 —— 一个分支 Agent 对应一个产物键。
-        这条断言防的是"加了 Agent 却忘了在 BRANCH_ARTIFACTS 登记"，
-        那样 fan-in 会把它的产物当成不存在，静默丢掉。
+        分支里有两类节点：**产出者**（可并行）与**审查者**（必须排在产出之后）。
+        这条断言防的是有人把审查者混进 _BRANCH_PRODUCERS ——
+        那样它会被 Send 并发分派，于是在预算还不存在时就去审查它。
         """
-        assert len(workflow._BRANCH_NODES) == len(workflow.BRANCH_ARTIFACTS)
+        assert workflow._REVIEW_NODE not in workflow._BRANCH_NODES, (
+            "审查节点不能在并行产出者列表里 —— 它必须等产出完成后执行"
+        )
+        assert workflow._REVIEW_NODE in workflow._AGENTS
+        # 产物列表 = 产出者的产物 + 审查者自己的产物
+        assert set(workflow.BRANCH_ARTIFACTS) == {
+            *workflow._BRANCH_PRODUCERS.values(), workflow._REVIEW_ARTIFACT,
+        }
 
     def test_branch_nodes_registered(self):
         for node in workflow._BRANCH_NODES:
@@ -257,13 +298,15 @@ class TestFullFlow:
         # 分支内并发，完成顺序不确定，因此比较次数而不是序列
         for code in ("A-03", "A-04", "A-05"):
             assert llm.seen.count(code) == 3, f"{code} 应被调用 3 次，实际 {llm.seen}"
+        # A-06 是汇聚节点，只跑一次，一次审三套方案
+        assert llm.seen.count("A-06") == 3, f"A-06 每套方案各审一次，实际 {llm.seen}"
 
         assert out["layout"]["rooms"][0]["name"] == "客厅"
         assert out["diagnosis"]["overall_score"] > 0
         assert len(out["plans"]) == 3
         assert out["phase"] == "finalizing"
 
-    def test_每套方案同时含三种产物(self, patched):
+    def test_每套方案同时含四种产物(self, patched):
         """
         三个分支 Agent 并行写同一个 plan_id，三份产物都必须留下来。
         浅合并 reducer 会把先写的那份整个顶掉 —— 详见 state.py 的 _merge_dict。
@@ -275,6 +318,7 @@ class TestFullFlow:
             assert plan["space_plan"] is not None, f"{plan['plan_id']} 缺空间规划"
             assert plan["budget"] is not None, f"{plan['plan_id']} 缺预算"
             assert plan["materials"] is not None, f"{plan['plan_id']} 缺材料"
+            assert plan["risks"] is not None, f"{plan['plan_id']} 缺避坑审查"
             assert plan["missing_artifacts"] == []
 
     def test_全友覆盖率达标(self, patched):
@@ -301,12 +345,12 @@ class TestFullFlow:
             assert bg["disclaimer"], "演示数据声明必须透出"
 
     def test_trace_covers_all_nodes(self, patched):
-        """A-01 + A-02 + (A-03 + A-04 + A-05) × 3 = 11 条 trace。"""
+        """A-01 + A-02 + (A-03+A-04+A-05) × 3 + A-06 × 1 = 12 条 trace。"""
         _, graph = patched()
         out = asyncio.run(graph.ainvoke(_state()))
 
         agents = [t["agent"] for t in out["trace"]]
-        assert len(agents) == 11
+        assert len(agents) == 12
         for code in ("A-03", "A-04", "A-05"):
             assert agents.count(code) == 3
         assert all(t["ok"] for t in out["trace"])
@@ -428,10 +472,17 @@ class TestStateMerge:
         """
         _, graph = patched()
         out = asyncio.run(graph.ainvoke(_state()))
-        assert len(out["trace"]) == 11, "九个分支任务的 trace 与上游两条都应保留"
+        assert len(out["trace"]) == 12, "九个分支任务 + 一次审查 + 上游两条都应保留"
 
-    def test_degrade_reasons_accumulate(self, monkeypatch):
-        """十一个节点全部降级时，十一条原因一条都不能丢。"""
+    def test_degrade_reasons_accumulate(self, stub_knowledge, monkeypatch):
+        """
+        十二个节点全部降级时，十二条原因一条都不能丢。
+
+        ⚠️ 必须打桩知识库。否则 A-06 的检索会失败，多产出**一条"无依据"的原因**
+        （那本身是正确行为），于是这里数出 13 条 —— 而这个测试要测的是
+        "LLM 降级原因会不会丢"，不是"知识库挂了会怎样"。两者混在一起，
+        断言就变得没法解释。
+        """
         llm = _DispatchLLM()
 
         async def degraded_json(schema, **kw):
@@ -448,12 +499,13 @@ class TestStateMerge:
             ("generate_plan", SpacePlannerAgent),
             ("estimate_budget", BudgetAgent),
             ("select_materials", MaterialAgent),
+            ("review_risks", RiskReviewAgent),
         ):
             monkeypatch.setitem(workflow._AGENTS, node, cls(llm=llm))
 
         out = asyncio.run(workflow.build_graph(with_checkpointer=False).ainvoke(_state()))
-        # A-01 + A-02 + (A-03 + A-04 + A-05) × 3
-        assert len(out["degrade_reasons"]) == 11
+        # A-01 + A-02 + (A-03 + A-04 + A-05) × 3 + A-06
+        assert len(out["degrade_reasons"]) == 12
         assert all("降级" in r for r in out["degrade_reasons"])
         # 任一分支降级 => 整体降级（OrBool reducer）
         assert out["degraded"] is True

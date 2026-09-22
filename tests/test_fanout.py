@@ -23,6 +23,7 @@ from backend.app.agents.budget_agent import BudgetAgent
 from backend.app.agents.layout_diagnoser import LayoutDiagnoserAgent
 from backend.app.agents.layout_parser import LayoutParserAgent
 from backend.app.agents.material_agent import MaterialAgent
+from backend.app.agents.risk_reviewer import RiskReviewAgent
 from backend.app.agents.space_planner import SpacePlannerAgent
 from backend.app.core.llm_client import LLMError, LLMResult
 from backend.app.graph import workflow
@@ -31,6 +32,7 @@ from backend.app.schemas.budget import BudgetNarrative
 from backend.app.schemas.layout import LayoutDiagnosis, LayoutSchema
 from backend.app.schemas.material import MaterialPlan
 from backend.app.schemas.plan import SpacePlan
+from backend.app.schemas.risk import RiskReview
 from backend.app.services.material import catalog
 
 # ══════════════════════════════════════════════════════════════════
@@ -89,6 +91,32 @@ NARRATIVE = {
     "warnings": [],
     "confidence": 0.7,
 }
+
+RISK = {
+    "summary": "预算存在 5 类风险。",
+    "findings": [
+        {"risk_type": "计价陷阱", "severity": "high", "title": "管理费基数不对",
+         "where": "管理费", "detail": "按含主材总价计取。",
+         "suggestion": "改按施工费。", "source_ids": ["S1"]},
+        {"risk_type": "合同条款风险", "severity": "high", "title": "水电无上限",
+         "where": "水电", "detail": "只给单价。", "suggestion": "写明上限。",
+         "source_ids": ["S2"]},
+        {"risk_type": "漏项", "severity": "medium", "title": "垃圾清运未计",
+         "where": "拆除", "detail": "推给业主。", "suggestion": "要求列入。",
+         "source_ids": ["S9"]},
+        {"risk_type": "模糊计量", "severity": "medium", "title": "防水规格不清",
+         "where": "防水", "detail": "未写遍数。", "suggestion": "写清。",
+         "source_ids": []},
+        {"risk_type": "环保风险", "severity": "low", "title": "板材等级偏低",
+         "where": "木工", "detail": "E1 而非 E0。", "suggestion": "升级 E0。",
+         "source_ids": []},
+    ],
+    "overall_risk": "high",
+    "negotiation_points": ["管理费改按施工费", "水电写明上限"],
+    "data_gaps": [],
+    "confidence": 0.7,
+}
+
 
 _BRANCH_TOKENS = ("plan_modern_economy", "plan_nordic_medium", "plan_chinese_high")
 
@@ -162,6 +190,7 @@ class _FanoutLLM:
         self.plan_calls: list[str] = []
         self.budget_calls: list[str] = []
         self.material_calls: list[str] = []
+        self.review_calls: list[str] = []
 
     @staticmethod
     def _branch_of(user: str) -> str | None:
@@ -204,6 +233,12 @@ class _FanoutLLM:
                     raise LLMError(f"模拟分支 {token} 的选材失败")
             return schema.model_validate(_material_payload(user)), self._res()
 
+        if schema is RiskReview:
+            # A-06 是汇聚节点：一次审三套方案，每套一次调用。
+            # 提示词里带的是方案正文而非 plan_id，所以这里不去识别分支。
+            self.review_calls.append(user[:0] or "review")
+            return schema.model_validate(RISK), self._res()
+
         raise AssertionError(f"未预期的 Schema: {schema}")
 
     def _res(self) -> LLMResult:
@@ -214,6 +249,40 @@ class _FanoutLLM:
         raise AssertionError("不应走纯文本路径")
 
 
+def _stub_knowledge(monkeypatch):
+    """
+    给知识库检索打桩。
+
+    A-06 是唯一走网络的 Agent（要调 Ollama 算查询向量），
+    而 conftest 的 httpx 绊线会拦住它 —— 不打桩的话，本文件里所有
+    工作流测试都会走"知识库不可用"分支，正常路径反而测不到。
+    """
+    from backend.app.services.knowledge import retriever
+
+    chunks = [
+        retriever.KnowledgeChunk(
+            text="只有单价没有总价的项目，都是为了让合同价看起来低。",
+            source="zhuangxiu-skills/装修报价审核/references/预算陷阱避坑.md",
+            headings="四、装修预算只有单价坑你没商量",
+            doc_type="avoid_pit", tags=["报价审核"], similarity=0.81,
+        ),
+        retriever.KnowledgeChunk(
+            text="定金是付款的担保，具有法律约束力；订金一般视为预付款，可以退。",
+            source="zhuangxiu-skills/装修合同审核/references/定金订金类.md",
+            headings="一、定金和订金的法律区别",
+            doc_type="avoid_pit", tags=["合同"], similarity=0.78,
+        ),
+    ]
+
+    def _stub(queries, **kwargs):   # 接受 top_k_each / doc_type / max_total 等任何参数
+        return retriever.RetrievalResult(
+            query=" | ".join(queries) if isinstance(queries, list) else str(queries),
+            chunks=list(chunks),
+        )
+
+    monkeypatch.setattr(retriever, "search_many", _stub)
+
+
 def _patch_all(monkeypatch, llm):
     for node, cls in (
         ("parse_layout", LayoutParserAgent),
@@ -221,8 +290,10 @@ def _patch_all(monkeypatch, llm):
         ("generate_plan", SpacePlannerAgent),
         ("estimate_budget", BudgetAgent),
         ("select_materials", MaterialAgent),
+        ("review_risks", RiskReviewAgent),
     ):
         monkeypatch.setitem(workflow._AGENTS, node, cls(llm=llm))
+    _stub_knowledge(monkeypatch)
 
 
 def _state(**over) -> dict:
@@ -586,7 +657,7 @@ class TestCrossCuttingUnderConcurrency:
             "plan_modern_economy", "plan_nordic_medium", "plan_chinese_high",
         }
 
-    def test_同一plan_id下三个Agent的产物共存(self, monkeypatch):
+    def test_同一plan_id下四个Agent的产物共存(self, monkeypatch):
         """
         ⚠️ 回归防线 —— 一个曾经静默丢数据的 bug。
 

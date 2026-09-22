@@ -255,12 +255,22 @@ def search(
 
 def search_many(
     queries: list[str], *, top_k_each: int = 3, doc_type: str | None = None,
+    max_total: int | None = None,
 ) -> RetrievalResult:
     """
     多查询检索后合并去重。**A-06 的主用入口。**
 
     一次报价审查要覆盖"增项/漏项/单价异常"等多类风险，一条查询召回不全。
     按主题分别查再合并，比把多个主题塞进一句话查效果更好。
+
+    ⚠️ **`max_total` 必须给。** 实测踩过：A-06 会并发 13 个查询（5 个主题 +
+    8 个从报价单抽出的分项名），每个查询取 3 条，去重后仍有 **26 条**依据 ——
+    是 `top_k` 的 2.6 倍。后果有两个，都很难归因：
+
+      1. 提示词暴涨，模型 24 秒内写不完十几条风险，**直接超时**；
+      2. 依据太多会稀释注意力，模型反而更容易漏掉关键项。
+
+    所以合并后要按相似度截断到 `max_total`。
     """
     merged: dict[str, KnowledgeChunk] = {}
     reasons: list[str] = []
@@ -278,6 +288,9 @@ def search_many(
                 merged[key] = c
 
     ordered = sorted(merged.values(), key=lambda c: -c.similarity)
+    if max_total is not None and len(ordered) > max_total:
+        ordered = ordered[:max_total]
+
     return RetrievalResult(
         query=" | ".join(queries),
         chunks=ordered,

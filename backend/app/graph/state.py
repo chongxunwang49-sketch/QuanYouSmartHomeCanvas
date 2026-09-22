@@ -118,6 +118,13 @@ class HomeDecoState(TypedDict, total=False):
     # InvalidUpdateError。分支内的 Agent 只读不写。
     branch_spec: dict[str, Any]
 
+    # ══ A-06 避坑审查 ═════════════════════════════════════
+    # 待审查的报价单原文。为空时 A-06 走"逐方案审预算"模式；
+    # 非空时走"审这份报价单"模式（对应 4.6 的 /avoid-pit/review）。
+    quote_text: str
+    # 报价单模式的产出。方案模式的产出挂在 plan_bundles[pid]["risks"] 下。
+    risk_review: dict[str, Any] | None
+
     # ══ fan-in 汇总 ═══════════════════════════════════════
     plans: AddList                    # 汇总后的方案列表
     comparison: dict[str, Any] | None
@@ -161,6 +168,8 @@ def initial_state(**overrides: Any) -> HomeDecoState:
         "diagnosis": None,
         "plan_bundles": {},
         "branch_spec": {},
+        "quote_text": "",
+        "risk_review": None,
         "plans": [],
         "comparison": None,
         "final_report": None,

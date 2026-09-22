@@ -69,6 +69,7 @@ from ..agents.budget_agent import BudgetAgent
 from ..agents.layout_diagnoser import LayoutDiagnoserAgent
 from ..agents.layout_parser import LayoutParserAgent
 from ..agents.material_agent import MaterialAgent
+from ..agents.risk_reviewer import RiskReviewAgent
 from ..agents.space_planner import SpacePlannerAgent
 from ..core.capabilities import check_operation
 from ..core.config import settings
@@ -83,17 +84,34 @@ from .state import HomeDecoState
 #: 之前节点名与产物键是两张平行的元组，加第三个 Agent 时我在 aggregate_plans
 #: 里漏了一个硬编码的键，直接 KeyError。改成从一张表派生之后，
 #: 节点列表、产物列表、fan-in 的收集逻辑都跟着这张表走，不会再各漏一处。
-_BRANCH_AGENTS: dict[str, str] = {
+#:
+#: ⚠️ 这里只放**互不依赖、可以并行**的产出者。审查者（A-06）不在其中 ——
+#: 见下面的 _REVIEW_NODE 说明。
+_BRANCH_PRODUCERS: dict[str, str] = {
     "generate_plan": "space_plan",
     "estimate_budget": "budget",
     "select_materials": "materials",
 }
 
-#: 分支内的节点名（派生，勿单独维护）
-_BRANCH_NODES: tuple[str, ...] = tuple(_BRANCH_AGENTS)
+#: ⚡ **审查节点：不是产出者，是汇聚点。**
+#:
+#: A-06 无法与产出者并行 —— **你没法审查一份还不存在的预算**。
+#: 所以它在图上是「三个产出者 → 审查 → fan-in」，而不是第四个并行分支。
+#:
+#: 需求文档 3.3 画的是"4 个 Agent 并行"，那是架构草图；真实的依赖关系是
+#: "审查在产出之后"。这与 ADR-08（图像节点移出并行分支）是同一类修正：
+#: **并行的前提是互不依赖，而不是"看起来可以并行"。**
+#:
+#: 实测确认过 LangGraph 的语义：9 个分派任务全部汇聚到一个节点时，
+#: 该节点只执行一次，且能看到全部合并后的写入。
+_REVIEW_NODE = "review_risks"
+_REVIEW_ARTIFACT = "risks"
 
-#: 分支产物的键名（派生，勿单独维护）
-BRANCH_ARTIFACTS: tuple[str, ...] = tuple(_BRANCH_AGENTS.values())
+#: 分支内的产出者节点名（Send 的目标，派生，勿单独维护）
+_BRANCH_NODES: tuple[str, ...] = tuple(_BRANCH_PRODUCERS)
+
+#: 一套方案的全部产物键：产出者的 + 审查的
+BRANCH_ARTIFACTS: tuple[str, ...] = (*_BRANCH_PRODUCERS.values(), _REVIEW_ARTIFACT)
 
 # ══════════════════════════════════════════════════════════════════
 # 节点注册表
@@ -103,15 +121,18 @@ BRANCH_ARTIFACTS: tuple[str, ...] = tuple(_BRANCH_AGENTS.values())
 _AGENTS: dict[str, Any] = {
     "parse_layout": LayoutParserAgent(),
     "diagnose_layout": LayoutDiagnoserAgent(),
-    # ── 以下三个在 fan-out 分支内并发执行 ──
+    # ── 以下三个在 fan-out 分支内并发执行（产出者）──
     "generate_plan": SpacePlannerAgent(),
     "estimate_budget": BudgetAgent(),
     "select_materials": MaterialAgent(),
+    # ── 审查者：在产出者全部完成之后执行（汇聚节点，非并行分支）──
+    "review_risks": RiskReviewAgent(),
 }
 
 NODES = Literal[
     "parse_layout", "diagnose_layout",
     "generate_plan", "estimate_budget", "select_materials",
+    "review_risks",
 ]
 
 
@@ -341,6 +362,7 @@ def _comparison_row(plan: dict[str, Any]) -> dict[str, Any]:
     sp = plan.get("space_plan") or {}
     bg = plan.get("budget") or {}
     mt = plan.get("materials") or {}
+    rk = plan.get("risks") or {}
 
     return {
         "plan_id": plan.get("plan_id"),
@@ -366,6 +388,11 @@ def _comparison_row(plan: dict[str, Any]) -> dict[str, Any]:
         "material_count": len(mt.get("items") or []),
         "quanyou_coverage": mt.get("quanyou_coverage"),
         "quanyou_met": mt.get("quanyou_met"),
+        # ── 来自 A-06 ──
+        "risk_count": rk.get("finding_count"),
+        "risk_type_count": rk.get("distinct_type_count"),
+        "overall_risk": rk.get("overall_risk"),
+        "risk_ac06_met": rk.get("ac06_met"),
         # ── 数据完整性 ──
         "missing_artifacts": plan.get("missing_artifacts") or [],
     }
@@ -550,11 +577,15 @@ def build_graph(*, checkpointer: Any = None, with_checkpointer: bool = True):
         {"end": END},
     )
 
-    # ⚡ fan-in 点：分支内的每个 Agent 都指向 aggregate_plans，
-    # LangGraph 自动等待**全部**完成（或全部失败）后才执行它。
-    # 加新分支 Agent 时，除了 _AGENTS 与 _BRANCH_NODES，这里也要补一条边。
+    # ⚡ 汇聚点：三个产出者的全部分派任务都指向 review_risks。
+    # LangGraph 会等它们**全部**结束后，把审查节点执行**一次**
+    # （实测确认：9 个任务汇聚，该节点执行 1 次且看到全部合并后的写入）。
     for node in _BRANCH_NODES:
-        builder.add_edge(node, "aggregate_plans")
+        builder.add_edge(node, _REVIEW_NODE)
+
+    # ⚡ fan-in 点：审查完成后再汇总。加新产出者时只需登记 _BRANCH_PRODUCERS，
+    # 这里的两条边都会自动跟上。
+    builder.add_edge(_REVIEW_NODE, "aggregate_plans")
     builder.add_edge("aggregate_plans", END)
 
     if not with_checkpointer:

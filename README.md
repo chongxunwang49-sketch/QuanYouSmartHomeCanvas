@@ -40,45 +40,57 @@
 - ✅ 空间规划（A-03）—— 功能分区 / 动线优化 / 收纳设计，幻觉房间由代码剔除
 - ✅ **预算造价（A-04）—— 规则引擎算钱，LLM 只管文字**（ADR-07）
 - ✅ **材料选型（A-05）—— 模型只能指认候选，价格由代码回填**（AC-18 / AC-21）
-- ✅ **fan-out / fan-in** —— 3 套方案 × 3 个 Agent = 9 个并发任务
+- ✅ **避坑审查（A-06）—— RAG 检索 + 引用必须可溯源**（AC-06，实测召回 93%）
+- ✅ **fan-out / fan-in + 汇聚审查** —— 9 个并发产出任务 + 1 次审查
 - ✅ 三级降级链 —— DeepSeek → 本地 Ollama，断网自动切换（已实测）
 - ✅ 本地隐私模式 —— `prefer_local=true` 时图像不出本机（**抓包验证**）
 - ✅ 业务连续性守卫 —— 数据不达标时禁止触发下游操作，拒绝时说明缺什么
 - ✅ MCP Server —— `parse_house_layout` 可被外部 MCP 客户端调用
 - ✅ **AI 出图基准跑通** —— SD1.5 + ControlNet @512，连续 10/10 张不 OOM
-- ✅ **387 个自动化测试全绿**（16.7s，全程不联网）
+- ✅ **449 个自动化测试全绿**（26s，全程不联网）
 
 **未开始**
 
-- ⬜ 分支内最后一个 Agent：避坑审查（M4，需要 RAG）
 - ⬜ FastAPI 接口层（目前只有 LangGraph 图，可 `scripts/e2e_smoke.py` 直跑）
+- ⬜ 国标语料（GB 50327 / GB 18580 / GB-T 39600 摘要）—— 让合规类结论有法条可引
 - ⬜ 矢量图渲染与热区（M5）
 - ⬜ 前端（Vue3，M2 起）
 
 ### 真实链路一次完整跑通（`scripts/e2e_smoke.py`）
 
 ```
-A-01 解析      15.7s   3 房间 / 2 窗 / 3 门 / 45.9㎡
-A-02 诊断      18.1s   综合 4.3   通风·环保 标记为「数据不足」
-  ↓ fan-out：9 个任务并发
-A-03 规划      15.6s   [13276, 14228, 15572]ms   3 套方案
-A-04 预算      12.8s   [ 8926, 12217, 12788]ms   3 份预算（规则引擎）
-A-05 选材      14.2s   [ 8053, 14228,  7864]ms   3 份选材（代码回填价格）
+A-01 解析       ~16s    3 房间 / 2 窗 / 3 门
+A-02 诊断       ~18s    五维评分，部分维度标记「数据不足」
+  ↓ fan-out：9 个并发任务
+A-03 规划      22.5s   [17684, 16287, 22478]ms   3 套方案
+A-04 预算      11.6s   [11556,  9504,  8778]ms   3 份预算（规则引擎）
+A-05 选材      12.4s   [ 8339, 12405,  8407]ms   3 份选材（代码回填价格）
+  ↓ 汇聚
+A-06 避坑      38.8s   1 次审查 × 3 套方案（**串行，无影子可躲**）
 fan-in          ~0s    对比表 3/3 可用
-总墙钟         59.8s   fan-out 阶段 15.6s，比值 1.00× 于最慢任务
+总墙钟         111.3s
 ```
 
-**三套方案的预算与选材**（45.9㎡ 合成户型）：
+> ⚠️ **A-06 是唯一拖慢墙钟的 Agent。** A-03/A-04/A-05 互相并行，
+> 新加一个只要不慢过最慢的那个就"零成本"；但 A-06 是**汇聚节点** ——
+> 审查必须在产出之后，它的 38.8s 直接加到总时间上。
+> 这是"依赖关系决定架构"的代价，也是下一步最值得优化的地方。
 
-| 方案 | 档位 | 总价区间 | 折合单价 | 全友覆盖率 |
-|---|---|---|---|---|
-| plan_modern_economy | 经济 | ¥37,982 – 53,684 | 828–1170 元/㎡ | 100% ✅ |
-| plan_nordic_medium | 中档 | ¥69,028 – 91,213 | 1504–1987 元/㎡ | 100% ✅ |
-| plan_chinese_high | 高端 | ¥117,002 – 159,802 | 2549–3482 元/㎡ | 100% ✅ |
+**三套方案的产出**（本轮 e2e，折合单价全部落在文档区间内）：
 
-> **A-04 与 A-05 都躲在 A-03 的影子里**（最慢 12.8s / 14.2s vs A-03 的 15.6s），
-> 所以从 2 个分支 Agent 加到 3 个，fan-out 阶段仍是 15.6s —— **墙钟零增长**。
-> 这是并行 fan-out 最直接的回报。
+| 方案 | 档位 | 总价区间 | 折合单价 | 全友覆盖 | 避坑审查 |
+|---|---|---|---|---|---|
+| plan_modern_economy | 经济 | ¥33,100 – 46,783 | 828–1170 元/㎡ | 100% ✅ | 7 条 / 5 类 |
+| plan_nordic_medium | 中档 | ¥60,155 – 79,488 | 1504–1987 元/㎡ | 100% ✅ | 5 条 / 3 类 |
+| plan_chinese_high | 高端 | ¥101,962 – 139,261 | 2549–3482 元/㎡ | 100% ✅ | 6 条 / 4 类 |
+
+> **A-04 与 A-05 躲在 A-03 的影子里**（最慢 11.6s / 12.4s vs A-03 的 22.5s），
+> 所以产出者从 2 个加到 3 个，墙钟没有因此增长。
+>
+> ⚠️ 但**分支内的避坑审查只有 3-5 类，达不到 AC-06 的 5 类线** ——
+> 因为它审的是我们自己用规则引擎生成的预算表，那张表本来就没那么多坑。
+> **AC-06 是靠 quote 模式达标的**（审真实报价单，实测 8 类、召回 93%）。
+> 两个模式是两种能力，不该混为一谈。
 
 > ⚠️ 材料价格**全部是演示数据**（全友无公开结构化价格接口，见 R-09）。
 > 目录文件与每次 API 响应里都带 `disclaimer`，前端必须原样展示。
@@ -168,7 +180,7 @@ $PY -m mcp_servers.parse_house_layout
 └────────────────────────────────────────────────────────────┘
 ```
 
-**关键设计：LangGraph 工作流（当前实现到 fan-in 汇总）**
+**关键设计：LangGraph 工作流（六个 Agent 全通，含 RAG 审查）**
 
 ```
 START
@@ -178,13 +190,17 @@ parse_layout        A-01 多模态解析（质量预检 + 能力匹配降级）
 diagnose_layout     A-02 五维诊断
   │  条件路由：不支撑方案生成 => 短路 END
   │
-  │  fan-out（Send）：3 套方案 × 3 个分支 Agent = 9 个并发任务
+  │  fan-out（Send）：3 套方案 × 3 个产出者 = 9 个并发任务
   │
   ├─ plan_modern_economy ─┬─ generate_plan    A-03 空间规划
   │                       ├─ estimate_budget  A-04 预算（规则引擎）
   │                       └─ select_materials A-05 选材（代码回填价格）
   ├─ plan_nordic_medium ──┼─ 同上 ×3
   └─ plan_chinese_high ───┴─ 同上 ×3
+  │
+  │  汇聚：9 个产出任务全部完成后，下面的节点执行**一次**
+  │
+review_risks        A-06 避坑审查（RAG + 引用溯源）★ **不是并行分支**
   │
   │  fan-in：按 plan_id 汇聚（深合并 reducer）
   │
@@ -193,11 +209,17 @@ aggregate_plans     三方案汇总 + 对比表（纯代码，无 LLM）
  END
 ```
 
-**分支内各 Agent 互相独立**：任意一个失败不影响其余两个。
+**A-06 为什么不在并行分支里**：**你没法审查一份还不存在的预算。**
+需求文档 3.3 画的"4 个 Agent 并行"是架构草图；真实依赖是"审查在产出之后"。
+这与 ADR-08（图像节点移出并行分支）是同一类修正 ——
+**并行的前提是互不依赖，而不是"看起来可以并行"**。
+
+**产出者之间互相独立**：任意一个失败不影响其余两个。
 fan-in 按分支规格列出方案，缺哪个产物写进 `missing_artifacts`。
 
-**加分支 Agent 只需改 `workflow.py` 里的一张表** `_BRANCH_AGENTS`
+**加产出者只需改 `workflow.py` 里的一张表** `_BRANCH_PRODUCERS`
 （节点名 → 产物键），节点列表、产物列表、fan-in 收集逻辑都从它派生。
+审查者单独登记在 `_REVIEW_NODE`，不混进产出者列表 —— 有测试守着这条。
 图像与热区节点位于 **fan-in 之后**，不在并行分支内 —— 9 路并发调图会打爆显存。
 
 **关键设计：能力匹配的降级链**
@@ -253,21 +275,28 @@ backend/app/
                space_planner.py                   ← A-03（fan-out 分支内）
                budget_agent.py                    ← A-04（fan-out 分支内）
                material_agent.py                  ← A-05（fan-out 分支内）
-  schemas/     layout.py  plan.py  budget.py  material.py
+               risk_reviewer.py                   ← A-06（汇聚节点，非并行）
+  schemas/     layout.py  plan.py  budget.py  material.py  risk.py
   graph/       state.py  workflow.py              ← fan-out / fan-in 编排
   services/
     image/     base.py  local_sd15.py             ← 出图 Provider（M0 已验证）
     budget/    engine.py                          ← 预算规则引擎（纯函数，零 LLM 依赖）
     material/  catalog.py                         ← 材料检索（确定性，无向量/无网络）
+    knowledge/ chunking.py  store.py  retriever.py ← RAG（Chroma + Ollama embedding）
 seed_data/     pricing_demo.json                  ← 价格表（演示数据，文件内已声明）
                material_catalog.json              ← 材料目录（演示数据，含竞品）
+               references_manifest.yaml           ← 语料白名单（含**排除理由**）
+               sample_quotes/                     ← 带标注的样本报价单（AC-06 的答案）
 mcp_servers/   parse_house_layout.py
-scripts/       e2e_smoke.py      真实链路端到端（会花钱，慎跑）
+scripts/       e2e_smoke.py        真实链路端到端（会花钱，慎跑）
+               review_sample_quote.py  A-06 验收：对样本报价单算召回率
+               validate_references.py  语料离线验证（入 Chroma 前）
+               ingest_knowledge.py     语料切块向量化入库
                bench_image.py     M0 出图基准（放行门槛）
                warmup.py          演示前预热（必须，避免 40s 冷启动）
                download_models.py / fetch_sd15_files.py
 skills/        Skill 文档（Agent 的 System Prompt + 边界定义）
-tests/         387 个测试（conftest.py 有网络绊线，禁止测试打真实 API）
+tests/         449 个测试（conftest.py 有网络绊线，禁止测试打真实 API）
 docs/          非代码文档（与功能文件分开存放）
   需求/         需求文档.md          2400+ 行需求与决策记录（含 4 轮修订说明）
   参考/         开源项目链接.md       开源项目逐条核实清单

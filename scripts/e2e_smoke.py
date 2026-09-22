@@ -218,6 +218,23 @@ async def main() -> int:
         else:
             print("    ⚠ 材料选型未产出")
 
+        # ── A-06 避坑审查（汇聚节点，在三个产出者之后）──
+        rk = p.get("risks") or {}
+        if rk:
+            met = "✓" if rk.get("ac06_met") else "✗"
+            print(f"    避坑: {rk.get('finding_count', 0)} 条风险 / "
+                  f"{rk.get('distinct_type_count', 0)} 类 {met} "
+                  f"（AC-06 要求 ≥5 类）｜整体 {rk.get('overall_risk')}")
+            for f in (rk.get("findings") or [])[:3]:
+                mark = "📎" if f.get("has_source") else "  "
+                print(f"      {mark} [{f['severity']:<6}] {f.get('title')}")
+            if len(rk.get("findings") or []) > 3:
+                print(f"      …… 另有 {len(rk['findings']) - 3} 条")
+            if rk.get("invented_citations"):
+                print(f"    ⚠ 模型编造引用被剔除: {rk['invented_citations']}")
+        else:
+            print("    ⚠ 避坑审查未产出")
+
         if p.get("missing_artifacts"):
             print(f"    ⚠ 缺失产物: {p['missing_artifacts']}")
 
@@ -231,11 +248,13 @@ async def main() -> int:
         lo, hi = row.get("budget_total_min"), row.get("budget_total_max")
         cov = row.get("quanyou_coverage")
         cov_txt = f"{cov:.0%}" if cov is not None else "-"
+        rk = row.get("risk_count"); rt = row.get("risk_type_count")
+        risk_txt = f"{rk}条/{rt}类" if rk is not None else "-"
         print(f"  {row['plan_id']:<22}{row['budget_grade']:<9}"
               f"{lo:>10,.0f}{hi:>10,.0f}")
         if row.get("budget_per_sqm_min"):
             print(f"  {'':<31}{row['budget_per_sqm_min']:>8.0f}-"
-                  f"{row['budget_per_sqm_max']:<7.0f} 元/㎡{cov_txt:>10}")
+                  f"{row['budget_per_sqm_max']:<7.0f} 元/㎡{cov_txt:>10}{risk_txt:>10}")
     for note in comp.get("notes") or []:
         print(f"  ⚠ {note}")
 
@@ -246,7 +265,7 @@ async def main() -> int:
 
     # ── 汇总 ─────────────────────────────────────────────────
     banner("总览")
-    _BRANCH_CODES = ("A-03", "A-04", "A-05")
+    _BRANCH_CODES = ("A-03", "A-04", "A-05", "A-06")
     branch_ms = [t["elapsed_ms"] for t in out["trace"] if t["agent"] in _BRANCH_CODES]
     print(f"  墙钟总耗时 : {wall:.1f}s")
 
