@@ -1,0 +1,76 @@
+# ═══════════════════════════════════════════════════════════════
+# 全友·智绘家 —— .gitignore
+# ═══════════════════════════════════════════════════════════════
+
+# ── 密钥与本地配置（最高优先级，绝不可提交）──────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ── 虚拟环境 ──────────────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ── 模型权重（体积大，统一放 E:/quanyou/models，不入库）──────
+models/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.onnx
+*.h5
+
+# ── 运行时数据（放 E:/quanyou，不入库）────────────────────────
+data/
+uploads/
+outputs/
+logs/
+*.log
+chroma/
+*.sqlite3
+*.db
+
+# ── 前端（预留）──────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/node_modules/
+.vite/
+
+# ── IDE / 编辑器 ──────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── 操作系统 ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── 本地临时文件 ──────────────────────────────────────────────
+scripts/fixtures/*.tmp
+*.bak
