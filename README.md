@@ -47,14 +47,15 @@
 - ✅ 业务连续性守卫 —— 数据不达标时禁止触发下游操作，拒绝时说明缺什么
 - ✅ MCP Server —— `parse_house_layout` 可被外部 MCP 客户端调用
 - ✅ **AI 出图基准跑通** —— SD1.5 + ControlNet @512，连续 10/10 张不 OOM
-- ✅ **449 个自动化测试全绿**（26s，全程不联网）
+- ✅ **FastAPI 接口层** —— 6 个接口，异步任务 + 语义化进度轮询（`/docs` 可交互）
+- ✅ **481 个自动化测试全绿**（37s，全程不联网）
 
 **未开始**
 
-- ⬜ FastAPI 接口层（目前只有 LangGraph 图，可 `scripts/e2e_smoke.py` 直跑）
-- ⬜ 国标语料（GB 50327 / GB 18580 / GB-T 39600 摘要）—— 让合规类结论有法条可引
+- ⬜ 前端（Vue3 + Element Plus）—— 后端接口已就绪，可直接对接
 - ⬜ 矢量图渲染与热区（M5）
-- ⬜ 前端（Vue3，M2 起）
+- ⬜ 国标语料（GB 50327 / GB 18580 / GB-T 39600 摘要）—— 让合规类结论有法条可引
+- ⬜ 数据库落库（目前户型暂存在内存 + Redis，进程重启即丢）
 
 ### 真实链路一次完整跑通（`scripts/e2e_smoke.py`）
 
@@ -149,9 +150,27 @@ cp .env.example .env
 $PY -m pytest tests/ -v                          # 单元测试（不联网）
 $PY -m pytest tests/ -m integration -s           # 集成测试（真实调用）
 
-# 4. 调用 MCP 工具
+# 4. 起后端（打开 http://127.0.0.1:8000/docs 可交互调试）
+$PY -m uvicorn backend.app.main:app --reload --port 8000
+
+# 5. 调用 MCP 工具
 $PY -m mcp_servers.parse_house_layout
 ```
+
+### 接口一览
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/v1/layout/parse` | 户型解析（异步，约 35s） |
+| POST | `/api/v1/design/generate` | 方案生成（异步，约 100s） |
+| POST | `/api/v1/avoid-pit/review` | 报价单/合同审查（异步，约 20s） |
+| GET | `/api/v1/task/{task_id}/status` | 任务状态轮询 |
+| GET | `/api/v1/material/price` | 材料价格（同步） |
+| GET | `/api/v1/system/health` | 健康检查 |
+
+**约定**：业务失败一律 **HTTP 200 + `code != 0`**（需求文档 4.4 的要求）。
+前端 axios 拦截器按状态码判断成败，用 4xx 表达"数据不支撑该操作"会被当成
+服务错误弹通用报错，而用户需要看到的是可操作的提示。
 
 **运行已实测**：真实户型图 → DeepSeek → 结构化 JSON，端到端 6.1s。
 
@@ -268,6 +287,8 @@ calc_budget(area=0)  →  {"total": 0, "breakdown": {...}}   # 不报错，但�
 
 ```
 backend/app/
+  api/         routes.py  tasks.py  schemas.py  store.py   ← HTTP 接口层
+  main.py      FastAPI 应用入口（生命周期 / trace_id / 错误翻译）
   core/        config.py  llm_client.py  mcp_client.py
                capabilities.py  logger.py  redis_client.py
   agents/      base.py  layout_parser.py         ← A-01
@@ -296,7 +317,7 @@ scripts/       e2e_smoke.py        真实链路端到端（会花钱，慎跑）
                warmup.py          演示前预热（必须，避免 40s 冷启动）
                download_models.py / fetch_sd15_files.py
 skills/        Skill 文档（Agent 的 System Prompt + 边界定义）
-tests/         449 个测试（conftest.py 有网络绊线，禁止测试打真实 API）
+tests/         481 个测试（conftest.py 有网络绊线，禁止测试打真实 API）
 docs/          非代码文档（与功能文件分开存放）
   需求/         需求文档.md          2400+ 行需求与决策记录（含 4 轮修订说明）
   参考/         开源项目链接.md       开源项目逐条核实清单
