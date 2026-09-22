@@ -68,6 +68,7 @@ from loguru import logger
 from ..agents.budget_agent import BudgetAgent
 from ..agents.layout_diagnoser import LayoutDiagnoserAgent
 from ..agents.layout_parser import LayoutParserAgent
+from ..agents.material_agent import MaterialAgent
 from ..agents.space_planner import SpacePlannerAgent
 from ..core.capabilities import check_operation
 from ..core.config import settings
@@ -77,9 +78,22 @@ from .state import HomeDecoState
 # 分支内的 Agent（每个方案分支里各跑一份）
 # ══════════════════════════════════════════════════════════════════
 
-#: 分支内 Agent 产出在 `plan_bundles[plan_id]` 下的键名。
-#: 加新分支 Agent 时在这里登记，fan-in 会自动把它纳入对比表。
-BRANCH_ARTIFACTS: tuple[str, ...] = ("space_plan", "budget")
+#: ⚡ **加分支 Agent 只需要改这一处**：节点名 -> 它在 plan_bundles 里的产物键。
+#:
+#: 之前节点名与产物键是两张平行的元组，加第三个 Agent 时我在 aggregate_plans
+#: 里漏了一个硬编码的键，直接 KeyError。改成从一张表派生之后，
+#: 节点列表、产物列表、fan-in 的收集逻辑都跟着这张表走，不会再各漏一处。
+_BRANCH_AGENTS: dict[str, str] = {
+    "generate_plan": "space_plan",
+    "estimate_budget": "budget",
+    "select_materials": "materials",
+}
+
+#: 分支内的节点名（派生，勿单独维护）
+_BRANCH_NODES: tuple[str, ...] = tuple(_BRANCH_AGENTS)
+
+#: 分支产物的键名（派生，勿单独维护）
+BRANCH_ARTIFACTS: tuple[str, ...] = tuple(_BRANCH_AGENTS.values())
 
 # ══════════════════════════════════════════════════════════════════
 # 节点注册表
@@ -89,12 +103,16 @@ BRANCH_ARTIFACTS: tuple[str, ...] = ("space_plan", "budget")
 _AGENTS: dict[str, Any] = {
     "parse_layout": LayoutParserAgent(),
     "diagnose_layout": LayoutDiagnoserAgent(),
-    # ── 以下两个在 fan-out 分支内并发执行 ──
+    # ── 以下三个在 fan-out 分支内并发执行 ──
     "generate_plan": SpacePlannerAgent(),
     "estimate_budget": BudgetAgent(),
+    "select_materials": MaterialAgent(),
 }
 
-NODES = Literal["parse_layout", "diagnose_layout", "generate_plan", "estimate_budget"]
+NODES = Literal[
+    "parse_layout", "diagnose_layout",
+    "generate_plan", "estimate_budget", "select_materials",
+]
 
 
 def get_agent(node: str):
@@ -292,8 +310,6 @@ def _fan_out_plans(state: HomeDecoState) -> list[Any]:
     return sends
 
 
-#: 分支内的节点名。与 _AGENTS 里登记的分支 Agent 对应。
-_BRANCH_NODES: tuple[str, ...] = ("generate_plan", "estimate_budget")
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -306,6 +322,7 @@ _COMPARISON_FIELDS: list[tuple[str, str]] = [
     ("budget_grade", "预算档"),
     ("budget_total_min", "预算下限"),
     ("budget_total_max", "预算上限"),
+    ("quanyou_coverage", "全友覆盖率"),
     ("summary", "设计思路"),
     ("key_moves", "核心改动"),
     ("storage_count", "收纳处数"),
@@ -323,6 +340,7 @@ def _comparison_row(plan: dict[str, Any]) -> dict[str, Any]:
     """
     sp = plan.get("space_plan") or {}
     bg = plan.get("budget") or {}
+    mt = plan.get("materials") or {}
 
     return {
         "plan_id": plan.get("plan_id"),
@@ -344,6 +362,10 @@ def _comparison_row(plan: dict[str, Any]) -> dict[str, Any]:
         "budget_per_sqm_min": bg.get("price_per_sqm_min"),
         "budget_per_sqm_max": bg.get("price_per_sqm_max"),
         "budget_computed_by": bg.get("computed_by"),
+        # ── 来自 A-05 ──
+        "material_count": len(mt.get("items") or []),
+        "quanyou_coverage": mt.get("quanyou_coverage"),
+        "quanyou_met": mt.get("quanyou_met"),
         # ── 数据完整性 ──
         "missing_artifacts": plan.get("missing_artifacts") or [],
     }
@@ -382,10 +404,11 @@ def aggregate_plans(state: HomeDecoState) -> dict[str, Any]:
         for spec in specs:
             plan_id = spec["plan_id"]
             bundle = bundles.get(plan_id) or {}
-            space_plan = bundle.get("space_plan")
-            budget = bundle.get("budget")
 
-            if not space_plan and not budget:
+            # 按 _BRANCH_AGENTS 逐项取值 —— 加分支 Agent 时这里自动跟上，
+            # 不会出现"新产物忘了收集"的漏洞。
+            artifacts = {key: bundle.get(key) for key in BRANCH_ARTIFACTS}
+            if not any(artifacts.values()):
                 empty_branches.append(plan_id)
                 continue
 
@@ -394,10 +417,9 @@ def aggregate_plans(state: HomeDecoState) -> dict[str, Any]:
                 "plan_index": spec["index"],
                 "style": spec["style"],
                 "budget_grade": spec["budget_grade"],
-                "space_plan": space_plan,
-                "budget": budget,
+                **artifacts,
                 "missing_artifacts": [
-                    key for key in BRANCH_ARTIFACTS if not bundle.get(key)
+                    key for key, value in artifacts.items() if not value
                 ],
             })
 

@@ -1,0 +1,312 @@
+{
+  "_meta": {
+    "data_kind": "DEMO_ONLY",
+    "disclaimer": "本文件全部为演示数据。全友家居没有公开的结构化价格接口，本表的品类、规格与价格区间是按公开官网品类信息与行业均价量级构造的，**不是全友或任何品牌的真实报价**，也不构成任何购买建议。实际价格以下单时官网/门店为准。",
+    "brand_focus": "全友家居",
+    "currency": "CNY",
+    "price_basis_date": "2026-09",
+    "catalog_version": "catalog_v1",
+    "why_competitors_are_included": "候选集中**刻意保留竞品**。若全部商品都是全友，AC-18「全友产品覆盖率 ≥60%」将恒为 100% —— 那个指标就失去意义了。有竞品才有选择，有选择才谈得上覆盖率，也才谈得上「为什么选它」。",
+    "future_note": "需求文档 5.3 要求 M3 阶段以 seed_data/quanyou_products.sql 形式落库。当前项目尚未接入 PostgreSQL，故先用 JSON；字段命名已对齐设计稿，接库时可直接映射。"
+  },
+
+  "categories": [
+    {"key": "floor",    "label": "地板",     "unit": "元/㎡",  "order": 1},
+    {"key": "tile",     "label": "瓷砖",     "unit": "元/㎡",  "order": 2},
+    {"key": "paint",    "label": "墙面涂料", "unit": "元/㎡",  "order": 3},
+    {"key": "door",     "label": "室内门",   "unit": "元/樘", "order": 4},
+    {"key": "sanitary", "label": "卫浴洁具", "unit": "元/套", "order": 5},
+    {"key": "cabinet",  "label": "橱柜衣柜", "unit": "元/㎡",  "order": 6},
+    {"key": "lighting", "label": "灯具",     "unit": "元/套", "order": 7}
+  ],
+
+  "products": [
+    {
+      "id": "QY-FL-101", "name": "全友 强化复合地板 云杉系列", "brand": "全友",
+      "is_quanyou": true, "category": "floor", "spec": "1210x165x12mm",
+      "price_range": [89, 159], "eco_level": "E0",
+      "style_fit": ["modern", "nordic", "cream"],
+      "budget_grade": ["economy", "medium"],
+      "suitable_for": ["children", "elderly", "pets"],
+      "note": "耐磨层较厚，预算有限时性价比高；脚感偏硬。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=强化地板"
+    },
+    {
+      "id": "QY-FL-102", "name": "全友 三层实木复合地板 白蜡木", "brand": "全友",
+      "is_quanyou": true, "category": "floor", "spec": "910x125x15mm",
+      "price_range": [289, 429], "eco_level": "E0",
+      "style_fit": ["nordic", "japandi", "chinese"],
+      "budget_grade": ["medium", "high"],
+      "suitable_for": ["children", "elderly"],
+      "note": "表层实木，脚感好；对地面平整度要求较高。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=实木复合地板"
+    },
+    {
+      "id": "DS-FL-201", "name": "大自然 实木地板 栎木", "brand": "大自然",
+      "is_quanyou": false, "category": "floor", "spec": "910x125x18mm",
+      "price_range": [329, 519], "eco_level": "E0",
+      "style_fit": ["chinese", "japandi"],
+      "budget_grade": ["high"],
+      "suitable_for": ["elderly"],
+      "note": "纯实木，质感最好但需定期保养，地暖环境慎用。",
+      "search_url": "https://search.jd.com/Search?keyword=大自然实木地板"
+    },
+    {
+      "id": "XY-FL-301", "name": "圣象 强化复合地板 康树系列", "brand": "圣象",
+      "is_quanyou": false, "category": "floor", "spec": "1210x165x12mm",
+      "price_range": [99, 179], "eco_level": "E0",
+      "style_fit": ["modern", "cream"],
+      "budget_grade": ["economy", "medium"],
+      "suitable_for": ["children", "pets"],
+      "note": "同价位竞品，花色选择多。",
+      "search_url": "https://search.jd.com/Search?keyword=圣象强化地板"
+    },
+
+    {
+      "id": "QY-TL-101", "name": "全友 通体大理石瓷砖 云灰", "brand": "全友",
+      "is_quanyou": true, "category": "tile", "spec": "750x1500mm",
+      "price_range": [118, 196], "eco_level": "A 类",
+      "style_fit": ["modern", "cream"],
+      "budget_grade": ["medium", "high"],
+      "suitable_for": ["children", "elderly", "pets"],
+      "note": "大板缝隙少，易打理；铺贴人工费相对高。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=瓷砖"
+    },
+    {
+      "id": "QY-TL-102", "name": "全友 釉面内墙砖 素白", "brand": "全友",
+      "is_quanyou": true, "category": "tile", "spec": "300x600mm",
+      "price_range": [58, 98], "eco_level": "A 类",
+      "style_fit": ["modern", "nordic", "cream", "japandi"],
+      "budget_grade": ["economy", "medium"],
+      "suitable_for": ["children", "elderly"],
+      "note": "厨卫墙面的常规选择，白色百搭。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=墙砖"
+    },
+    {
+      "id": "MK-TL-201", "name": "马可波罗 岩板 卡拉拉白", "brand": "马可波罗",
+      "is_quanyou": false, "category": "tile", "spec": "800x2400mm",
+      "price_range": [320, 580], "eco_level": "A 类",
+      "style_fit": ["chinese", "modern"],
+      "budget_grade": ["high"],
+      "suitable_for": ["elderly"],
+      "note": "高端岩板，可上墙做背景；需专业施工。",
+      "search_url": "https://search.jd.com/Search?keyword=马可波罗岩板"
+    },
+    {
+      "id": "DP-TL-301", "name": "东鹏 抛釉砖 雅士白", "brand": "东鹏",
+      "is_quanyou": false, "category": "tile", "spec": "800x800mm",
+      "price_range": [76, 132], "eco_level": "A 类",
+      "style_fit": ["modern", "nordic"],
+      "budget_grade": ["economy", "medium"],
+      "suitable_for": ["children", "pets"],
+      "note": "常规尺寸，铺贴损耗低。",
+      "search_url": "https://search.jd.com/Search?keyword=东鹏瓷砖"
+    },
+
+    {
+      "id": "QY-PT-101", "name": "全友 净味内墙乳胶漆 五合一", "brand": "全友",
+      "is_quanyou": true, "category": "paint", "spec": "18L 面漆",
+      "price_range": [32, 52], "eco_level": "E0",
+      "style_fit": ["modern", "nordic", "cream", "japandi", "chinese"],
+      "budget_grade": ["economy", "medium"],
+      "suitable_for": ["children", "elderly", "pets"],
+      "note": "低 VOC，刷完通风 7 天可入住；遮盖力中等。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=乳胶漆"
+    },
+    {
+      "id": "QY-PT-102", "name": "全友 抗甲醛全效墙面漆", "brand": "全友",
+      "is_quanyou": true, "category": "paint", "spec": "15L 面漆",
+      "price_range": [58, 92], "eco_level": "E0",
+      "style_fit": ["modern", "chinese", "cream"],
+      "budget_grade": ["medium", "high"],
+      "suitable_for": ["children", "elderly"],
+      "note": "有小孩或老人时优先，价格高约三成。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=抗甲醛墙面漆"
+    },
+    {
+      "id": "LB-PT-201", "name": "立邦 净味全效乳胶漆", "brand": "立邦",
+      "is_quanyou": false, "category": "paint", "spec": "18L 面漆",
+      "price_range": [45, 78], "eco_level": "E0",
+      "style_fit": ["modern", "nordic", "cream"],
+      "budget_grade": ["economy", "medium"],
+      "suitable_for": ["children", "elderly", "pets"],
+      "note": "市占率高，配色体系成熟。",
+      "search_url": "https://search.jd.com/Search?keyword=立邦乳胶漆"
+    },
+
+    {
+      "id": "QY-DR-101", "name": "全友 免漆复合门 简约平板", "brand": "全友",
+      "is_quanyou": true, "category": "door", "spec": "2100x860mm",
+      "price_range": [680, 1080], "eco_level": "E1",
+      "style_fit": ["modern", "nordic", "cream"],
+      "budget_grade": ["economy", "medium"],
+      "suitable_for": ["children", "pets"],
+      "note": "经济档常用；隔音一般，卧室可考虑升级。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=木门"
+    },
+    {
+      "id": "QY-DR-102", "name": "全友 实木复合门 静音系列", "brand": "全友",
+      "is_quanyou": true, "category": "door", "spec": "2100x860mm",
+      "price_range": [1480, 2380], "eco_level": "E0",
+      "style_fit": ["chinese", "japandi", "nordic"],
+      "budget_grade": ["medium", "high"],
+      "suitable_for": ["elderly", "children"],
+      "note": "加了静音条与实木骨架，隔音明显更好。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=实木复合门"
+    },
+    {
+      "id": "TATA-DR-201", "name": "TATA 木门 静音门", "brand": "TATA",
+      "is_quanyou": false, "category": "door", "spec": "2100x860mm",
+      "price_range": [1680, 2680], "eco_level": "E0",
+      "style_fit": ["modern", "chinese"],
+      "budget_grade": ["high"],
+      "suitable_for": ["elderly"],
+      "note": "静音门品类口碑好，价格偏高。",
+      "search_url": "https://search.jd.com/Search?keyword=TATA木门"
+    },
+
+    {
+      "id": "QY-SA-101", "name": "全友 连体坐便器 虹吸式", "brand": "全友",
+      "is_quanyou": true, "category": "sanitary", "spec": "坑距 305/400mm",
+      "price_range": [980, 1680], "eco_level": "—",
+      "style_fit": ["modern", "nordic", "cream"],
+      "budget_grade": ["economy", "medium"],
+      "suitable_for": ["children", "elderly", "pets"],
+      "note": "虹吸静音，夜间冲水不吵。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=坐便器"
+    },
+    {
+      "id": "QY-SA-102", "name": "全友 智能坐便器 即热式", "brand": "全友",
+      "is_quanyou": true, "category": "sanitary", "spec": "坑距 305/400mm",
+      "price_range": [2680, 4380], "eco_level": "—",
+      "style_fit": ["modern", "chinese", "cream"],
+      "budget_grade": ["high"],
+      "suitable_for": ["elderly"],
+      "note": "带加热与冲洗，对老人更友好；需预留插座。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=智能马桶"
+    },
+    {
+      "id": "JM-SA-201", "name": "九牧 连体坐便器 喷射虹吸", "brand": "九牧",
+      "is_quanyou": false, "category": "sanitary", "spec": "坑距 305/400mm",
+      "price_range": [1080, 1880], "eco_level": "—",
+      "style_fit": ["modern", "cream"],
+      "budget_grade": ["medium"],
+      "suitable_for": ["children", "elderly"],
+      "note": "同价位竞品，釉面工艺成熟。",
+      "search_url": "https://search.jd.com/Search?keyword=九牧坐便器"
+    },
+
+    {
+      "id": "QY-CB-101", "name": "全友 成品衣柜 二门", "brand": "全友",
+      "is_quanyou": true, "category": "cabinet", "spec": "1200x600x2200mm",
+      "price_range": [320, 480], "eco_level": "E1",
+      "style_fit": ["modern", "nordic", "cream"],
+      "budget_grade": ["economy"],
+      "suitable_for": ["children", "pets"],
+      "note": "**经济档的主力**：成品柜免去定制周期与费用，但与墙面有缝隙。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=成品衣柜"
+    },
+    {
+      "id": "QY-CB-102", "name": "全友 全屋定制衣柜 到顶款", "brand": "全友",
+      "is_quanyou": true, "category": "cabinet", "spec": "按投影面积计",
+      "price_range": [880, 1480], "eco_level": "E0",
+      "style_fit": ["modern", "chinese", "japandi", "cream"],
+      "budget_grade": ["medium", "high"],
+      "suitable_for": ["children", "elderly", "pets"],
+      "note": "投影面积计价，到顶不留灰；工期约 30-45 天。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=全屋定制衣柜"
+    },
+    {
+      "id": "OP-CB-201", "name": "欧派 定制衣柜 现代简约", "brand": "欧派",
+      "is_quanyou": false, "category": "cabinet", "spec": "按投影面积计",
+      "price_range": [980, 1680], "eco_level": "E0",
+      "style_fit": ["modern", "cream"],
+      "budget_grade": ["high"],
+      "suitable_for": ["children", "elderly"],
+      "note": "定制衣柜头部品牌，五金件质感好。",
+      "search_url": "https://search.jd.com/Search?keyword=欧派衣柜"
+    },
+
+    {
+      "id": "QY-LT-101", "name": "全友 吸顶灯 三色调光", "brand": "全友",
+      "is_quanyou": true, "category": "lighting", "spec": "直径 500mm",
+      "price_range": [168, 328], "eco_level": "—",
+      "style_fit": ["modern", "nordic", "cream", "japandi"],
+      "budget_grade": ["economy", "medium"],
+      "suitable_for": ["children", "elderly", "pets"],
+      "note": "主灯够用；显色指数中等，对色彩要求高的空间需补光。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=吸顶灯"
+    },
+    {
+      "id": "QY-LT-102", "name": "全友 无主灯磁吸轨道灯套装", "brand": "全友",
+      "is_quanyou": true, "category": "lighting", "spec": "2m 轨道+6 灯",
+      "price_range": [980, 1860], "eco_level": "—",
+      "style_fit": ["modern", "chinese", "cream"],
+      "budget_grade": ["high"],
+      "suitable_for": ["children", "elderly"],
+      "note": "需吊顶配合；层次感好，但对层高有要求。",
+      "search_url": "https://www.quanyou.com.cn/search?keyword=轨道灯"
+    },
+    {
+      "id": "YS-LT-201", "name": "欧普 吸顶灯 全光谱", "brand": "欧普",
+      "is_quanyou": false, "category": "lighting", "spec": "直径 500mm",
+      "price_range": [198, 368], "eco_level": "—",
+      "style_fit": ["modern", "nordic"],
+      "budget_grade": ["economy", "medium"],
+      "suitable_for": ["children", "elderly"],
+      "note": "全光谱显色好，适合儿童房。",
+      "search_url": "https://search.jd.com/Search?keyword=欧普吸顶灯"
+    },
+
+    {
+      "id": "DLS-PT-301", "name": "多乐士 金装五合一内墙漆", "brand": "多乐士",
+      "is_quanyou": false, "category": "paint", "spec": "18L 面漆",
+      "price_range": [42, 72], "eco_level": "E0",
+      "style_fit": ["modern", "nordic", "japandi"],
+      "budget_grade": ["economy", "medium"],
+      "suitable_for": ["children", "pets"],
+      "note": "国际品牌，低味配方成熟。",
+      "search_url": "https://search.jd.com/Search?keyword=多乐士乳胶漆"
+    },
+    {
+      "id": "MT-DR-301", "name": "梦天 实木复合门 简约款", "brand": "梦天",
+      "is_quanyou": false, "category": "door", "spec": "2100x860mm",
+      "price_range": [1380, 2180], "eco_level": "E0",
+      "style_fit": ["nordic", "japandi", "cream"],
+      "budget_grade": ["medium", "high"],
+      "suitable_for": ["children", "elderly"],
+      "note": "木门老牌，做工稳定。",
+      "search_url": "https://search.jd.com/Search?keyword=梦天木门"
+    },
+    {
+      "id": "JP-SA-301", "name": "箭牌 连体坐便器 节水型", "brand": "箭牌",
+      "is_quanyou": false, "category": "sanitary", "spec": "坑距 305/400mm",
+      "price_range": [920, 1560], "eco_level": "—",
+      "style_fit": ["modern", "nordic"],
+      "budget_grade": ["economy", "medium"],
+      "suitable_for": ["children", "elderly", "pets"],
+      "note": "节水款，冲力够用。",
+      "search_url": "https://search.jd.com/Search?keyword=箭牌坐便器"
+    },
+    {
+      "id": "SFY-CB-301", "name": "索菲亚 定制衣柜 康纯板", "brand": "索菲亚",
+      "is_quanyou": false, "category": "cabinet", "spec": "按投影面积计",
+      "price_range": [920, 1520], "eco_level": "E0",
+      "style_fit": ["modern", "nordic", "cream"],
+      "budget_grade": ["medium", "high"],
+      "suitable_for": ["children", "elderly"],
+      "note": "主打环保板材，价格与欧派接近。",
+      "search_url": "https://search.jd.com/Search?keyword=索菲亚衣柜"
+    },
+    {
+      "id": "NS-LT-301", "name": "雷士 吸顶灯 全光谱护眼", "brand": "雷士",
+      "is_quanyou": false, "category": "lighting", "spec": "直径 500mm",
+      "price_range": [158, 298], "eco_level": "—",
+      "style_fit": ["modern", "cream", "japandi"],
+      "budget_grade": ["economy", "medium"],
+      "suitable_for": ["children"],
+      "note": "护眼参数标注清晰，儿童房常用。",
+      "search_url": "https://search.jd.com/Search?keyword=雷士吸顶灯"
+    }
+  ]
+}

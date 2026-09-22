@@ -349,6 +349,15 @@ class SpacePlannerAgent(BaseAgent):
         # ── 2. 遗漏房间 ────────────────────────────────────
         unassigned = [n for n in known_rooms if n not in covered]
 
+        # ── 2b. 上游同名房间 ───────────────────────────────
+        # 实测踩到：A-01 把两个房间都命名为「卧室」（没区分主卧/次卧）。
+        # 此时 `covered` 集合只能表示"有个叫卧室的房间被安排了"，
+        # 第二个同名房间会既被判成重复、又不在 unassigned 里 —— **等于凭空消失**。
+        #
+        # 这不是本 Agent 能修的（名字是上游给的），但必须**如实说出来**：
+        # 用户看到"两间卧室"却只拿到一间房的规划，得知道为什么。
+        dup_names = sorted({n for n in known_rooms if known_rooms.count(n) > 1})
+
         payload["zones"] = kept_zones
 
         # ── 3. 动线优化的 target_rooms 同样过滤 ────────────
@@ -375,10 +384,18 @@ class SpacePlannerAgent(BaseAgent):
                 f"模型输出了 {len(invented)} 个户型中不存在的房间"
                 f"（{'、'.join(invented[:3])}），已由系统剔除"
             )
-        if duplicates:
+        if duplicates and not dup_names:
+            # 只有"模型自己写重了"才算它的账；上游同名房间导致的重复
+            # 另有专门的说明（见下），不重复计两次。
             gaps.append(
                 f"有 {len(duplicates)} 个房间被重复安排"
                 f"（{'、'.join(duplicates[:3])}），已保留第一份"
+            )
+        if dup_names:
+            gaps.append(
+                f"户型数据中有同名房间（{'、'.join(dup_names)}），"
+                f"系统无法区分它们，方案中同一名称只会安排一次 —— "
+                f"建议重新上传更清晰的户型图，或自行区分主次"
             )
         if unassigned:
             gaps.append(f"有 {len(unassigned)} 个房间未获功能安排：{'、'.join(unassigned)}")

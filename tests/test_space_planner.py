@@ -276,6 +276,50 @@ class TestRoomAlignment:
         assert [z["room_name"] for z in plan["zones"]] == ["客厅", "主卧"]
         assert plan["invented_rooms"] == [], "表述差异不应被记成幻觉"
 
+    def test_上游同名房间被如实报出(self):
+        """
+        实测踩到的真实情况：A-01 把两个房间都命名为「卧室」（没区分主卧/次卧）。
+
+        此时第二间房会**既被判成重复、又不在 unassigned 里 —— 等于凭空消失**。
+        名字是上游给的，本 Agent 修不了，但必须说出来 ——
+        用户看到"两间卧室"却只拿到一间房的规划，得知道为什么。
+        """
+        layout = {
+            **LAYOUT,
+            "rooms": [
+                {"name": "客厅", "type": "living_room", "area": 22.8},
+                {"name": "卧室", "type": "bedroom", "area": 11.6},
+                {"name": "卧室", "type": "bedroom", "area": 11.6},
+            ],
+        }
+        llm = _FakeLLM(_response(zones=[
+            {"room_name": "客厅", "function": "起居", "rationale": "a", "furniture": []},
+            {"room_name": "卧室", "function": "睡眠", "rationale": "b", "furniture": []},
+            {"room_name": "卧室", "function": "睡眠", "rationale": "c", "furniture": []},
+        ]))
+        plan = _plan(_run(llm, layout=layout))
+
+        gap_text = " ".join(plan["data_gaps"])
+        assert "同名房间" in gap_text, "必须说明上游有同名房间"
+        assert "卧室" in gap_text
+        # 不能把这件事算成"模型写重了" —— 模型是被上游误导的
+        assert not any("被重复安排" in g for g in plan["data_gaps"])
+        # 房间总数与已规划数的差距要让下游看得见
+        assert plan["based_on"]["rooms_total"] == 3
+        assert plan["based_on"]["rooms_planned"] == 2
+
+    def test_模型自己写重了仍记为重复(self):
+        """上游房间名唯一时，重复就是模型的账。"""
+        llm = _FakeLLM(_response(zones=[
+            {"room_name": "客厅", "function": "起居", "rationale": "a", "furniture": []},
+            {"room_name": "客厅", "function": "书房", "rationale": "b", "furniture": []},
+            {"room_name": "主卧", "function": "睡眠", "rationale": "c", "furniture": []},
+        ]))
+        plan = _plan(_run(llm))
+
+        assert any("被重复安排" in g for g in plan["data_gaps"])
+        assert not any("同名房间" in g for g in plan["data_gaps"])
+
     def test_动线目标房间同样过滤(self):
         llm = _FakeLLM(_response(circulation_fixes=[
             {"problem": "动线穿客厅", "solution": "调整家具",

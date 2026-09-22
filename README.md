@@ -39,17 +39,18 @@
 - ✅ 户型诊断（A-02）—— 采光/通风/动线/利用率/环保五维评分
 - ✅ 空间规划（A-03）—— 功能分区 / 动线优化 / 收纳设计，幻觉房间由代码剔除
 - ✅ **预算造价（A-04）—— 规则引擎算钱，LLM 只管文字**（ADR-07）
-- ✅ **fan-out / fan-in** —— 3 套方案 × 2 个 Agent = 6 个并发任务
+- ✅ **材料选型（A-05）—— 模型只能指认候选，价格由代码回填**（AC-18 / AC-21）
+- ✅ **fan-out / fan-in** —— 3 套方案 × 3 个 Agent = 9 个并发任务
 - ✅ 三级降级链 —— DeepSeek → 本地 Ollama，断网自动切换（已实测）
 - ✅ 本地隐私模式 —— `prefer_local=true` 时图像不出本机（**抓包验证**）
 - ✅ 业务连续性守卫 —— 数据不达标时禁止触发下游操作，拒绝时说明缺什么
 - ✅ MCP Server —— `parse_house_layout` 可被外部 MCP 客户端调用
 - ✅ **AI 出图基准跑通** —— SD1.5 + ControlNet @512，连续 10/10 张不 OOM
-- ✅ **311 个自动化测试全绿**（15.4s，全程不联网）
+- ✅ **387 个自动化测试全绿**（16.7s，全程不联网）
 
 **未开始**
 
-- ⬜ 分支内其余 Agent：材料选型 / 避坑审查（M3）
+- ⬜ 分支内最后一个 Agent：避坑审查（M4，需要 RAG）
 - ⬜ FastAPI 接口层（目前只有 LangGraph 图，可 `scripts/e2e_smoke.py` 直跑）
 - ⬜ 矢量图渲染与热区（M5）
 - ⬜ 前端（Vue3，M2 起）
@@ -57,26 +58,30 @@
 ### 真实链路一次完整跑通（`scripts/e2e_smoke.py`）
 
 ```
-A-01 解析     15.7s   4 房间 / 2 窗 / 3 门 / 45.9㎡
-A-02 诊断     18.1s   综合 4.3   通风·环保 标记为「数据不足」
-  ↓ fan-out：6 个任务并发
-A-03 规划     19.3s   [15763, 14929, 19283]ms   3 套方案
-A-04 预算     10.3s   [10327,  8763, 10016]ms   3 份预算（规则引擎）
-fan-in         ~0s    对比表 3/3 可用
-总墙钟        58.8s   fan-out 阶段 19.3s，比值 1.00× 于最慢任务
+A-01 解析      15.7s   3 房间 / 2 窗 / 3 门 / 45.9㎡
+A-02 诊断      18.1s   综合 4.3   通风·环保 标记为「数据不足」
+  ↓ fan-out：9 个任务并发
+A-03 规划      15.6s   [13276, 14228, 15572]ms   3 套方案
+A-04 预算      12.8s   [ 8926, 12217, 12788]ms   3 份预算（规则引擎）
+A-05 选材      14.2s   [ 8053, 14228,  7864]ms   3 份选材（代码回填价格）
+fan-in          ~0s    对比表 3/3 可用
+总墙钟         59.8s   fan-out 阶段 15.6s，比值 1.00× 于最慢任务
 ```
 
-**三套方案的预算**（89㎡ 合成户型，全部由规则引擎算出）：
+**三套方案的预算与选材**（45.9㎡ 合成户型）：
 
-| 方案 | 档位 | 总价区间 | 折合单价 |
-|---|---|---|---|
-| plan_modern_economy | 经济 | ¥37,982 – 53,684 | 828–1170 元/㎡ |
-| plan_nordic_medium | 中档 | ¥69,028 – 91,213 | 1504–1987 元/㎡ |
-| plan_chinese_high | 高端 | ¥117,002 – 159,802 | 2549–3482 元/㎡ |
+| 方案 | 档位 | 总价区间 | 折合单价 | 全友覆盖率 |
+|---|---|---|---|---|
+| plan_modern_economy | 经济 | ¥37,982 – 53,684 | 828–1170 元/㎡ | 100% ✅ |
+| plan_nordic_medium | 中档 | ¥69,028 – 91,213 | 1504–1987 元/㎡ | 100% ✅ |
+| plan_chinese_high | 高端 | ¥117,002 – 159,802 | 2549–3482 元/㎡ | 100% ✅ |
 
-> **A-04 完全躲在 A-03 的影子里**（最慢 10.3s vs 19.3s），
-> 所以加上一整个 Agent 之后，fan-out 阶段仍是 19.3s —— **墙钟零增长**。
-> 这是并行 fan-out 的直接回报。
+> **A-04 与 A-05 都躲在 A-03 的影子里**（最慢 12.8s / 14.2s vs A-03 的 15.6s），
+> 所以从 2 个分支 Agent 加到 3 个，fan-out 阶段仍是 15.6s —— **墙钟零增长**。
+> 这是并行 fan-out 最直接的回报。
+
+> ⚠️ 材料价格**全部是演示数据**（全友无公开结构化价格接口，见 R-09）。
+> 目录文件与每次 API 响应里都带 `disclaimer`，前端必须原样展示。
 
 ### M0 出图基准实测结果
 
@@ -173,14 +178,13 @@ parse_layout        A-01 多模态解析（质量预检 + 能力匹配降级）
 diagnose_layout     A-02 五维诊断
   │  条件路由：不支撑方案生成 => 短路 END
   │
-  │  fan-out（Send）：3 套方案 × 2 个分支 Agent = 6 个并发任务
+  │  fan-out（Send）：3 套方案 × 3 个分支 Agent = 9 个并发任务
   │
-  ├─ plan_modern_economy ─┬─ generate_plan   A-03 空间规划
-  │                       └─ estimate_budget A-04 预算（规则引擎）
-  ├─ plan_nordic_medium ──┬─ generate_plan
-  │                       └─ estimate_budget
-  └─ plan_chinese_high ───┬─ generate_plan
-                          └─ estimate_budget
+  ├─ plan_modern_economy ─┬─ generate_plan    A-03 空间规划
+  │                       ├─ estimate_budget  A-04 预算（规则引擎）
+  │                       └─ select_materials A-05 选材（代码回填价格）
+  ├─ plan_nordic_medium ──┼─ 同上 ×3
+  └─ plan_chinese_high ───┴─ 同上 ×3
   │
   │  fan-in：按 plan_id 汇聚（深合并 reducer）
   │
@@ -189,12 +193,12 @@ aggregate_plans     三方案汇总 + 对比表（纯代码，无 LLM）
  END
 ```
 
-**分支内各 Agent 互相独立**：A-03 失败不影响 A-04，反之亦然。
+**分支内各 Agent 互相独立**：任意一个失败不影响其余两个。
 fan-in 按分支规格列出方案，缺哪个产物写进 `missing_artifacts`。
 
-分支内的其余 Agent（A-05 材料 / A-06 避坑）在此骨架上增量添加 ——
-登记 `_AGENTS` + `_BRANCH_NODES` + `BRANCH_ARTIFACTS` 三处即可。
-图像与热区节点位于 **fan-in 之后**，不在并行分支内 —— 6 路并发调图会打爆显存。
+**加分支 Agent 只需改 `workflow.py` 里的一张表** `_BRANCH_AGENTS`
+（节点名 → 产物键），节点列表、产物列表、fan-in 收集逻辑都从它派生。
+图像与热区节点位于 **fan-in 之后**，不在并行分支内 —— 9 路并发调图会打爆显存。
 
 **关键设计：能力匹配的降级链**
 
@@ -248,19 +252,22 @@ backend/app/
                layout_diagnoser.py                ← A-02
                space_planner.py                   ← A-03（fan-out 分支内）
                budget_agent.py                    ← A-04（fan-out 分支内）
-  schemas/     layout.py  plan.py  budget.py
+               material_agent.py                  ← A-05（fan-out 分支内）
+  schemas/     layout.py  plan.py  budget.py  material.py
   graph/       state.py  workflow.py              ← fan-out / fan-in 编排
   services/
     image/     base.py  local_sd15.py             ← 出图 Provider（M0 已验证）
     budget/    engine.py                          ← 预算规则引擎（纯函数，零 LLM 依赖）
+    material/  catalog.py                         ← 材料检索（确定性，无向量/无网络）
 seed_data/     pricing_demo.json                  ← 价格表（演示数据，文件内已声明）
+               material_catalog.json              ← 材料目录（演示数据，含竞品）
 mcp_servers/   parse_house_layout.py
 scripts/       e2e_smoke.py      真实链路端到端（会花钱，慎跑）
                bench_image.py     M0 出图基准（放行门槛）
                warmup.py          演示前预热（必须，避免 40s 冷启动）
                download_models.py / fetch_sd15_files.py
 skills/        Skill 文档（Agent 的 System Prompt + 边界定义）
-tests/         311 个测试（conftest.py 有网络绊线，禁止测试打真实 API）
+tests/         387 个测试（conftest.py 有网络绊线，禁止测试打真实 API）
 docs/          非代码文档（与功能文件分开存放）
   需求/         需求文档.md          2400+ 行需求与决策记录（含 4 轮修订说明）
   参考/         开源项目链接.md       开源项目逐条核实清单

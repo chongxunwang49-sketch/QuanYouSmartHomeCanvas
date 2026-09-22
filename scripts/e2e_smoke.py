@@ -83,6 +83,7 @@ async def main() -> int:
     from backend.app.core.llm_client import ImagePart
     from backend.app.graph.state import initial_state
     from backend.app.graph.workflow import build_graph
+    from backend.app.services.material import catalog
 
     if not settings.DEEPSEEK_API_KEY:
         print("✗ 未配置 DEEPSEEK_API_KEY，无法运行真实链路")
@@ -161,6 +162,7 @@ async def main() -> int:
     for p in plans:
         sp = p.get("space_plan") or {}
         bg = p.get("budget") or {}
+        mt = p.get("materials") or {}
 
         print(f"\n  【{p.get('plan_id')}】{p.get('style')} + {p.get('budget_grade')}")
 
@@ -196,6 +198,26 @@ async def main() -> int:
         else:
             print("    ⚠ 预算未产出")
 
+        # ── A-05 材料选型（候选由目录给，价格由代码回填）──
+        if mt:
+            cov = mt.get("quanyou_coverage", 0)
+            mark = "✓" if mt.get("quanyou_met") else "✗"
+            print(f"    选材: {len(mt.get('items') or [])} 个品类，"
+                  f"全友覆盖 {cov:.0%} {mark}"
+                  f"（AC-18 门槛 {catalog.MIN_QUANYOU_COVERAGE:.0%}）")
+            for item in (mt.get("items") or [])[:4]:
+                lo, hi = item["price_range"]
+                print(f"      - {item['category']:<9}{item['name'][:22]:<24}"
+                      f"{lo:g}-{hi:g} {item['brand']}")
+            if len(mt.get("items") or []) > 4:
+                print(f"      …… 另有 {len(mt['items']) - 4} 项")
+            if mt.get("auto_substitutions"):
+                print(f"    ⚠ 代码替换以达标 {len(mt['auto_substitutions'])} 项")
+            if mt.get("invented_products"):
+                print(f"    ⚠ 幻觉商品被剔除: {mt['invented_products']}")
+        else:
+            print("    ⚠ 材料选型未产出")
+
         if p.get("missing_artifacts"):
             print(f"    ⚠ 缺失产物: {p['missing_artifacts']}")
 
@@ -203,29 +225,36 @@ async def main() -> int:
     banner("对比表")
     print(f"  可用: {comp.get('available')}  "
           f"实际/请求: {comp.get('plan_count')}/{comp.get('requested_count')}")
-    print(f"  {'方案':<22}{'档位':<10}{'预算下限':>12}{'预算上限':>12}{'元/㎡':>14}")
+    print(f"  {'方案':<22}{'档位':<9}{'预算下限':>10}{'预算上限':>10}"
+          f"{'元/㎡':>14}{'全友覆盖':>10}")
     for row in comp.get("rows") or []:
         lo, hi = row.get("budget_total_min"), row.get("budget_total_max")
-        ps_lo, ps_hi = row.get("budget_per_sqm_min"), row.get("budget_per_sqm_max")
-        print(f"  {row['plan_id']:<22}{row['budget_grade']:<10}"
-              f"{lo:>12,.0f}{hi:>12,.0f}" if lo else f"  {row['plan_id']:<22}(无预算)")
-        if ps_lo:
-            print(f"  {'':<32}{ps_lo:>10.0f}-{ps_hi:<10.0f} 元/㎡")
+        cov = row.get("quanyou_coverage")
+        cov_txt = f"{cov:.0%}" if cov is not None else "-"
+        print(f"  {row['plan_id']:<22}{row['budget_grade']:<9}"
+              f"{lo:>10,.0f}{hi:>10,.0f}")
+        if row.get("budget_per_sqm_min"):
+            print(f"  {'':<31}{row['budget_per_sqm_min']:>8.0f}-"
+                  f"{row['budget_per_sqm_max']:<7.0f} 元/㎡{cov_txt:>10}")
     for note in comp.get("notes") or []:
         print(f"  ⚠ {note}")
 
+    # ── 演示数据声明（R-09 要求显著标注）──
+    warn = (plans[0].get("materials") or {}).get("disclaimer") if plans else ""
+    if warn:
+        print(f"\n  ⚠ 数据声明：{warn[:100]}…")
+
     # ── 汇总 ─────────────────────────────────────────────────
     banner("总览")
-    branch_ms = [t["elapsed_ms"] for t in out["trace"] if t["agent"] in ("A-03", "A-04")]
-    a03 = [t["elapsed_ms"] for t in out["trace"] if t["agent"] == "A-03"]
-    a04 = [t["elapsed_ms"] for t in out["trace"] if t["agent"] == "A-04"]
+    _BRANCH_CODES = ("A-03", "A-04", "A-05")
+    branch_ms = [t["elapsed_ms"] for t in out["trace"] if t["agent"] in _BRANCH_CODES]
     print(f"  墙钟总耗时 : {wall:.1f}s")
 
     if branch_ms:
-        if a03:
-            print(f"  A-03 分支  : {a03}  (max {max(a03)}ms / sum {sum(a03)}ms)")
-        if a04:
-            print(f"  A-04 分支  : {a04}  (max {max(a04)}ms / sum {sum(a04)}ms)")
+        for code in _BRANCH_CODES:
+            ms = [t["elapsed_ms"] for t in out["trace"] if t["agent"] == code]
+            if ms:
+                print(f"  {code} 分支  : {ms}  (max {max(ms)}ms / sum {sum(ms)}ms)")
 
         # ⚠️ 并发判定必须量「fan-out 阶段的时长」，不能拿总墙钟去比。
         # 总墙钟含 A-01 + A-02，把它们算进去会得出"疑似串行"的错误结论。

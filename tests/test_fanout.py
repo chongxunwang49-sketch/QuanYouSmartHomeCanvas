@@ -22,13 +22,16 @@ import pytest
 from backend.app.agents.budget_agent import BudgetAgent
 from backend.app.agents.layout_diagnoser import LayoutDiagnoserAgent
 from backend.app.agents.layout_parser import LayoutParserAgent
+from backend.app.agents.material_agent import MaterialAgent
 from backend.app.agents.space_planner import SpacePlannerAgent
 from backend.app.core.llm_client import LLMError, LLMResult
 from backend.app.graph import workflow
 from backend.app.graph.state import initial_state
 from backend.app.schemas.budget import BudgetNarrative
 from backend.app.schemas.layout import LayoutDiagnosis, LayoutSchema
+from backend.app.schemas.material import MaterialPlan
 from backend.app.schemas.plan import SpacePlan
+from backend.app.services.material import catalog
 
 # ══════════════════════════════════════════════════════════════════
 # 样本
@@ -89,6 +92,45 @@ NARRATIVE = {
 
 _BRANCH_TOKENS = ("plan_modern_economy", "plan_nordic_medium", "plan_chinese_high")
 
+#: 每个档位能选中的商品 id。**必须是材料目录里对应档位真实存在的**，
+#: 否则会被 A-05 判成幻觉商品剔除 —— 那正好是它该做的事，但会让这里的
+#: 测试失去焦点。写成常量也顺便把「哪些 id 属于哪档」这件事固定下来。
+_MATERIAL_BY_GRADE: dict[str, list[str]] = {
+    "economy": ["QY-FL-101", "QY-PT-101"],
+    "medium": ["QY-FL-101", "QY-DR-102"],
+    "high": ["QY-FL-102", "QY-DR-102"],
+}
+
+
+def _material_payload(prompt: str) -> dict:
+    """
+    按提示词里的档位，返回该档位下合法的商品选择。
+
+    假 LLM 也得"守规矩" —— 它挑的 id 必须真的在该档候选里。
+    这正是 A-05 对真实模型的要求。
+    """
+    grade = "economy"
+    for g in ("medium", "high", "economy"):
+        if f"预算档位：{g}" in prompt:
+            grade = g
+            break
+
+    index = catalog.by_id()
+    choices = [
+        {"category": index[pid].category, "product_id": pid,
+         "reason": "全友自有产品、匹配需求"}
+        for pid in _MATERIAL_BY_GRADE[grade]
+    ]
+    return {
+        "summary": f"{grade} 档选材。",
+        "choices": choices,
+        "substitutions": [],
+        "eco_note": "以 E0 级为主。",
+        "warnings": [],
+        "data_gaps": [],
+        "confidence": 0.7,
+    }
+
 
 class _FanoutLLM:
     """
@@ -103,18 +145,23 @@ class _FanoutLLM:
     """
 
     def __init__(self, *, delay: float = 0.0, fail_on: str | None = None,
-                 fail_budget_on: str | None = None, fail_all_plans: bool = False,
-                 fail_all_budgets: bool = False, layout: dict | None = None):
+                 fail_budget_on: str | None = None, fail_material_on: str | None = None,
+                 fail_all_plans: bool = False,
+                 fail_all_budgets: bool = False,
+                 fail_all_materials: bool = False, layout: dict | None = None):
         self.delay = delay
         self.fail_on = fail_on
         self.fail_budget_on = fail_budget_on
+        self.fail_material_on = fail_material_on
         self.fail_all_plans = fail_all_plans
         self.fail_all_budgets = fail_all_budgets
+        self.fail_all_materials = fail_all_materials
         #: 覆盖 A-01 的产出。要让布局"缺东西"，必须改这里而不是 state——
         #: A-01 跑完会用它的产出整体覆盖 state 里的 layout。
         self.layout = layout if layout is not None else LAYOUT
         self.plan_calls: list[str] = []
         self.budget_calls: list[str] = []
+        self.material_calls: list[str] = []
 
     @staticmethod
     def _branch_of(user: str) -> str | None:
@@ -149,6 +196,14 @@ class _FanoutLLM:
                     raise LLMError(f"模拟分支 {token} 的预算解说失败")
             return schema.model_validate(NARRATIVE), self._res()
 
+        if schema is MaterialPlan:
+            token = self._branch_of(user)
+            if token:
+                self.material_calls.append(token)
+                if self.fail_all_materials or token == self.fail_material_on:
+                    raise LLMError(f"模拟分支 {token} 的选材失败")
+            return schema.model_validate(_material_payload(user)), self._res()
+
         raise AssertionError(f"未预期的 Schema: {schema}")
 
     def _res(self) -> LLMResult:
@@ -165,6 +220,7 @@ def _patch_all(monkeypatch, llm):
         ("diagnose_layout", LayoutDiagnoserAgent),
         ("generate_plan", SpacePlannerAgent),
         ("estimate_budget", BudgetAgent),
+        ("select_materials", MaterialAgent),
     ):
         monkeypatch.setitem(workflow._AGENTS, node, cls(llm=llm))
 
@@ -243,9 +299,9 @@ class TestSendPayload:
             layout=LAYOUT, diagnosis=DIAGNOSIS,
             styles=["modern"], budget_grades=["economy"]))
 
-        # 1 套方案 × 2 个分支 Agent
-        assert len(sends) == 2
-        assert {s.node for s in sends} == {"generate_plan", "estimate_budget"}
+        # 1 套方案 × 3 个分支 Agent
+        assert len(sends) == 3
+        assert {s.node for s in sends} == set(workflow._BRANCH_NODES)
         for send in sends:
             assert send.arg["layout"] == LAYOUT, f"{send.node} 拿不到 layout"
             assert send.arg["diagnosis"] == DIAGNOSIS
@@ -258,7 +314,8 @@ class TestSendPayload:
         """
         sends = workflow._fan_out_plans(_state(
             layout=LAYOUT, styles=["modern"], budget_grades=["economy"]))
-        assert sends[0].arg is not sends[1].arg
+        args = [id(s.arg) for s in sends]
+        assert len(set(args)) == len(args), "存在共用 payload 的 Send"
 
     def test_payload不带无关字段(self):
         """
@@ -293,7 +350,7 @@ class TestConcurrency:
 
         assert len(llm.plan_calls) == 3, f"三个方案分支都应执行，实际 {llm.plan_calls}"
         assert len(out["plans"]) == 3
-        # 6 个任务（3 方案 × 2 Agent）并发，每个睡 0.25s，串行要 1.5s
+        # 9 个任务（3 方案 × 3 Agent）并发；A-03 每个睡 0.25s，串行要 0.75s
         assert elapsed < 0.6, f"分支疑似串行执行，耗时 {elapsed:.2f}s"
 
 
@@ -316,19 +373,20 @@ class TestBranchIsolation:
         assert len(failed) == 1
         assert "plan_nordic_medium" in failed[0]["message"]
 
-    def test_空间规划失败时预算仍在(self, monkeypatch):
+    def test_空间规划失败时其余产物仍在(self, monkeypatch):
         """
-        这是本文件最重要的一条 —— 分支内两个 Agent **互相独立**。
+        这是本文件最重要的一条 —— 分支内各 Agent **互相独立**。
 
-        A-03 失败不该连累 A-04：预算只需要面积和档位，不需要空间规划。
-        旧实现按 space_plan 是否存在来收集方案，这种分支会被整个丢掉，
-        连带把已经算好的预算也扔了。
+        A-03 失败不该连累 A-04/A-05：预算只需要面积和档位，选材只需要房间与需求，
+        都不依赖空间规划。旧实现按 space_plan 是否存在来收集方案，
+        这种分支会被整个丢掉，连带把已经算好的预算一起扔了。
         """
         out = _run(monkeypatch, _FanoutLLM(fail_on="plan_nordic_medium"))
         plan = next(p for p in out["plans"] if p["plan_id"] == "plan_nordic_medium")
 
         assert plan["budget"] is not None, "A-03 失败不该连带丢掉预算"
         assert len(plan["budget"]["lines"]) >= 7
+        assert plan["materials"] is not None, "A-03 失败不该连带丢掉选材"
         assert plan["missing_artifacts"] == ["space_plan"]
 
     def test_预算解说失败时数字仍在(self, monkeypatch):
@@ -360,15 +418,16 @@ class TestBranchIsolation:
         assert row["missing_artifacts"] == ["space_plan"]
         assert any("只产出了部分内容" in n for n in comp["notes"])
 
-    def test_两个Agent都失败时方案才消失(self, monkeypatch):
+    def test_部分Agent全失败时方案仍保留(self, monkeypatch):
         """
-        方案从列表里消失的条件是「**两个** Agent 都没产出」。
+        只要还有一个 Agent 有产出，这套方案就留在列表里。
 
-        注意 fail_all_budgets 只让**解说词**失败，A-04 的数字照常产出，
-        所以方案**仍应保留** —— 这是设计如此，不是缺陷。
-        真正让 A-04 整个失败的只有守卫不通过或引擎异常。
+        注意 fail_all_budgets / fail_all_materials 只让**文字部分**失败，
+        A-04 的数字与 A-05 的候选 id 照常产出 —— 所以方案**仍应保留**，
+        这是设计如此，不是缺陷。真正让它们整个失败的只有守卫不通过或引擎异常。
         """
-        out = _run(monkeypatch, _FanoutLLM(fail_all_plans=True, fail_all_budgets=True))
+        out = _run(monkeypatch, _FanoutLLM(
+            fail_all_plans=True, fail_all_budgets=True, fail_all_materials=True))
 
         # A-03 全挂，但 A-04 的预算还在
         assert len(out["plans"]) == 3
@@ -476,7 +535,7 @@ class TestAggregation:
 
 class TestRouteAfterDiagnosis:
     def test_能出方案时返回Send列表(self):
-        """3 套方案 × 2 个分支 Agent = 6 个 Send。"""
+        """3 套方案 × 3 个分支 Agent = 9 个 Send。"""
         result = workflow._route_after_diagnosis(_state(layout=LAYOUT, diagnosis=DIAGNOSIS))
         assert isinstance(result, list)
         assert len(result) == 3 * len(workflow._BRANCH_NODES)
@@ -527,23 +586,25 @@ class TestCrossCuttingUnderConcurrency:
             "plan_modern_economy", "plan_nordic_medium", "plan_chinese_high",
         }
 
-    def test_同一plan_id下两个Agent的产物共存(self, monkeypatch):
+    def test_同一plan_id下三个Agent的产物共存(self, monkeypatch):
         """
         ⚠️ 回归防线 —— 一个曾经静默丢数据的 bug。
 
-        A-03 与 A-04 会**并发写同一个 plan_id**：
+        分支内三个 Agent 会**并发写同一个 plan_id**：
             A-03 → {"plan_x": {"space_plan": …}}
             A-04 → {"plan_x": {"budget":     …}}
+            A-05 → {"plan_x": {"materials":  …}}
 
-        MergeDict 原先是**浅合并**，实测结果是 {"plan_x": {"budget": …}} ——
-        space_plan 被整个顶掉，**不报错、不告警**，用户拿到一份只有预算的"方案"。
+        MergeDict 原先是**浅合并**，实测结果是只剩最后写的那一个 ——
+        另外两份被整个顶掉，**不报错、不告警**，用户拿到一份残缺的"方案"。
+        分支内 Agent 越多，丢得越多。
 
-        这条测试与 `test_每套方案同时含规划与预算` 一起守住这个行为。
+        这条测试与 `test_每套方案同时含三种产物` 一起守住这个行为。
         """
         out = _run(monkeypatch, _FanoutLLM())
 
         for plan_id, bundle in out["plan_bundles"].items():
-            assert set(bundle) == {"space_plan", "budget"}, (
+            assert set(bundle) == set(workflow.BRANCH_ARTIFACTS), (
                 f"{plan_id} 的产物被覆盖了，只剩 {set(bundle)}"
             )
 

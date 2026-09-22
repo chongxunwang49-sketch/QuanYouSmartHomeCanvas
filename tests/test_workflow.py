@@ -20,12 +20,14 @@ import pytest
 from backend.app.agents.budget_agent import BudgetAgent
 from backend.app.agents.layout_diagnoser import LayoutDiagnoserAgent
 from backend.app.agents.layout_parser import LayoutParserAgent
+from backend.app.agents.material_agent import MaterialAgent
 from backend.app.agents.space_planner import SpacePlannerAgent
 from backend.app.core.llm_client import LLMResult
 from backend.app.graph import workflow
 from backend.app.graph.state import initial_state
 from backend.app.schemas.budget import BudgetNarrative
 from backend.app.schemas.layout import LayoutDiagnosis, LayoutSchema
+from backend.app.schemas.material import MaterialPlan
 from backend.app.schemas.plan import SpacePlan
 
 # ══════════════════════════════════════════════════════════════════
@@ -83,6 +85,41 @@ NARRATIVE_PAYLOAD = {
     "confidence": 0.7,
 }
 
+#: 每个档位下**真实存在于候选池**的全友商品 id。
+#: A-05 是档位敏感的：给 high 档喂 economy 的 id 会被正确地判成
+#: 「不在候选清单中」而剔除 —— 那正是它该做的事，但会让这里的测试跑偏。
+_MATERIAL_BY_GRADE: dict[str, list[str]] = {
+    "economy": ["QY-FL-101", "QY-PT-101"],
+    "medium": ["QY-FL-101", "QY-DR-102"],
+    "high": ["QY-FL-102", "QY-DR-102"],
+}
+
+
+def _material_payload(prompt: str) -> dict:
+    """按提示词里的档位，返回该档位下合法的商品选择。"""
+    grade = "economy"
+    for g in ("medium", "high", "economy"):
+        if f"预算档位：{g}" in prompt:
+            grade = g
+            break
+
+    from backend.app.services.material import catalog
+
+    index = catalog.by_id()
+    return {
+        "summary": "优先选全友自有产品，环保等级以 E0 为主。",
+        "choices": [
+            {"category": index[pid].category, "product_id": pid,
+             "reason": "全友自有产品、匹配需求"}
+            for pid in _MATERIAL_BY_GRADE[grade]
+        ],
+        "substitutions": [],
+        "eco_note": "所选材料以 E0 级为主。",
+        "warnings": [],
+        "data_gaps": [],
+        "confidence": 0.7,
+    }
+
 
 class _DispatchLLM:
     """
@@ -122,6 +159,11 @@ class _DispatchLLM:
             # 它只调 LLM 要这段文字，见 budget_agent.py
             self.seen.append("A-04")
             return schema.model_validate(self.narrative), self._res()
+        if schema is MaterialPlan:
+            # A-05 同样只让模型**指认**候选 id，价格由代码回填。
+            # 这里必须按提示词里的档位给 id —— 见 _material_payload 的说明。
+            self.seen.append("A-05")
+            return schema.model_validate(_material_payload(kwargs.get("user") or "")), self._res()
         raise AssertionError(f"未预期的 Schema: {schema}")
 
     def _res(self) -> LLMResult:
@@ -157,6 +199,7 @@ def patched(monkeypatch):
             ("diagnose_layout", LayoutDiagnoserAgent),
             ("generate_plan", SpacePlannerAgent),
             ("estimate_budget", BudgetAgent),
+            ("select_materials", MaterialAgent),
         ):
             monkeypatch.setitem(workflow._AGENTS, node, cls(llm=llm))
         return llm, workflow.build_graph(with_checkpointer=False)
@@ -173,7 +216,7 @@ class TestGraphStructure:
     def test_all_agents_registered(self):
         assert set(workflow._AGENTS) == {
             "parse_layout", "diagnose_layout",
-            "generate_plan", "estimate_budget",
+            "generate_plan", "estimate_budget", "select_materials",
         }
 
     def test_branch_nodes_match_artifacts(self):
@@ -212,18 +255,18 @@ class TestFullFlow:
         assert llm.seen[0] == "A-01", f"调用顺序异常: {llm.seen}"
         assert llm.seen[1] == "A-02", f"调用顺序异常: {llm.seen}"
         # 分支内并发，完成顺序不确定，因此比较次数而不是序列
-        assert llm.seen.count("A-03") == 3, f"A-03 应被调用 3 次，实际 {llm.seen}"
-        assert llm.seen.count("A-04") == 3, f"A-04 应被调用 3 次，实际 {llm.seen}"
+        for code in ("A-03", "A-04", "A-05"):
+            assert llm.seen.count(code) == 3, f"{code} 应被调用 3 次，实际 {llm.seen}"
 
         assert out["layout"]["rooms"][0]["name"] == "客厅"
         assert out["diagnosis"]["overall_score"] > 0
         assert len(out["plans"]) == 3
         assert out["phase"] == "finalizing"
 
-    def test_每套方案同时含规划与预算(self, patched):
+    def test_每套方案同时含三种产物(self, patched):
         """
-        A-03 与 A-04 并行写同一个 plan_id。
-        两者都必须留下来 —— 浅合并 reducer 会把先写的那份整个顶掉。
+        三个分支 Agent 并行写同一个 plan_id，三份产物都必须留下来。
+        浅合并 reducer 会把先写的那份整个顶掉 —— 详见 state.py 的 _merge_dict。
         """
         _, graph = patched()
         out = asyncio.run(graph.ainvoke(_state()))
@@ -231,7 +274,19 @@ class TestFullFlow:
         for plan in out["plans"]:
             assert plan["space_plan"] is not None, f"{plan['plan_id']} 缺空间规划"
             assert plan["budget"] is not None, f"{plan['plan_id']} 缺预算"
+            assert plan["materials"] is not None, f"{plan['plan_id']} 缺材料"
             assert plan["missing_artifacts"] == []
+
+    def test_全友覆盖率达标(self, patched):
+        """AC-18：方案中全友产品覆盖率 ≥ 60%，由代码统计而非模型自报。"""
+        _, graph = patched()
+        out = asyncio.run(graph.ainvoke(_state()))
+
+        for plan in out["plans"]:
+            mt = plan["materials"]
+            assert mt["quanyou_met"] is True, (
+                f"{plan['plan_id']} 全友覆盖率 {mt['quanyou_coverage']:.0%} 未达 AC-18"
+            )
 
     def test_预算由规则引擎算而非模型(self, patched):
         """AC-05 / ADR-07：预算数字必须来自 rule_engine，且分项 ≥7。"""
@@ -246,14 +301,14 @@ class TestFullFlow:
             assert bg["disclaimer"], "演示数据声明必须透出"
 
     def test_trace_covers_all_nodes(self, patched):
-        """A-01 + A-02 + (A-03 + A-04) × 3 = 8 条 trace。"""
+        """A-01 + A-02 + (A-03 + A-04 + A-05) × 3 = 11 条 trace。"""
         _, graph = patched()
         out = asyncio.run(graph.ainvoke(_state()))
 
         agents = [t["agent"] for t in out["trace"]]
-        assert len(agents) == 8
-        assert agents.count("A-03") == 3
-        assert agents.count("A-04") == 3
+        assert len(agents) == 11
+        for code in ("A-03", "A-04", "A-05"):
+            assert agents.count(code) == 3
         assert all(t["ok"] for t in out["trace"])
 
     def test_layout_id_generated(self, patched):
@@ -373,10 +428,10 @@ class TestStateMerge:
         """
         _, graph = patched()
         out = asyncio.run(graph.ainvoke(_state()))
-        assert len(out["trace"]) == 8, "六个分支任务的 trace 与上游两条都应保留"
+        assert len(out["trace"]) == 11, "九个分支任务的 trace 与上游两条都应保留"
 
     def test_degrade_reasons_accumulate(self, monkeypatch):
-        """八个节点全部降级时，八条原因一条都不能丢。"""
+        """十一个节点全部降级时，十一条原因一条都不能丢。"""
         llm = _DispatchLLM()
 
         async def degraded_json(schema, **kw):
@@ -392,12 +447,13 @@ class TestStateMerge:
             ("diagnose_layout", LayoutDiagnoserAgent),
             ("generate_plan", SpacePlannerAgent),
             ("estimate_budget", BudgetAgent),
+            ("select_materials", MaterialAgent),
         ):
             monkeypatch.setitem(workflow._AGENTS, node, cls(llm=llm))
 
         out = asyncio.run(workflow.build_graph(with_checkpointer=False).ainvoke(_state()))
-        # A-01 + A-02 + (A-03 + A-04) × 3
-        assert len(out["degrade_reasons"]) == 8
+        # A-01 + A-02 + (A-03 + A-04 + A-05) × 3
+        assert len(out["degrade_reasons"]) == 11
         assert all("降级" in r for r in out["degrade_reasons"])
         # 任一分支降级 => 整体降级（OrBool reducer）
         assert out["degraded"] is True

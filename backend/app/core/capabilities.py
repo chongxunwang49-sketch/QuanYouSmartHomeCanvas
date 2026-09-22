@@ -41,6 +41,7 @@ Operation = Literal[
     "generate_image",       # 效果图生成
     "generate_hotspots",    # 物品热区
     "edit_layout",          # 局部替换 / 框选编辑
+    "select_materials",     # 材料选型
 ]
 
 #: 每个操作的数据前置条件：字段路径 -> 人类可读的名称
@@ -57,6 +58,14 @@ _REQUIREMENTS: dict[str, dict[str, str]] = {
         "rooms": "房间信息",
         "has_area": "房间面积",
         "walls": "墙体信息",
+    },
+    # 材料选型的门槛与 generate_plan 同高，但**不要墙体**。
+    # 理由：选材要知道「有哪些空间」才能判断该选哪些品类（有卫生间才需要
+    # 瓷砖与洁具），墙体信息对它没有用处。用 generate_plan 那道门会过度拒绝 ——
+    # 一个没识别出墙体、但房间与面积齐全的户型，方案出不了，选材却是能做的。
+    "select_materials": {
+        "rooms": "房间信息",
+        "has_area": "房间面积",
     },
     "estimate_budget": {
         "has_total_area": "套内总面积",
