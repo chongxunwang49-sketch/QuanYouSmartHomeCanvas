@@ -65,18 +65,45 @@ def _block_real_llm(request, monkeypatch):
 
     import httpx
 
-    class _BlockedClient:
-        def __init__(self, *args, **kwargs):
-            raise RuntimeError(
-                "测试试图发起真实网络请求（httpx 已被 conftest 拦截）。\n"
-                "常见原因：\n"
-                "  1) workflow._AGENTS 里有 Agent 没被替换成 Fake LLM\n"
-                "  2) 新增了走网络的模块（embedding / 向量库 / 第三方 API）\n"
-                "修法：把该依赖在测试里打桩；确实需要真出网的测试请标 @pytest.mark.integration。"
-            )
+    _MESSAGE = (
+        "测试试图发起真实网络请求（httpx 已被 conftest 拦截）。\n"
+        "常见原因：\n"
+        "  1) workflow._AGENTS 里有 Agent 没被替换成 Fake LLM\n"
+        "  2) 新增了走网络的模块（embedding / 向量库 / 第三方 API）\n"
+        "修法：把该依赖在测试里打桩；确实需要真出网的测试请标 @pytest.mark.integration。"
+    )
 
-    monkeypatch.setattr(httpx, "Client", _BlockedClient)
-    monkeypatch.setattr(httpx, "AsyncClient", _BlockedClient)
+    def _is_in_process(client) -> bool:
+        """
+        这次请求是不是**只在进程内**。
+
+        FastAPI 的 `TestClient` 用 `httpx.ASGITransport` —— 请求直接交给
+        ASGI app 处理，一个字节都不出网。API 层测试全靠它，
+        一刀切拦掉会让接口层完全没法测。
+
+        判据用 **transport 的类型**而不是 base_url 之类的字符串：
+        ASGITransport 是明确的"进程内"信号；字符串可以随便写，
+        拿它当判据等于给自己留后门。
+        """
+        return type(getattr(client, "_transport", None)).__name__ == "ASGITransport"
+
+    _real_send = httpx.Client.send
+    _real_async_send = httpx.AsyncClient.send
+
+    def _guarded_send(self, request, **kwargs):
+        if _is_in_process(self):
+            return _real_send(self, request, **kwargs)
+        raise RuntimeError(_MESSAGE)
+
+    async def _guarded_async_send(self, request, **kwargs):
+        if _is_in_process(self):
+            return await _real_async_send(self, request, **kwargs)
+        raise RuntimeError(_MESSAGE)
+
+    # 拦在 `send` 这一个出口上，而不是替换 Client 类 ——
+    # 类身份保持不变，`isinstance` 与 starlette 内部的用法都不受影响。
+    monkeypatch.setattr(httpx.Client, "send", _guarded_send)
+    monkeypatch.setattr(httpx.AsyncClient, "send", _guarded_async_send)
 
 
 # ══════════════════════════════════════════════════════════════════

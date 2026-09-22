@@ -2,7 +2,7 @@
 LangGraph 工作流编排。
 
 ═══════════════════════════════════════════════════════════════════
-当前进度：解析 → 诊断 → 3 路 fan-out → fan-in 汇总
+六个 Agent 全通：解析 → 诊断 → 3×3 并发产出 → 汇聚审查 → fan-in
 ═══════════════════════════════════════════════════════════════════
 
     START
@@ -12,28 +12,38 @@ LangGraph 工作流编排。
     diagnose_layout     A-02 五维诊断
       │  条件路由：不支撑方案生成 => 短路 END
       │
-      │  fan-out（Send）：3 套方案 × 2 个分支 Agent = 6 个并发任务
+      │  fan-out（Send）：3 套方案 × 3 个产出者 = 9 个并发任务
       │
-      ├─ plan_modern_economy ─┬─ generate_plan   A-03 空间规划
-      │                       └─ estimate_budget A-04 预算（规则引擎）
-      ├─ plan_nordic_medium ──┬─ generate_plan
-      │                       └─ estimate_budget
-      └─ plan_chinese_high ───┬─ generate_plan
-                              └─ estimate_budget
+      ├─ plan_modern_economy ─┬─ generate_plan    A-03 空间规划
+      │                       ├─ estimate_budget  A-04 预算（规则引擎）
+      │                       └─ select_materials A-05 选材（代码回填价格）
+      ├─ plan_nordic_medium ──┼─ 同上 ×3
+      └─ plan_chinese_high ───┴─ 同上 ×3
       │
-      │  fan-in：所有分支任务汇聚（同一 plan_id 下的产物由深合并 reducer 合并）
+      │  汇聚：9 个产出任务全部完成后，下一个节点执行**一次**
+      │
+    review_risks        A-06 避坑审查（RAG + 引用溯源）★ 不是并行分支
+      │
+      │  fan-in：按 plan_id 汇聚（同一 plan_id 下的产物由深合并 reducer 合并）
       │
     aggregate_plans     三方案汇总 + 对比表（纯代码，无 LLM）
       │
      END
 
-**分支内各 Agent 互相独立**：A-03 失败不影响 A-04，反之亦然。
+**产出者之间互相独立**：任意一个失败不影响其余两个。
 fan-in 按分支规格列出方案，缺哪个产物写进 `missing_artifacts`。
 
-分支内的其余 Agent（A-05 材料 / A-06 避坑）在此骨架上增量添加——
-登记 `_AGENTS` + `_BRANCH_NODES` + `BRANCH_ARTIFACTS` 三处即可。
-图像与热区节点位于 **fan-in 之后**，不在并行分支内 —— 6 路并发调图会打爆显存
+**A-06 为什么不在并行分支里**：你没法审查一份还不存在的预算。
+详见 `_REVIEW_NODE` 处的说明。
+
+**加产出者只需改 `_BRANCH_PRODUCERS` 一张表**（节点名 → 产物键），
+节点列表、产物列表、fan-in 收集逻辑都从它派生。
+图像与热区节点位于 **fan-in 之后**，不在并行分支内 —— 9 路并发调图会打爆显存
 （需求文档 3.3 的关键结构调整）。
+
+**三个入口**（见 `build_graph`）：`full` 跑整条链（e2e 脚本用）、
+`parse` 到诊断为止（4.2 `/layout/parse`）、`generate` 从诊断进
+（4.3 `/design/generate`，布局由调用方提供，跳过已做过的视觉解析）。
 
 ═══════════════════════════════════════════════════════════════════
 三个实测得来的关键约定
@@ -552,7 +562,7 @@ def build_graph(
     *,
     checkpointer: Any = None,
     with_checkpointer: bool = True,
-    stages: Literal["full", "parse"] = "full",
+    stages: Literal["full", "parse", "generate", "review"] = "full",
 ):
     """
     构建并编译工作流。
@@ -560,13 +570,30 @@ def build_graph(
     Args:
         checkpointer: 显式传入（测试用，通常传 InMemorySaver）。
         with_checkpointer: False 时不挂载 checkpointer，纯粹跑一次无状态图。
-        stages:
-            "full"  —— 解析 → 诊断 → 3 路 fan-out → 汇聚审查 → fan-in（完整链路）
-            "parse" —— 解析 → 诊断，到此为止（对应 4.2 的 `/layout/parse`）
+        stages: 从哪进、到哪出。四个入口对应四个使用场景 ——
 
-    `stages="parse"` 存在的理由：解析与方案生成是两个独立的 API。
-    让 `/layout/parse` 顺带跑完整条链，会白白花掉十几次 LLM 调用和一百多秒 ——
-    而调用方只要那份户型 JSON。
+            "full"     解析 → 诊断 → fan-out → 汇聚审查 → fan-in
+                       （`scripts/e2e_smoke.py` 用；一次跑完整条链）
+
+            "parse"    解析 → 诊断，到此为止
+                       （4.2 `/layout/parse`：调用方只要户型 JSON）
+
+            "generate" 诊断 → fan-out → 汇聚审查 → fan-in
+                       （4.3 `/design/generate`：**已持有 layout，跳过视觉解析**）
+
+            "review"   只跑 review_risks 一个节点
+                       （4.6 `/avoid-pit/review`：审报价单，**与户型无关**）
+
+    **为什么要有三个入口**：解析与方案生成是两个独立 API，且代价差一个数量级 ——
+    视觉解析约 16s、整条链约 110s。
+
+    - 让 `/layout/parse` 顺带跑完整条链：白白多花 10 次 LLM 调用、多等 90 秒。
+    - 让 `/design/generate` 重新解析一遍：白白再等 16 秒，而且**可能解析出
+      不一样的结果**（模型有随机性）—— 用户会发现自己看到的那份户型
+      和生成方案用的不是同一份。
+
+    所以 "generate" 从 `diagnose_layout` 进：布局由调用方提供，
+    跳过已经做过的那一步。"诊断"不跳过 —— 它是规划的依据，且相对便宜。
     """
     from langgraph.graph import END, START, StateGraph
 
@@ -585,14 +612,28 @@ def build_graph(
     builder.add_node("aggregate_plans", aggregate_plans)
 
     # ── 连边 ──────────────────────────────────────────────
-    builder.add_edge(START, "parse_layout")
+    # 只跑审查一个节点：报价单审查**与户型无关**（用户上传的是装修公司的报价单，
+    # 不是自己的房子）。硬塞进完整图的话，会因为缺 layout 而在 A-03 就炸掉。
+    if stages == "review":
+        builder.add_edge(START, _REVIEW_NODE)
+        builder.add_edge(_REVIEW_NODE, END)
+        if not with_checkpointer:
+            return builder.compile()
+        cp = checkpointer if checkpointer is not None else _build_checkpointer()
+        return builder.compile(checkpointer=cp)
 
-    # 解析失败就没有可诊断的数据，直接结束而不是让 A-02 抛错。
-    builder.add_conditional_edges(
-        "parse_layout",
-        _route_after_parse,
-        {"diagnose": "diagnose_layout", "end": END},
-    )
+    if stages == "generate":
+        # 已持有 layout，跳过视觉解析这一步（见 build_graph 的 stages 说明）
+        builder.add_edge(START, "diagnose_layout")
+    else:
+        builder.add_edge(START, "parse_layout")
+
+        # 解析失败就没有可诊断的数据，直接结束而不是让 A-02 抛错。
+        builder.add_conditional_edges(
+            "parse_layout",
+            _route_after_parse,
+            {"diagnose": "diagnose_layout", "end": END},
+        )
 
     # 只跑解析链路：诊断完就收工（4.2 的 `/layout/parse`）
     if stages == "parse":
@@ -631,11 +672,11 @@ def build_graph(
 _compiled: dict[str, Any] = {}
 
 
-def get_compiled_graph(stages: Literal["full", "parse"] = "full"):
+def get_compiled_graph(stages: Literal["full", "parse", "generate"] = "full"):
     """
     进程级单例编译图（避免每次请求重建 checkpointer 连接）。
 
-    两种 stages 各缓存一份 —— 解析接口与方案接口会同时存在，
+    三种 stages 各缓存一份 —— 解析接口与方案接口会同时存在，
     不能互相覆盖。
     """
     if stages not in _compiled:
