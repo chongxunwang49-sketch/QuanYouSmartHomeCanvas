@@ -43,136 +43,36 @@ for _s in (sys.stdout, sys.stderr):
         except Exception:
             pass
 
-import yaml  # noqa: E402
+from backend.app.services.knowledge import chunking  # noqa: E402
 
 #: 通过标准。低于这些值说明语料没准备好，不该入库。
 MIN_FILES = 10
 MIN_CHUNKS = 100
-#: 单条 chunk 的合理长度区间（字符）。太短是碎片，太长会稀释检索精度。
-MIN_CHUNK_CHARS = 80
-MAX_CHUNK_CHARS = 1200
+MIN_CHUNK_CHARS = chunking.MIN_CHUNK_CHARS
+MAX_CHUNK_CHARS = chunking.MAX_CHUNK_CHARS
 
 
 def load_manifest(path: Path) -> dict:
-    if not path.exists():
-        raise SystemExit(f"✗ 清单不存在: {path}")
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict) or "ingest" not in data:
-        raise SystemExit(f"✗ 清单格式不对（缺 ingest）: {path}")
-    return data
+    try:
+        return chunking.load_manifest(path)
+    except chunking.ManifestError as e:
+        raise SystemExit(f"✗ {e}") from e
 
 
 def resolve_corpus_root(manifest: dict, override: str | None) -> Path:
     if override:
         return Path(override)
-    sources = manifest.get("sources") or []
-    if sources and sources[0].get("local_path"):
-        return Path(sources[0]["local_path"]).parent
-    raise SystemExit("✗ 清单里没有 sources[].local_path，请用 --root 指定语料根目录")
+    try:
+        return chunking.corpus_root_of(manifest)
+    except chunking.ManifestError as e:
+        raise SystemExit(f"✗ {e}（可用 --root 指定语料根目录）") from e
 
 
-def collect_files(manifest: dict, corpus_root: Path) -> tuple[list[dict], list[str]]:
-    """
-    按白名单展开成文件列表。
-
-    返回 (文件条目, 问题列表)。条目里带上 doc_type/tags ——
-    这些元数据**在切块时注入**，而不是写进上游文件（见清单顶部纪律 1）。
-    """
-    files: list[dict] = []
-    problems: list[str] = []
-
-    for entry in manifest["ingest"]:
-        rel = entry["path"]
-        target = corpus_root / rel
-        if not target.exists():
-            problems.append(f"入库目录不存在: {target}")
-            continue
-        found = sorted(target.rglob("*.md"))
-        if not found:
-            problems.append(f"入库目录里没有 md: {target}")
-            continue
-        for f in found:
-            files.append({
-                "path": f,
-                "rel": str(f.relative_to(corpus_root)).replace("\\", "/"),
-                "doc_type": entry.get("doc_type", "avoid_pit"),
-                "tags": entry.get("tags") or [],
-                "source": rel.split("/")[0],
-                "priority": entry.get("priority", "support"),
-            })
-
-    # 排除项也校验一下存在性 —— 名字写错时能立刻发现，
-    # 否则"排除了 5 个目录"这句话可能是排除了 5 个不存在的名字
-    for entry in manifest.get("exclude", []):
-        rel = entry["path"]
-        if "*" in rel:
-            continue
-        if not (corpus_root / rel).exists():
-            problems.append(f"排除目录不存在（清单可能写错）: {rel}")
-
-    return files, problems
-
-
-def build_splitter():
-    """
-    两级切块：先按标题切（保住结构），再对超长的按长度切。
-
-    只用 MarkdownHeaderTextSplitter 的话，遇到一个 30KB 的大章节会切出
-    一整块超长文本 —— 检索时它会盖过其它所有结果。
-    只用 RecursiveCharacterTextSplitter 则会切碎标题，丢掉层级信息。
-    """
-    from langchain_text_splitters import (
-        MarkdownHeaderTextSplitter,
-        RecursiveCharacterTextSplitter,
-    )
-
-    by_header = MarkdownHeaderTextSplitter(
-        headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
-        strip_headers=False,          # 标题要留在正文里，检索时才看得见语境
-    )
-    by_size = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=60,
-        separators=["\n\n", "\n", "。", "；", "，", " ", ""],
-    )
-    return by_header, by_size
-
-
-def chunk_files(files: list[dict]) -> list[dict]:
-    by_header, by_size = build_splitter()
-    chunks: list[dict] = []
-
-    for entry in files:
-        try:
-            text = entry["path"].read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            continue
-        if not text.strip():
-            continue
-
-        try:
-            parts = by_header.split_text(text)
-        except Exception:
-            parts = []
-
-        for part in parts:
-            body = part.page_content if hasattr(part, "page_content") else str(part)
-            if len(body) > MAX_CHUNK_CHARS:
-                pieces = by_size.split_text(body)
-            else:
-                pieces = [body]
-            for piece in pieces:
-                piece = piece.strip()
-                if len(piece) < MIN_CHUNK_CHARS:
-                    continue
-                chunks.append({
-                    "text": piece,
-                    "doc_type": entry["doc_type"],
-                    "tags": entry["tags"],
-                    "source": entry["rel"],
-                    "priority": entry["priority"],
-                })
-    return chunks
+# 切块逻辑统一在 backend/app/services/knowledge/chunking.py ——
+# 验证脚本与入库脚本**必须用同一套**，否则"验证时 419 条、实际入库 500 条"
+# 这种不一致极难发现（两边都跑通了）。
+collect_files = chunking.collect_files
+chunk_files = chunking.chunk_files
 
 
 def verify_embeddings(chunks: list[dict], sample: int) -> tuple[bool, str]:
