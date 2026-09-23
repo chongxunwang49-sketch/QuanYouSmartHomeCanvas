@@ -634,6 +634,33 @@ def _check_walls_closed(walls: Iterable[WallSeg]) -> bool:
     return True
 
 
+def wall_point_at(wall: WallSeg, offset_m: float) -> tuple[Vec2, Vec2] | None:
+    """
+    墙上的第 `offset_m` 米处：返回 `(点, 单位方向向量)`。
+
+    ⚠️ 方向由**这一段**决定，不是整段墙的首尾 —— 折线墙拐弯后方向会变，
+    用整段的首尾方向会把门画歪（2D）或把碰撞体切歪（3D）。
+
+    越界（offset 超过墙长）时钳到末端；墙退化（长度全为 0）时返回 `None`。
+
+    放在 geometry 而不是 render：2D 画门要用它、3D 切门洞也要用它。
+    留在渲染层会逼着几何层反向依赖渲染层，那是错的层次关系。
+    """
+    travelled = 0.0
+    for a, b in wall.segments():
+        seg_len = math.dist((a.x, a.y), (b.x, b.y))
+        if seg_len <= 1e-9:
+            continue
+        if travelled + seg_len >= offset_m:
+            t = (offset_m - travelled) / seg_len
+            return (
+                Vec2(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)),
+                Vec2((b.x - a.x) / seg_len, (b.y - a.y) / seg_len),
+            )
+        travelled += seg_len
+    return None
+
+
 def _locate_on_wall(center: Vec2, walls: Sequence[WallSeg]) -> tuple[int, float]:
     """
     找出门窗落在哪段墙的哪个位置。

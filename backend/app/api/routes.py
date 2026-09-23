@@ -10,6 +10,7 @@ HTTP 路由。
     GET  /api/v1/material/price        4.5 材料价格查询（同步，纯查表）
     GET  /api/v1/layout/{id}/plan.svg  4.3′ 矢量户型图（同步，AC-07）
     GET  /api/v1/layout/{id}/hotspots  4.3′ 物品热区+价格（同步，AC-09/21）
+    GET  /api/v1/layout/{id}/walkable  4.3″ 3D 漫游几何（同步，第一人称）
     GET  /api/v1/system/health         4.6 健康检查
 
 **四个异步接口的形状是一致的**：立即返回 task_id，客户端轮询 4.4。
@@ -30,6 +31,7 @@ from ..core.capabilities import OperationNotAllowedError
 from ..core.config import settings
 from ..graph.state import initial_state
 from ..graph.workflow import get_compiled_graph
+from ..services.geometry import build_walkable
 from ..services.material import catalog
 from ..services.render import hotspot_payload, render_plan_for
 from . import store as layout_store
@@ -328,6 +330,48 @@ async def layout_plan_svg(layout_id: str) -> Response:
             "X-Plan-Warnings": str(len(plan.warnings)),
         },
     )
+
+
+@router.get("/layout/{layout_id}/walkable", response_model=ApiResponse)
+async def layout_walkable(layout_id: str) -> ApiResponse:
+    """
+    3D 漫游的几何输入（新需求：第一人称在模型中行走）。
+
+    返回碰撞线段（门洞已切开）、房间净空、门连通图、出生点。
+
+    ⚠️ **`mode` 字段决定前端走哪条路**：
+
+        "walk"  可以做第一人称贴地行走（有碰撞、只能从门进出）
+        "fly"   降级为自由视角（可穿墙飞行）
+
+    降级的判据在 `services/geometry/walkable.py`：墙不闭合、房间站不下人、
+    门过窄、有房间走不到 —— 任一不成立就走 fly。**硬做第一人称会把用户
+    关在房间里**，那比功能少一点更糟。
+
+    `issues` 里逐条写明了为什么（`ok=false` 时必定非空）—— 静默降级
+    是欺骗用户（AC-17）。
+    """
+    layout = await layout_store.load(layout_id)
+    if not layout:
+        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+
+    try:
+        scene, plan = render_plan_for(layout)
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"[render] 场景归一化失败 layout_id={layout_id}")
+        raise ApiError(5003, f"场景归一化失败：{type(e).__name__}") from e
+
+    walk = build_walkable(scene)
+    return ApiResponse.ok({
+        "layout_id": layout_id,
+        # 3D 场景本体：直接给米制场景，前端挤出墙体用
+        "scene": scene.to_dict(),
+        "walkable": walk.to_dict(),
+        # 画布像素坐标（2D 图与热区）。3D 用不到，但前端要在同一页
+        # 同时显示平面图和 3D 时用得上 —— 不给的话它会自己算，
+        # 而自己算就是"两套坐标"的开端。
+        "plan_transform": plan.projection.as_dict(),
+    })
 
 
 @router.get("/layout/{layout_id}/hotspots", response_model=ApiResponse)

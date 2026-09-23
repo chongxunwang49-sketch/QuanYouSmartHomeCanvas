@@ -36,6 +36,22 @@ import math
 from dataclasses import dataclass, field
 from xml.sax.saxutils import escape as _xml_escape
 
+from ...schemas.layout import RoomType
+from ..geometry import Scene
+from ..geometry.normalize import (
+    Opening,
+    RoomShape,
+    Vec2,
+    WallSeg,
+    wall_point_at,
+)
+from .projection import (
+    DEFAULT_MIN_SIDE_PX,
+    DEFAULT_PAD_PX,
+    Projection,
+    build_projection,
+)
+
 # ⚠️ `xml.sax.saxutils.escape` 默认**只转 `& < >`，不转引号**。
 #
 # 而房间名是 LLM 读图读出来的，会进到 `aria-label="..."` / `data-label="..."` /
@@ -50,16 +66,6 @@ _XML_ENTITIES = {'"': "&quot;", "'": "&apos;"}
 def _esc(value: object) -> str:
     """XML 转义。**引号一起转** —— 见上面的原因。"""
     return _xml_escape(str(value), _XML_ENTITIES)
-
-from ...schemas.layout import RoomType
-from ..geometry import Scene
-from ..geometry.normalize import Opening, RoomShape, Vec2, WallSeg
-from .projection import (
-    DEFAULT_MIN_SIDE_PX,
-    DEFAULT_PAD_PX,
-    Projection,
-    build_projection,
-)
 
 # ══════════════════════════════════════════════════════════════════
 # 配色 —— 与前端 tailwind.config.js 的 token 同源
@@ -483,30 +489,6 @@ def _empty_state(proj: Projection) -> str:
 # ══════════════════════════════════════════════════════════════════
 # 几何小工具
 # ══════════════════════════════════════════════════════════════════
-
-
-def wall_point_at(wall: WallSeg, offset_m: float) -> tuple[Vec2, Vec2] | None:
-    """
-    墙上的第 `offset_m` 米处：返回 `(点, 单位方向向量)`。
-
-    方向由**这一段**决定，不是整段墙的首尾 —— 折线墙拐弯后方向会变，
-    用整段的首尾方向会把门画歪。
-
-    越界（offset 超过墙长）时钳到末端，返回 `None` 只在墙退化时。
-    """
-    travelled = 0.0
-    for a, b in wall.segments():
-        seg_len = math.dist((a.x, a.y), (b.x, b.y))
-        if seg_len <= 1e-9:
-            continue
-        if travelled + seg_len >= offset_m:
-            t = (offset_m - travelled) / seg_len
-            return (
-                Vec2(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)),
-                Vec2((b.x - a.x) / seg_len, (b.y - a.y) / seg_len),
-            )
-        travelled += seg_len
-    return None
 
 
 def _line(a: Vec2, b: Vec2, proj: Projection, *, stroke: str, width: float) -> str:

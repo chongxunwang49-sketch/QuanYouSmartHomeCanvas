@@ -30,9 +30,22 @@ from .normalize import (
     Scene,
     normalize_layout,
     derive_scale,
+    wall_point_at,
+)
+from .walkable import (
+    DEFAULT_EYE_HEIGHT_M,
+    DEFAULT_PLAYER_RADIUS_M,
+    CollisionSeg,
+    DoorEdge,
+    RoomNode,
+    Walkable,
+    build_walkable,
 )
 
 __all__ = [
     "Vec2", "WallSeg", "Opening", "RoomShape", "Scene",
-    "normalize_layout", "derive_scale",
+    "normalize_layout", "derive_scale", "wall_point_at",
+    # 可漫游性（第一人称行走的几何前提）
+    "Walkable", "RoomNode", "DoorEdge", "CollisionSeg", "build_walkable",
+    "DEFAULT_PLAYER_RADIUS_M", "DEFAULT_EYE_HEIGHT_M",
 ]
