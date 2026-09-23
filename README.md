@@ -407,7 +407,34 @@ python -m uvicorn backend.app.main:app --port 8000
 - 价格、规范、材料数据必须可溯源，禁止编造
 - 端口一律绑 `127.0.0.1`，**全部演示在本地完成**，不做公网暴露
 
----
+### 推送与同步（双远端）
+
+仓库有两个远端，**但只需手动推其中一个**：
+
+```
+本机 ──git push gitee main──▶ Gitee ◀──定时拉取── GitHub Actions ──▶ GitHub
+     (国内直连，不需要代理)        (都在境外，互访无障碍)
+```
+
+**为什么要这么绕**：本机**直连不到 github.com**（实测 `curl https://github.com`
+返回 `000`）。直接推 GitHub 必须先确保代理软件在跑，忘了就报
+`Failed to connect to github.com port 443 after 21s` —— 而那个报错看起来像
+"网络坏了"，不像"少开了个软件"。
+
+把推送方向反过来之后，同步动作发生在 **GitHub 的服务器上**，
+本机一个代理都不需要。
+
+| 远端 | 用途 | 需要代理吗 |
+|---|---|---|
+| `gitee` | **日常就推这个**，源 | 不需要 |
+| `origin`（GitHub） | 镜像，由 Action 自动跟进 | 不需要（不用手动推） |
+
+`.github/workflows/sync-from-gitee.yml` 每 30 分钟检查一次 Gitee；
+也可以在 GitHub 网页的 Actions 页手动点 `Run workflow` 立即同步。
+
+⚠️ **不要直接往 GitHub 推**。两边一旦分叉，工作流会**故意失败**而不是强推覆盖
+（强推会静默销毁 GitHub 上别人可能已经拉走的提交）。
+
 
 ## 相关文档
 
