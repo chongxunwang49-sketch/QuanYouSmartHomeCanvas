@@ -24,6 +24,26 @@
 #
 # ⚠️ 方向是**单向**的：Gitee 是源、GitHub 是镜像。
 #    不要再往 GitHub 直接推 —— 见下面「分叉」那一段的处理。
+#
+# ⚠️⚠️ **需要两个仓库密钥，否则本工作流跑不起来。**
+# ───────────────────────────────────────────────────────────────────
+# 一开始我以为不需要凭据 —— 本机匿名 `git ls-remote` Gitee 是成功的。
+# 但 GitHub runner 上实测失败：
+#
+#     fatal: could not read Username for 'https://gitee.com'
+#
+# 排查后确认**不是"境外 IP 被墙"**：让本机走代理（境外出口）匿名克隆
+# Gitee 同样成功。所以是 Gitee 针对**云数据中心 IP 段**（runner 在 Azure）
+# 的**反爬策略**，它对匿名请求返回 401。
+#
+# 解决办法（一次性，之后永久生效）：
+#   1. Gitee → 设置 → 私人令牌 → 生成新令牌（**只勾 projects 的只读权限即可**）
+#   2. 本仓库 GitHub → Settings → Secrets and variables → Actions
+#      新增两个 Repository secret：
+#        GITEE_USER   = 你的 Gitee 用户名
+#        GITEE_TOKEN  = 刚才生成的令牌
+#
+# 这两个值是**凭据**，只从 secrets 读，绝不写进本文件 —— 本仓库是公开的。
 
 name: 从 Gitee 同步
 
@@ -66,11 +86,45 @@ jobs:
           fetch-depth: 0
 
       - name: 从 Gitee 拉取
+        env:
+          # ⚠️ 这两个是**凭据**，只从仓库的 Actions secrets 读，绝不写进文件。
+          #    为什么需要它们：Gitee 对**云数据中心 IP 段**（GitHub runner 在
+          #    Azure 上）的**匿名**克隆会返回 401，git 随即尝试交互式索要用户名，
+          #    在非交互环境里直接报
+          #      fatal: could not read Username for 'https://gitee.com'
+          #    实测确认**不是**"境外 IP 被墙"：从境外出口（本机走代理）
+          #    匿名克隆是成功的，所以是 Gitee 针对数据中心 IP 的反爬策略。
+          #    加上凭据后走认证通道，不受该策略影响。
+          GITEE_USER: ${{ secrets.GITEE_USER }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
           set -euo pipefail
-          git remote add gitee "$GITEE_URL"
+
+          if [ -n "${GITEE_TOKEN:-}" ]; then
+            # Gitee 支持 `用户名:令牌` 与 `oauth2:令牌` 两种形式
+            USER_PART="${GITEE_USER:-oauth2}"
+            URL="https://${USER_PART}:${GITEE_TOKEN}@gitee.com/wcx547379191/quan-you-smart-home-canvas.git"
+          else
+            echo "::warning::没有配置 GITEE_TOKEN，改用匿名拉取。Gitee 对数据中心 IP 的匿名克隆通常会返回 401。"
+            URL="$GITEE_URL"
+          fi
+
+          # ⚠️ 不要把 $URL 打进日志（含令牌）。GitHub 会自动遮蔽已知 secret，
+          #    但别指望它 —— 这里主动不回显。
+          git remote add gitee "$URL"
+
           # 只拉需要的分支，tags 不要（这个仓库不发 tag，白拉）
-          git fetch --no-tags gitee "$SYNC_BRANCH"
+          if ! git fetch --no-tags gitee "$SYNC_BRANCH" 2>/tmp/fetch.err; then
+            echo "::error::从 Gitee 拉取失败。最常见的原因是缺少凭据 ——"
+            echo "Gitee 对云数据中心 IP 的匿名克隆返回 401，报错形如"
+            echo "  fatal: could not read Username for 'https://gitee.com'"
+            echo "解决办法：到 Gitee「设置 → 私人令牌」生成一个只读令牌，"
+            echo "在 GitHub 仓库的 Settings → Secrets and variables → Actions 里"
+            echo "添加 GITEE_USER（Gitee 用户名）和 GITEE_TOKEN（刚生成的令牌）。"
+            # 过滤掉可能含令牌的行再输出
+            sed 's|https://[^@]*@|https://***@|g' /tmp/fetch.err >&2 || true
+            exit 1
+          fi
 
       - name: 快进到 Gitee 的进度
         run: |
