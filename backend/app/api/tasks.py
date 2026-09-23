@@ -314,6 +314,12 @@ class TaskManager:
                 # 图片质量预检结果（AC-27）。前端可以据此显示
                 # "1920×1080 · 清晰度 412" 这类信息，以及未阻断的提醒。
                 "precheck": final.get("precheck"),
+                # 米制场景（几何内核）。2D 矢量渲染与 3D 漫步共用这一份坐标，
+                # 避免两个渲染器各自换算导致"热点和墙对不上"。
+                #
+                # 在这里算而不是在图里加节点：它是 layout 的**纯函数**，
+                # 不产生新的状态语义，加节点只会让图更难读。
+                "scene": _scene_of(final.get("layout")),
                 "diagnosis": final.get("diagnosis"),
                 "capabilities": (final.get("layout") or {}).get("capabilities"),
                 "degraded": bool(final.get("degraded")),
@@ -418,6 +424,26 @@ class TaskManager:
         """在飞任务的 id。给 `/system/health` 用。"""
         return [r.task_id for r in self._records.values()
                 if r.handle and not r.handle.done()]
+
+
+def _scene_of(layout: Any) -> dict[str, Any] | None:
+    """
+    把户型归一化成米制场景。失败返回 None，**不抛**。
+
+    几何内核有自己的测试覆盖（tests/test_geometry.py），但它面对的是
+    模型输出的、质量参差的真实数据。一旦它在这里抛异常，用户连
+    「户型已经解析出来了」这个事实都看不到 —— 而解析本身是成功的。
+    所以失败只降级为"这次没有场景"，解析结果照常返回。
+    """
+    if not isinstance(layout, dict) or not layout:
+        return None
+    try:
+        from ..services.geometry import normalize_layout
+
+        return normalize_layout(layout).to_dict()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[geometry] 场景归一化失败，本次不含 scene：{type(e).__name__}: {e}")
+        return None
 
 
 def _as_int(v: Any) -> int:
