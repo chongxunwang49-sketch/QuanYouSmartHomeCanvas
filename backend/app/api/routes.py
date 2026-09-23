@@ -8,6 +8,8 @@ HTTP 路由。
     POST /api/v1/avoid-pit/review      4.6 报价单/合同审查（异步）
     GET  /api/v1/task/{task_id}/status 4.4 任务状态轮询
     GET  /api/v1/material/price        4.5 材料价格查询（同步，纯查表）
+    GET  /api/v1/layout/{id}/plan.svg  4.3′ 矢量户型图（同步，AC-07）
+    GET  /api/v1/layout/{id}/hotspots  4.3′ 物品热区+价格（同步，AC-09/21）
     GET  /api/v1/system/health         4.6 健康检查
 
 **四个异步接口的形状是一致的**：立即返回 task_id，客户端轮询 4.4。
@@ -21,7 +23,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 from loguru import logger
 
 from ..core.capabilities import OperationNotAllowedError
@@ -29,6 +31,7 @@ from ..core.config import settings
 from ..graph.state import initial_state
 from ..graph.workflow import get_compiled_graph
 from ..services.material import catalog
+from ..services.render import hotspot_payload, render_plan_for
 from . import store as layout_store
 from .schemas import (
     ApiError,
@@ -274,6 +277,92 @@ async def material_price(
         "total": len(qy) + len(other),
         "catalog_version": catalog.catalog_version(),
         "disclaimer": catalog.disclaimer(),
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 4.3′ 矢量图与热区（AC-07 / AC-09 / AC-21）
+# ══════════════════════════════════════════════════════════════════
+#
+# 为什么是**两个**接口而不是把 SVG 塞进解析结果里：
+#
+#   · 解析接口的响应已经带了 layout + scene + diagnosis + trace。
+#     再塞一张 30–60KB 的 SVG，每次轮询都要传一遍 ——
+#     而轮询是每 1–5 秒一次的（需求文档 2.2.4）。
+#   · SVG 要能单独被 <img src> / 新窗口打开 / 下载，这些都需要一个 URL。
+#     需求文档 4.4 的契约里写的就是 `"vector": {"url": ...}`，是 URL 不是内容。
+#
+# ⚠️ 两个接口都必须走 `render_plan_for` —— 见该函数的说明。
+
+
+@router.get("/layout/{layout_id}/plan.svg")
+async def layout_plan_svg(layout_id: str) -> Response:
+    """
+    矢量户型图（AC-07）。
+
+    **同步接口**：纯 CPU、纯字符串拼接，实测 0.5ms 量级 ——
+    AC-07 的"< 3s"有四个数量级的余量。所以不需要走异步任务那一套。
+
+    返回裸 `image/svg+xml` 而不是 `ApiResponse` 信封：它的消费者是
+    `<img>` / `<iframe>` / 浏览器窗口，不是我们的前端代码。
+    """
+    layout = await layout_store.load(layout_id)
+    if not layout:
+        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+
+    try:
+        _, plan = render_plan_for(layout)
+    except Exception as e:  # noqa: BLE001 —— 渲染不该失败，失败要留下原因
+        logger.exception(f"[render] 矢量图渲染失败 layout_id={layout_id}")
+        raise ApiError(5003, f"矢量图渲染失败：{type(e).__name__}") from e
+
+    return Response(
+        content=plan.svg,
+        media_type="image/svg+xml",
+        headers={
+            # 户型属于用户数据，别让中间层缓存
+            "Cache-Control": "private, max-age=300",
+            "X-Plan-Width": str(plan.width_px),
+            "X-Plan-Height": str(plan.height_px),
+            # 画不准的地方必须能传到调用方，不能只留在服务端日志里
+            "X-Plan-Warnings": str(len(plan.warnings)),
+        },
+    )
+
+
+@router.get("/layout/{layout_id}/hotspots", response_model=ApiResponse)
+async def layout_hotspots(layout_id: str) -> ApiResponse:
+    """
+    物品热区（AC-09 的物品热区 / AC-21 的价格与链接）。
+
+    ⚠️ 热区坐标是**画布像素**，必须和 `/plan.svg` 画出来的图配套使用。
+    两个接口共用 `render_plan_for`，同一份 layout 必然得到同一套变换 ——
+    这是"悬停位置和画面对得上"的全部保证。
+
+    `precision` 一律是 `exact`：坐标是从几何**量出来**的，不是从生成图猜的。
+    AI 图那条路径上的 `room_level` / `none` 见 `render/geo_check.py`。
+    """
+    layout = await layout_store.load(layout_id)
+    if not layout:
+        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+
+    try:
+        scene, plan = render_plan_for(layout)
+        payload = hotspot_payload(scene, plan.projection)
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"[render] 热区生成失败 layout_id={layout_id}")
+        raise ApiError(5003, f"热区生成失败：{type(e).__name__}") from e
+
+    return ApiResponse.ok({
+        "layout_id": layout_id,
+        "image": {
+            "url": f"/api/v1/layout/{layout_id}/plan.svg",
+            "width": plan.width_px,
+            "height": plan.height_px,
+        },
+        "transform": plan.projection.as_dict(),
+        "warnings": plan.warnings,
+        **payload,
     })
 
 

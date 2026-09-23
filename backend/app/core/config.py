@@ -141,11 +141,26 @@ class Settings(BaseSettings):
     # 这推翻了 ADR-01 原假设「offload 会把单图拖到分钟级」——对 SD1.5@512 几乎零代价。
     SD15_OFFLOAD_MODE: Literal["model", "sequential", "none"] = "model"
 
-    # AI 图上的热区 —— ⚠️ 默认关闭（ADR-10）
-    # ControlNet 不保证几何精确对齐，而 conditioning 边缘图与生成图 Canny 边缘图
-    # 之间即使几何完全对齐，IoU 也可能只有 0.4–0.6。预设阈值会让功能整体失效。
-    # 待 M5 用 20 张样本人工标注标定后再决定是否启用。默认行为：
-    # 热区全部走矢量图，AI 图仅作风格示意。
+    # AI 图上的热区 —— 默认关闭（ADR-10）
+    #
+    # 需求文档 2.2.6 曾担心「预设的 0.70 阈值会让所有 AI 图都不显示热区」，
+    # 但当时那只是推测。2026-09-23 用 scripts/calibrate_hotspot_iou.py
+    # 在 E:/quanyou/outputs 上实测，**推测被证实**：
+    #
+    #     样本                           IoU
+    #     A_thickEdge_g1.0_s6           0.667   ← 消融实验里"人工判定最好"的那张
+    #     B_thinLine_g1.0_s6            0.216
+    #     B_thinLine_g1.5_s8            0.216
+    #     B_thinLine_g2.0_s8            0.216
+    #     预设阈值 0.70 → 达标 0/4
+    #
+    # ⚠️ 这个结果的**成色要说清楚**：n=4，其中 3 张是消融实验里故意做坏的
+    # 对照组（thinEdge 分支本身就是失败的设计），它们的低分不代表正常出图水平。
+    # 所以它能证明的只有一件事 —— **0.70 定高了，高到连最好的那张都过不了**。
+    # 它**不能**用来定一个新阈值（标定规程要求 ≥ 20 张正常样本）。
+    #
+    # 因此在拿到足够样本之前，保持关闭：热区全部走矢量图（那里的热区是
+    # 从几何量出来的，`precision` 真的是 exact），AI 图仅作风格示意。
     IMAGE_HOTSPOT_ENABLED: bool = False
     IMAGE_HOTSPOT_IOU_THRESHOLD: float | None = None   # 标定后填，未标定则保持 None
     IMAGE_HOTSPOT_IOU_FALLBACK: float = 0.55           # 仅当阈值标定失败时启用
