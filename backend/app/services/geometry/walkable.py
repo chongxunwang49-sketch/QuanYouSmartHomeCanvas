@@ -9,11 +9,19 @@
   1. 墙体闭合（`Scene.quality.can_build_walls`）—— 否则没有东西可碰撞
   2. 每间房都**站得下人**（净空 > 玩家直径）—— 否则进去就卡在几何里
   3. 门洞**真的能穿过去**（宽 > 玩家直径）—— 否则看得见进不去
-  4. 从出生点**走得到每一个房间** —— 否则有一块永远逛不到
+  4. 覆盖面积够 —— 从出生点走得到的地方要占**大部分**面积
 
-四条只要有任意一条不成立，就**不能**做第一人称漫游，必须降级成自由视角
-（可以穿墙飞）。降级不是失败 —— 但**静默降级是**。所以这里把每条原因
-都写进 `issues`，让界面能如实说出来。
+前三条任一不成立，就**不能**做第一人称漫游，必须降级成自由视角（可以穿墙飞）。
+
+第四条刻意**不是"每一间房都要走得到"**。实测（2026-09-23）一份自己生成的
+两居室：墙识别得很好、8 间房全对，但模型漏掉了客厅通阳台那扇 1.6m 的推拉门 ——
+阳台没有入口。按"必须全都到得了"判，整个第一人称漫游就被这一间阳台废掉了，
+而实际上其余 88% 的面积都能正常走。
+
+所以改成按**面积覆盖率**判：走得到的部分 ≥ 一半即可。逛不到的阳台照样
+如实列进 `issues`、界面上也会标灰 —— 该说的照说，只是不因此把功能关掉。
+
+降级不是失败 —— 但**静默降级是**。所以每条原因都写进 `issues`。
 
 ═══════════════════════════════════════════════════════════════════
 最容易漏的一件事：墙是连续的，门只是个符号 ═══
@@ -60,6 +68,13 @@ CUT_DISTANCE_TOLERANCE_M = 0.35
 
 #: 切出来的碎段短于这个长度就丢掉（门在墙角时会切出这种）。
 MIN_SEGMENT_M = 0.02
+
+#: 走得到的面积占比低于这个值就不做第一人称漫游。
+#:
+#: 为什么是"面积"而不是"房间数"：一间 3㎡ 的储物间和一间 30㎡ 的客厅
+#: 在"这个户型能不能逛"这件事上权重完全不同。按间数算，漏一个储物间
+#: 和漏一个客厅是一样的 —— 那不合理。
+MIN_REACHABLE_AREA_RATIO = 0.5
 
 
 @dataclass(frozen=True)
@@ -279,11 +294,22 @@ def build_walkable(
         )
 
     unreachable = [r for r in rooms if not r.reachable]
-    if unreachable:
+    total_area = sum(r.area_m2 for r in rooms)
+    reachable_area = sum(r.area_m2 for r in rooms if r.reachable)
+    coverage = reachable_area / total_area if total_area > 0 else 0.0
+
+    if unreachable and coverage < MIN_REACHABLE_AREA_RATIO:
         names = "、".join(r.name for r in unreachable[:3])
         issues.append(
-            f"从出生点走不到 {len(unreachable)} 间房（{names}）—— "
-            f"这些房间没有可通行的门"
+            f"从出生点走不到 {len(unreachable)} 间房（{names}），"
+            f"可逛面积只剩 {coverage:.0%} —— 这些房间没有可通行的门"
+        )
+    elif unreachable:
+        # **不阻断**，但必须说出来。逛不到的那几间会在界面上标灰。
+        names = "、".join(r.name for r in unreachable[:4])
+        notes.append(
+            f"{len(unreachable)} 间房没有可通行的门，逛不到（{names}）—— "
+            f"仍可漫游其余 {coverage:.0%} 的面积"
         )
 
     ok = (
@@ -292,7 +318,7 @@ def build_walkable(
         and bool(collision)
         and not unstandable
         and not narrow
-        and not unreachable
+        and coverage >= MIN_REACHABLE_AREA_RATIO
     )
 
     if ok:
@@ -478,7 +504,8 @@ def _build_rooms(scene: Scene, half: float, radius: float) -> list[RoomNode]:
                 index=i,
                 name=r.name,
                 kind=r.kind,
-                center=Vec2((x1 + x2) / 2, (y1 + y2) / 2),
+                # 中心直接用 RoomShape 的属性，不在两处各算一遍
+                center=r.center,
                 free_rect=(x1 + inset, y1 + inset, x2 - inset, y2 - inset),
                 area_m2=r.area_m2,
             )
@@ -610,4 +637,5 @@ __all__ = [
     "CollisionSeg", "RoomNode", "DoorEdge", "Walkable",
     "build_walkable",
     "DEFAULT_PLAYER_RADIUS_M", "DEFAULT_EYE_HEIGHT_M",
+    "MIN_REACHABLE_AREA_RATIO",
 ]

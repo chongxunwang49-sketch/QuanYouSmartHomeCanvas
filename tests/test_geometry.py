@@ -223,12 +223,25 @@ class TestWallTopology:
         s = normalize_layout(_layout_with([OUTER_LOOP]))
         assert s.quality.walls_closed, "只有闭合外墙时被判为未闭合"
 
-    def test_游离的墙判为未闭合(self):
-        """反向确认：真的该判 False 的时候要判得出来。"""
+    def test_游离的墙不影响闭合判定(self):
+        """
+        ⚠️ **这条测试的断言被修正过（2026-09-23）。**
+
+        它原来断言"户型外多一截不相干的墙 → walls_closed = False"。
+        改成洪水填充判据之后不成立了 —— 而且**原来那个断言本来就是错的**：
+
+        `walls_closed` 要回答的是"**人走不走得出去**"。远处有一截孤立的墙，
+        既不影响外墙的围合、也不会让人穿墙出去，它就是个多余的识别结果。
+        把它算成"墙没闭合"，会让 3D 漫游因为一段无关的墙而整体降级。
+
+        这类问题归 `unmatched_wall_ratio`（墙没被任何房间覆盖）管 ——
+        分工明确：**围不围得住**看这条，**墙识别得干不干净**看那条。
+        """
         floating = {"type": "unknown", "coords": [[900, 900], [1000, 900]]}
         s = normalize_layout(_layout_with([OUTER_LOOP, PARTITION_V, PARTITION_H, floating]))
-        assert not s.quality.walls_closed
-        assert not s.quality.can_build_walls
+        assert s.quality.walls_closed, "多一截外墙不该判成 围不住 —— 那是另一个问题"
+        # 但它确实被记进了"未匹配墙"里
+        assert s.quality.unmatched_wall_ratio > 0
 
     def test_外墙缺一段判为未闭合(self):
         broken = {"type": "unknown", "coords": [[40, 40], [725, 40], [725, 545]]}
@@ -368,3 +381,121 @@ class TestSerialization:
             for x, y in room["polygon"]:
                 assert len(str(x).split(".")[-1]) <= 4
                 assert len(str(y).split(".")[-1]) <= 4
+
+
+# ══════════════════════════════════════════════════════════════════
+# 闭合性判据的回归：**模型给的是碎段，不是环**
+# ══════════════════════════════════════════════════════════════════
+
+
+#: 一次真实解析的输出（2026-09-23，用自己生成的户型图跑出来的，未经修饰）
+#:
+#: ⚠️ 关键特征：**四条外墙是四段独立的墙，没有任何一段自己是闭合环**。
+REAL_SEGMENTED = {
+    "rooms": [
+        {"name": "主卧", "type": "bedroom", "bbox": [100, 145, 600, 555]},
+        {"name": "次卧", "type": "bedroom", "bbox": [608, 145, 1010, 555]},
+        {"name": "儿童房", "type": "bedroom", "bbox": [1020, 145, 1520, 555]},
+        {"name": "客厅", "type": "living_room", "bbox": [100, 568, 762, 955]},
+        {"name": "餐厅", "type": "dining_room", "bbox": [780, 568, 1165, 955]},
+        {"name": "厨房", "type": "kitchen", "bbox": [1175, 568, 1520, 955]},
+        {"name": "阳台", "type": "balcony", "bbox": [100, 968, 762, 1188]},
+        {"name": "卫生间", "type": "bathroom", "bbox": [780, 968, 1078, 1188]},
+        {"name": "玄关", "type": "entrance", "bbox": [1088, 968, 1520, 1188]},
+    ],
+    "walls": [
+        {"type": "unknown", "coords": [[95, 140], [1520, 140]]},      # 顶
+        {"type": "unknown", "coords": [[95, 1190], [1520, 1190]]},    # 底
+        {"type": "unknown", "coords": [[95, 140], [95, 1190]]},       # 左
+        {"type": "unknown", "coords": [[1520, 140], [1520, 1190]]},   # 右
+        {"type": "unknown", "coords": [[604, 140], [604, 560]]},
+        {"type": "unknown", "coords": [[1013, 140], [1013, 560]]},
+        {"type": "unknown", "coords": [[95, 560], [1520, 560]]},
+        {"type": "unknown", "coords": [[770, 568], [770, 960]]},
+        {"type": "unknown", "coords": [[1170, 568], [1170, 960]]},
+        {"type": "unknown", "coords": [[95, 960], [770, 960]]},
+        {"type": "unknown", "coords": [[775, 960], [775, 1190]]},
+    ],
+    "doors": [
+        {"position": [300, 560]}, {"position": [1270, 560]}, {"position": [1000, 560]},
+        {"position": [770, 700]}, {"position": [1170, 700]}, {"position": [900, 960]},
+    ],
+    "windows": [],
+    "total_area": 98.0,
+    "confidence": 0.62,
+}
+
+
+class TestSegmentedWallsRegression:
+    """
+    ⚠️ **这个类守的是一个让"第一人称漫游"完全起不来的 bug。**
+
+    `_check_walls_closed` 初版的判据是「存在一个**首尾重合的折线**」。
+    它在一份早期解析数据上碰巧成立（那次模型确实吐了个 5 点闭环），
+    于是被当成了通用规则。
+
+    实测发现模型**大部分时候给的是碎段**：
+
+        顶 (95,140)->(1520,140)   底 (95,1190)->(1520,1190)
+        左 (95,140)->(95,1190)    右 (1520,140)->(1520,1190)
+
+    四条边严丝合缝围成矩形，但没有一段自己是环 → 判 False →
+    `can_build_walls=False` → 3D 漫游降级成"自由视角"，
+    **第一人称行走永远起不来**，而界面上一切正常。
+
+    判据改成"从户型外洪水填充能不能渗进来"之后，与模型的表示方式无关。
+    """
+
+    def test_四条边各自成段也算闭合(self):
+        s = normalize_layout(REAL_SEGMENTED)
+        assert s.quality.walls_closed, "四条外墙围成了矩形，却判成不闭合"
+        assert s.quality.can_build_walls
+
+    def test_没有一段墙自己是环(self):
+        """先确认这份数据确实没有闭合环 —— 否则上面的用例证明不了什么。"""
+        s = normalize_layout(REAL_SEGMENTED)
+        assert not any(w.is_loop for w in s.walls), (
+            "这份数据里出现了闭合环，那就测不到'碎段'这条路径了"
+        )
+
+    def test_缺一整条边判为不闭合(self):
+        lay = dict(REAL_SEGMENTED, walls=REAL_SEGMENTED["walls"][1:])
+        s = normalize_layout(lay)
+        assert not s.quality.walls_closed, "少了顶墙，人可以直接走出去，却判成闭合"
+        assert not s.quality.can_build_walls
+
+    def test_缺半条边也判为不闭合(self):
+        """缺口 3.6m —— 不是"焊接容差"能糊过去的小缝。"""
+        lay = dict(REAL_SEGMENTED, walls=REAL_SEGMENTED["walls"][1:] + [
+            {"type": "unknown", "coords": [[95, 140], [1100, 140]]},
+        ])
+        s = normalize_layout(lay)
+        assert not s.quality.walls_closed
+
+    def test_墙上开一个一米五的口判为不闭合(self):
+        """
+        缺口 1.5m，比墙厚（0.2m）大得多 —— 人走得出去，必须判不闭合。
+
+        这条同时确认判据**不是**在瞎宽容：容差只有半个墙厚，
+        小抖动放行、真缺口拦下。
+        """
+        walls = [w for i, w in enumerate(REAL_SEGMENTED["walls"]) if i != 3]
+        walls += [
+            {"type": "unknown", "coords": [[1520, 140], [1520, 600]]},
+            {"type": "unknown", "coords": [[1520, 750], [1520, 1190]]},
+        ]
+        s = normalize_layout(dict(REAL_SEGMENTED, walls=walls))
+        assert not s.quality.walls_closed
+
+    def test_小抖动不算缺口(self):
+        """
+        反向：墙端点差几厘米是识别抖动，不是缺口 —— 判据必须放行，
+        否则每个真实户型都会被判成"围不住"。
+        """
+        jittery = []
+        for w in REAL_SEGMENTED["walls"]:
+            c = w["coords"]
+            jittery.append({"type": "unknown",
+                            "coords": [[c[0][0] + 3, c[0][1] + 2], [c[1][0] - 3, c[1][1] - 2]]})
+        s = normalize_layout(dict(REAL_SEGMENTED, walls=jittery))
+        assert s.quality.walls_closed, "±3px（约 3cm）的抖动被当成了缺口"

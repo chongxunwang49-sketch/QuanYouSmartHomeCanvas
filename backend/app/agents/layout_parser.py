@@ -47,7 +47,16 @@ class LayoutParserAgent(BaseAgent):
     code = "A-01"
     name = "LayoutParserAgent"
     requires_vision = True
-    timeout = 45.0  # 多模态解析比纯文本慢，给更宽的熔断窗口
+    # 多模态解析比纯文本慢，给更宽的熔断窗口。
+    #
+    # ⚠️ 2026-09-23 实测：这个值**余量偏薄**。
+    #    连续跑 5 次真实解析，**2 次**撞在这条 45s 上（elapsed 45.013s），
+    #    而成功的那些整体耗时 40–62s —— 也就是说本节点正常情况下就要
+    #    30–40s，留给延迟抖动的空间只有几秒。
+    #    注意 `LLM_TIMEOUT_SECONDS` 是 120s：调用层愿意等两分钟，
+    #    这里 45s 就把它掐了。演示时表现为"时不时解析失败"，
+    #    而失败原因看着像服务故障，其实是这里等得不够。
+    timeout = 45.0
 
     async def run(self, state: HomeDecoState) -> dict[str, Any]:
         image = self._image_from_state(state)

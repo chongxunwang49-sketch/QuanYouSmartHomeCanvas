@@ -494,16 +494,46 @@ class TestFallsBackHonestly:
         assert w.ok, f"两间卧室仍经客厅相通，不该判成不可漫游：{w.issues}"
         assert all(r.reachable for r in w.rooms)
 
-    def test_有房间走不到时不可漫游(self):
-        """真的断开：只留客厅↔卧室B 一扇门，卧室A 就没有任何入口了。"""
+    def test_少一间房走不到不阻断漫游(self):
+        """
+        ⚠️ **这条断言被修正过（2026-09-23）—— 原来的判据太严。**
+
+        它原来断言"有一间房走不到 → 整个不可漫游"。
+
+        实测（自己生成的两居室，8 间房全识别对）碰到的情况是：模型漏掉了
+        客厅通阳台那扇 1.6m 的推拉门，阳台没有入口。按原判据，**整条第一人称
+        漫游就被这一间阳台废掉了** —— 而其余 88% 的面积完全能正常走。
+
+        所以改成按**面积覆盖率**判（≥ 50% 即可），逛不到的房间照样如实
+        列出来、界面上标灰。**该说的照说，只是不因此把功能关掉。**
+        """
         layout = copy.deepcopy(REAL_LAYOUT)
-        layout["doors"] = [{"position": [400, 407], "width": 0.9}]   # 客厅 ↔ 卧室B
+        layout["doors"] = [{"position": [400, 407], "width": 0.9}]   # 只留 客厅 ↔ 卧室B
         w = build_walkable(normalize_layout(layout))
 
-        assert not w.ok, "卧室A 没有门，却判成可漫游"
-        assert any("走不到" in i for i in w.issues), w.issues
+        assert w.ok, f"只差一间卧室就到不了，不该把整个漫游关掉：{w.issues}"
         unreachable = [r.name for r in w.rooms if not r.reachable]
-        assert "卧室A" in unreachable, f"标出的不可达房间不对：{unreachable}"
+        assert "卧室A" in unreachable
+        # 但必须**说出来**，不能默默少一间
+        assert any("卧室A" in n for n in w.notes), f"逛不到的房没写出来：{w.notes}"
+
+    def test_大部分面积走不到才降级(self):
+        """
+        反向确认判据还拦得住真问题：出生点落在一个小片区里、
+        而大面积的那间房被切在外面 —— 这种才该降级。
+        """
+        layout = copy.deepcopy(REAL_LAYOUT)
+        # 门只连两间卧室，客厅没有任何入口
+        layout["doors"] = [{"position": [142, 315], "width": 0.9}]
+        w = build_walkable(normalize_layout(layout))
+
+        coverage = (
+            sum(r.area_m2 for r in w.rooms if r.reachable)
+            / sum(r.area_m2 for r in w.rooms)
+        )
+        assert coverage < 0.5, f"这个用例的面积覆盖率 {coverage:.0%}，没到该降级的程度"
+        assert not w.ok, "大面积走不到，却判成可漫游"
+        assert any("可逛面积" in i for i in w.issues), w.issues
 
     def test_空场景不崩(self):
         w = build_walkable(normalize_layout({}))

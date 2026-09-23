@@ -133,6 +133,15 @@ class RoomShape:
     area_from_polygon_m2: float = 0.0
     polygon_is_bbox: bool = True
 
+    @property
+    def center(self) -> Vec2:
+        """多边形包围盒的中心。**不是质心** —— v1 的多边形就是矩形，两者相同。"""
+        if not self.polygon:
+            return Vec2(0.0, 0.0)
+        xs = [p.x for p in self.polygon]
+        ys = [p.y for p in self.polygon]
+        return Vec2((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+
 
 @dataclass
 class Quality:
@@ -490,7 +499,7 @@ def normalize_layout(
             )
 
     # ── 墙体闭合性检查（决定 3D 能不能用真实墙体）──
-    walls_closed = _check_walls_closed(walls)
+    walls_closed = _check_walls_closed(walls, rooms)
     if not walls_closed:
         # ⚠️ 没有墙时**也要**上报。
         # 第一版写成 `if walls and not walls_closed`，于是"一堵墙都没识别出来"
@@ -578,60 +587,157 @@ def normalize_layout(
     return scene
 
 
-def _check_walls_closed(walls: Iterable[WallSeg]) -> bool:
+#: 判定"墙围不围得住"的网格步长（米）。0.15m 下 12×9m 的户型约 80×60 格，
+#: 对十几段墙做距离判定约五万次，纯 Python 几十毫秒。
+ENCLOSURE_STEP_M = 0.15
+#: 网格比户型外扩多少（米）—— 洪水填充要从"确定在外面"的地方起步。
+ENCLOSURE_MARGIN_M = 1.5
+
+
+def _check_walls_closed(
+    walls: Sequence[WallSeg],
+    rooms: Sequence[RoomShape] | None = None,
+) -> bool:
     """
-    至少存在**一个闭合环**，且没有游离的墙端点。
+    这些墙**围不围得住**？
 
-    判据分两层：
-      1. 有闭合环（首尾重合的多边形）—— 户型外墙本该是闭合的
-      2. 每个端点都能接到别的墙上（容差内）
+    ══════════════════════════════════════════════════════════════════
+    ⚠️ 这个函数曾经判错了整整一类输入（2026-09-23 实测发现）
+    ══════════════════════════════════════════════════════════════════
+    初版的判据是「**存在一个闭合环**」—— 要求某一段墙**自己**是个首尾重合的折线。
+    它在一份真实解析结果上是对的（那次模型确实给了一个 5 点闭环），
+    于是被当成了通用规则。
 
-    ⚠️ **第 2 条必须判"端点到线段"，不能只判"端点到端点"。**
-    第一版只比端点，于是在一份真实户型上判错：
+    后来用自己生成的户型图实测，模型给出的是这样四段：
 
-        墙0 [[40,40],[725,40],[725,545],[40,545],[40,40]]   ← 闭合外墙
-        墙1 [[380,40],[380,545]]                            ← 端点落在墙0 的**中间**
+        [0] (95,140)   -> (1520,140)     顶
+        [1] (95,1190)  -> (1520,1190)    底
+        [2] (95,140)   -> (95,1190)      左
+        [3] (1520,140) -> (1520,1190)    右
 
-    内墙接在外墙中间（T 型接头）是最常见的接法，它**不在任何端点上**。
-    只比端点会让每一个正常户型都被误判成"墙未闭合"，从而整体降级成
-    房间盒体模式 —— 而"降级"看起来是保守的、安全的，所以这个 bug
-    不会报错，只会让 3D 漫游一直用着最差的模型。属于最难发现的那类。
+    **四条边严丝合缝地围成了一个矩形** —— 但它们是**四段独立的墙**，
+    没有任何一段自己是环。于是判据给出 False：可建墙 = False。
+
+    后果不是报错，而是**静默降级**：3D 漫游退回"自由视角（可穿墙飞）"，
+    第一人称行走这个功能**永远起不来** —— 而界面上一切正常。
+
+    ══════════════════════════════════════════════════════════════════
+    改成问对的问题：**从这里出得去吗**
+    ══════════════════════════════════════════════════════════════════
+    真正要保证的事情只有一件：**人不能走出户型**。
+    那就直接测这件事 —— 从户型外面做洪水填充，看能不能渗进任何一间房。
+
+    这个判据与"模型怎么表示墙"无关：环也好、碎段也好，只要围得住就通过。
+    它也不会被"远处有一截不相干的墙"干扰（那个问题归 `unmatched_wall_ratio` 管）。
     """
-    walls = list(walls)
     if not walls:
         return False
-    if not any(w.is_loop for w in walls):
+
+    rooms = list(rooms or ())
+    if not rooms:
+        # 没有房间就无从判断"里面"在哪 —— 保守判 False，让调用方降级
         return False
 
-    # 预先把所有墙段展开，供"点到线段"判定复用
-    all_segments: list[tuple[int, Vec2, Vec2]] = [
-        (wi, a, b)
-        for wi, w in enumerate(walls)
-        for a, b in w.segments()
-    ]
+    # ── 快速路径：有环，且环包住了所有房间中心 ──
+    # 模型有时确实给闭环；这种情况不必跑网格。
+    for w in walls:
+        if w.is_loop and len(w.points) >= 4:
+            if all(_in_polygon(r.center, w.points) for r in rooms):
+                return True
 
-    for wi, w in enumerate(walls):
-        # ⚠️ **闭合环的端点不参与这个判定。**
-        #
-        # 一个环的起点与终点是**同一个点**，它自然谁也不挨着 ——
-        # 但那是正常的，环自己闭合了。
-        # 第一版没跳过它，于是把每一个闭合外墙都当成"游离端点"，
-        # 结果所有户型都被判为未闭合。
-        if w.is_loop:
-            continue
+    return not _can_escape(rooms, walls)
 
-        for end in (w.points[0], w.points[-1]):
-            joined = False
-            for other_wi, a, b in all_segments:
-                if other_wi == wi:
-                    continue          # 不拿自己接自己
-                dist, _ = _point_seg_distance(end, a, b)
-                if dist <= WELD_TOLERANCE_M:
-                    joined = True
-                    break
-            if not joined:
+
+def _can_escape(rooms: Sequence[RoomShape], walls: Sequence[WallSeg]) -> bool:
+    """
+    从户型外面洪水填充，能不能渗到任何一间房的中心。
+
+    墙按**带宽度的实体**处理：离墙中心线不超过半个墙厚的格子算实心。
+    所以比墙厚还窄的缝不算"通" —— 视觉模型给的点本来就有抖动，
+    零容差会把正常的墙判成漏的。
+    """
+    import collections
+    import math as _math
+
+    half = 0.0
+    for w in walls:
+        half = max(half, w.thickness_m)
+    solid = max(half / 2, 0.06)
+
+    xs = [p.x for r in rooms for p in r.polygon]
+    ys = [p.y for r in rooms for p in r.polygon]
+    if not xs or not ys:
+        return True
+    x1, x2 = min(xs) - ENCLOSURE_MARGIN_M, max(xs) + ENCLOSURE_MARGIN_M
+    y1, y2 = min(ys) - ENCLOSURE_MARGIN_M, max(ys) + ENCLOSURE_MARGIN_M
+
+    segs = [(a.x, a.y, b.x, b.y) for w in walls for a, b in w.segments()]
+
+    step = ENCLOSURE_STEP_M
+    nx = int((x2 - x1) / step) + 1
+    ny = int((y2 - y1) / step) + 1
+    if nx * ny > 400_000:                      # 护栏：超大户型自动降精度
+        step = _math.sqrt((x2 - x1) * (y2 - y1) / 400_000)
+        nx = int((x2 - x1) / step) + 1
+        ny = int((y2 - y1) / step) + 1
+
+    def free(i: int, j: int) -> bool:
+        px = x1 + i * step
+        py = y1 + j * step
+        for ax, ay, bx, by in segs:
+            dx, dy = bx - ax, by - ay
+            if dx == 0 and dy == 0:
+                d = _math.hypot(px - ax, py - ay)
+            else:
+                t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)
+                t = 0.0 if t < 0 else (1.0 if t > 1 else t)
+                d = _math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+            if d <= solid:
                 return False
-    return True
+        return True
+
+    # 从四周边界上所有"可通行"的格子起步 —— 那里一定在户型之外
+    seen = [[False] * ny for _ in range(nx)]
+    q: collections.deque[tuple[int, int]] = collections.deque()
+    for i in range(nx):
+        for j in (0, ny - 1):
+            if free(i, j) and not seen[i][j]:
+                seen[i][j] = True
+                q.append((i, j))
+    for j in range(ny):
+        for i in (0, nx - 1):
+            if free(i, j) and not seen[i][j]:
+                seen[i][j] = True
+                q.append((i, j))
+
+    targets = {
+        (int((r.center.x - x1) / step), int((r.center.y - y1) / step))
+        for r in rooms
+    }
+
+    while q:
+        i, j = q.popleft()
+        if (i, j) in targets:
+            return True                        # 渗进来了 → 围不住
+        for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            a, b = i + di, j + dj
+            if 0 <= a < nx and 0 <= b < ny and not seen[a][b] and free(a, b):
+                seen[a][b] = True
+                q.append((a, b))
+    return False
+
+
+def _in_polygon(p: Vec2, poly: Sequence[Vec2]) -> bool:
+    """射线法。多边形的**真实**内外判定（不只是包围盒）。"""
+    inside = False
+    n = len(poly)
+    for i in range(n):
+        a, b = poly[i], poly[(i + 1) % n]
+        if (a.y > p.y) != (b.y > p.y):
+            xin = (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x
+            if p.x < xin:
+                inside = not inside
+    return inside
 
 
 def wall_point_at(wall: WallSeg, offset_m: float) -> tuple[Vec2, Vec2] | None:
