@@ -2,7 +2,7 @@
 
 **QuanYou · Multimodal Interior-Decoration Recommendation System**
 
-上传一张户型图 → 多模态解析 → 多 Agent 并行生成 3 套装修方案 → 预算估算 + 避坑审查 + 效果图 + 物品热区交互。
+上传一张户型图 → 多模态解析 → 多 Agent 并行生成 3 套装修方案 → 预算估算 + 避坑审查 + **3D 户型渲染** + 物品热区交互。
 
 ---
 
@@ -59,7 +59,7 @@
 - ✅ **FastAPI 接口层** —— 9 个接口，异步任务 + 语义化进度轮询（`/docs` 可交互）
 - ✅ **Vue3 前端** —— 8 个主页面 + 户型解析下 4 个子页，严格按用户提供的设计系统实现
 - ✅ **图片质量预检**（AC-27）—— 本地零 Token 拦下不合格图片，`prechecking` 阶段是真的
-- ✅ **702 个自动化测试全绿**（约 38s，全程不联网）
+- ✅ **全量自动化测试全绿**（约 35s，全程不联网；规模 700+ 条）
 
 **未开始 / 进行中**
 
@@ -120,7 +120,7 @@ fan-in          ~0s    对比表 3/3 可用
 均耗时   12.23s    ← P95 目标 25s，不到一半
 ```
 
-**输出的是「3D 等轴测户型渲染图」，不是「装修效果图」。** 这个措辞差别必须守住——
+**输出的是「3D 等轴测户型渲染图」，不是「装修实景效果图」。** 这个措辞差别必须守住——
 输入是俯视平面图，让人眼视角实景从平面图里长出来是研究级任务，本机做不到；
 而把平面"立起来"做 3D 渲染正是 SD1.5 擅长的。
 
@@ -210,6 +210,9 @@ $PY -m mcp_servers.parse_house_layout
 | POST | `/api/v1/design/generate` | 方案生成（异步，实测 ~100s） |
 | POST | `/api/v1/avoid-pit/review` | 报价单/合同审查（异步，实测 ~19s） |
 | GET | `/api/v1/task/{task_id}/status` | 任务状态轮询 |
+| GET | `/api/v1/layout/{id}/plan.svg` | 户型矢量图（裸 SVG，不走信封） |
+| GET | `/api/v1/layout/{id}/hotspots` | 物品热区（含参考价与官网链接） |
+| GET | `/api/v1/layout/{id}/walkable` | 3D 漫游几何（墙体/门窗/碰撞段/出生点） |
 | GET | `/api/v1/material/price` | 材料价格（同步） |
 | GET | `/api/v1/system/health` | 健康检查 |
 
@@ -382,7 +385,7 @@ frontend/src/
   assets/      精选素材（图标 / 案例图 / 照片 / 插画）
   tailwind.config.js                              ← 设计令牌的唯一落点
 skills/        Skill 文档（Agent 的 System Prompt + 边界定义）
-tests/         702 个测试（conftest.py 有网络绊线，禁止测试打真实 API）
+tests/         700+ 个测试（conftest.py 有网络绊线，禁止测试打真实 API）
 ui参考/        设计稿与素材库（**素材不入库**，见 .gitignore；采集脚本可重建）
 docs/          非代码文档（与功能文件分开存放）
   需求/         需求文档.md          2400+ 行需求与决策记录（含 4 轮修订说明）
