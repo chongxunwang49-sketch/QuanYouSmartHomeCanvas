@@ -591,3 +591,77 @@ class TestPhaseWording:
 
         missing = [p for p in PHASE_TEXT if p not in PHASE_PROGRESS]
         assert not missing, f"以下阶段没有 progress 参考值：{missing}"
+
+
+# ══════════════════════════════════════════════════════════════════
+# 进度上报：Redis 不可用时也必须动
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestProgressIsReported:
+    """
+    ⚠️ **这条守的是一个线上真的踩了的 bug（2026-09-23）。**
+
+    `TaskRecord.progress` **从来没有被赋值过** —— 一直是 dataclass 默认的 0。
+    Redis 在的时候看不出来（`status()` 优先读 Redis，那边的进度是按
+    `PHASE_PROGRESS` 算的）；**Redis 一挂就露馅**：回退到内存视图，
+    进度条从头到尾钉在 0，而阶段文案一直在变。
+
+    用户看到的现象：等待 46 秒，进度条**一直是 0**，最后还失败了 ——
+    像卡死，其实一直在跑。（本机 Redis 默认就没起，所以这条路径是常态。）
+
+    顺带一个连带 bug：失败会把 phase 落成 `done`，而 `PHASE_TEXT['done']`
+    是"完成"。于是界面一个大红叉配"完成"，用户不知道发生了什么。
+    这条也在下面钉住。
+    """
+
+    async def test_内存视图的进度会跟着阶段走(self):
+        """不依赖 Redis，直接查内存视图的 progress。"""
+        tm = get_task_manager()
+        rec = tm.create("parse", trace_id="t-progress")
+
+        from backend.app.core.redis_client import PHASE_PROGRESS, TaskProgressStore
+
+        store = TaskProgressStore(None)          # 模拟 Redis 不可用
+        for phase in ("prechecking", "analyzing", "diagnosing"):
+            await tm._write(rec, store, phase=phase, status="processing")
+            assert rec.progress == PHASE_PROGRESS[phase], (
+                f"阶段 {phase} 之后 progress 是 {rec.progress}，"
+                f"应当是 {PHASE_PROGRESS[phase]} —— 进度条会钉在 0"
+            )
+
+    async def test_进度单调不减(self):
+        """倒着走会让进度条往回缩，比停在 0 更让人困惑。"""
+        tm = get_task_manager()
+        rec = tm.create("parse", trace_id="t-mono")
+        from backend.app.core.redis_client import TaskProgressStore
+
+        store = TaskProgressStore(None)
+        seen = []
+        for phase in ("queued", "prechecking", "analyzing", "detecting_rooms",
+                      "extracting_dimensions", "diagnosing", "finalizing", "done"):
+            await tm._write(rec, store, phase=phase, status="processing")
+            seen.append(rec.progress)
+        assert seen == sorted(seen), f"进度回退了：{seen}"
+        assert seen[-1] == 100
+
+    async def test_失败时进度不会假装走完(self):
+        """
+        失败要把 phase 落成 `done`（链路走完了），但**进度不该显示 100%**。
+
+        ⚠️ 这里只断言后端的语义；前端另有一条（PhaseProgress 的
+        `headline`）负责不把 `done` 显示成"完成"。
+        """
+        tm = get_task_manager()
+        rec = tm.create("parse", trace_id="t-fail")
+        from backend.app.core.redis_client import TaskProgressStore
+
+        store = TaskProgressStore(None)
+        await tm._write(rec, store, phase="analyzing", status="processing")
+        mid = rec.progress
+        await tm._write(rec, store, phase="done", status="failed", error="boom")
+
+        assert rec.status == "failed"
+        assert rec.error == "boom"
+        # 后端如实把它记成"阶段走完"，界面**不能**据此显示成功
+        assert rec.progress >= mid

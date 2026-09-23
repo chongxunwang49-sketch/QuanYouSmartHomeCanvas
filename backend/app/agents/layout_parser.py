@@ -56,7 +56,12 @@ class LayoutParserAgent(BaseAgent):
     #    注意 `LLM_TIMEOUT_SECONDS` 是 120s：调用层愿意等两分钟，
     #    这里 45s 就把它掐了。演示时表现为"时不时解析失败"，
     #    而失败原因看着像服务故障，其实是这里等得不够。
-    timeout = 45.0
+    #
+    # ✅ 2026-09-23 已按实测放宽到 90s（原来 45s）。
+    #    取值依据：成功那几次整条链 40–62s，本节点约占 25–40s；
+    #    90s 留了一倍以上余量，同时仍远低于 LLM 层的 120s ——
+    #    真卡死时由 LLM 层先熔断，这里不会变成"永远等下去"。
+    timeout = 90.0
 
     async def run(self, state: HomeDecoState) -> dict[str, Any]:
         image = self._image_from_state(state)

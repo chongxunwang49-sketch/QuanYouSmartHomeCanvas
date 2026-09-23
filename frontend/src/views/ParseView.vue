@@ -392,16 +392,6 @@ function goGenerate() {
           </p>
         </div>
 
-        <!-- 进度 -->
-        <PhaseProgress
-          v-if="poll.status.value"
-          :text="poll.status.value.phase_text"
-          :progress="poll.status.value.progress"
-          :elapsed-ms="poll.elapsedMs.value"
-          :over-estimate="poll.overEstimate.value"
-          :log="poll.phaseLog.value"
-          :status="poll.status.value.status"
-        />
       </section>
 
       <!-- ══ 右：解析结果 ══ -->
@@ -836,6 +826,26 @@ function goGenerate() {
             </ul>
           </div>
         </template>
+        <!--
+          进度卡放在**右栏、结果面板下面**。
+
+          ⚠️ 它原来在左栏最底下 —— 左栏已经堆了「上传区」「解析选项」两张卡，
+          进度卡被挤到屏幕外，**用户必须滚轮往下滑才能看到**。
+          而解析要跑 40 秒以上，这 40 秒里最该盯着的东西恰恰是它。
+
+          右栏下面本来就有大片空白，挪过来既不用滚，也符合阅读顺序：
+          「结果是空的」→「因为还在解析，进度如下」。
+        -->
+        <PhaseProgress
+          v-if="poll.status.value"
+          :text="poll.status.value.phase_text"
+          :progress="poll.status.value.progress"
+          :elapsed-ms="poll.elapsedMs.value"
+          :over-estimate="poll.overEstimate.value"
+          :log="poll.phaseLog.value"
+          :status="poll.status.value.status"
+          :error="poll.status.value.error ?? ''"
+        />
       </section>
     </div>
   </main>

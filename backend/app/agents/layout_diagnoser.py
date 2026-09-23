@@ -92,7 +92,9 @@ class LayoutDiagnoserAgent(BaseAgent):
     code = "A-02"
     name = "LayoutDiagnoserAgent"
     requires_vision = False          # 纯文本推理，比 A-01 快得多
-    timeout = 30.0
+    # 诊断是纯文本调用，比多模态解析快；但实测也撞过一次 30s。
+    # 放宽到 60s —— 宁可多等一会儿，也不要让用户白跑一遍 40 秒的解析。
+    timeout = 60.0
 
     async def run(self, state: HomeDecoState) -> dict[str, Any]:
         layout = state.get("layout")

@@ -69,6 +69,10 @@ CUT_DISTANCE_TOLERANCE_M = 0.35
 #: 切出来的碎段短于这个长度就丢掉（门在墙角时会切出这种）。
 MIN_SEGMENT_M = 0.02
 
+#: 门中心到「它应该连的那间房」的最大距离。超过就不认这条边 ——
+#: 宁可标成不可通行，也不要凭空连出一条现实中不存在的通路。
+MAX_DOOR_TO_ROOM_M = 1.2
+
 #: 走得到的面积占比低于这个值就不做第一人称漫游。
 #:
 #: 为什么是"面积"而不是"房间数"：一间 3㎡ 的储物间和一间 30㎡ 的客厅
@@ -519,34 +523,47 @@ def _build_doors(
     """
     每扇门连通哪两间房。
 
-    ⚠️ **探法是从门中心沿墙的****法向****（垂直方向）各走 0.6m**，
-    看落到哪个房间里。第一版沿墙方向探（`±u`），结果两侧都落在同一间房 ——
-    因为沿墙走本来就在墙上，离两侧房间一样近。这种错会让连通图全变成
-    自环，最终表现是"每间房都只跟自己连通"，于是判成不可漫游。
+    ══════════════════════════════════════════════════════════════════
+    ⚠️ 这里换过一次算法，因为**固定距离的探针在窄空间里必然打偏**
+    ══════════════════════════════════════════════════════════════════
+    初版是「从门中心沿墙的**法向**各走 0.6m，看落到哪个房间里」。
+    它在一份走廊净宽只有 **0.264m** 的真实数据上翻了车：
+    0.6m 的探针直接跨过整条走廊打到对面，两侧落进同一间房，
+    连通图少一条边 —— 那间房以及它背后的房间全部变成孤岛。
+
+    更早还有一版是沿墙的**切向**探（±u），两侧也都落在同一间房，
+    因为沿墙走本来就在墙上。
+
+    两次翻车的共同点：**用「走一段再看落在哪」去回答一个拓扑问题**。
+    距离是猜的，而空间宽度不是常量。
+
+    现在的做法不问「走多远」，直接问「这扇门在哪两间房之间」：
+    沿法向把每间房分到门的一侧或另一侧，然后**各取最近的那间**。
+    与空间宽窄无关。
     """
     doors: list[DoorEdge] = []
     issues: list[str] = []
-    stairs = 0.6
 
     for i, op in enumerate(scene.openings):
         if op.kind != "door":
             continue
-        room_a = room_b = -1
+        if not (0 <= op.wall_index < len(scene.walls)):
+            issues.append(f"第 {i} 扇门没有关联到任何墙体，不计入通行图")
+            continue
 
-        if 0 <= op.wall_index < len(scene.walls):
-            placed = wall_point_at(scene.walls[op.wall_index],
-                                   op.offset_along_wall_m)
-            if placed is not None:
-                p, u = placed
-                n = Vec2(-u.y, u.x)          # 法向，不是切向
-                room_a = _room_at(rooms, Vec2(p.x + n.x * stairs, p.y + n.y * stairs))
-                room_b = _room_at(rooms, Vec2(p.x - n.x * stairs, p.y - n.y * stairs))
+        placed = wall_point_at(scene.walls[op.wall_index],
+                               op.offset_along_wall_m)
+        if placed is None:
+            issues.append(f"第 {i} 扇门在墙上定位失败，不计入通行图")
+            continue
 
-        if room_a < 0 or room_b < 0:
-            # 关联不到房间的门**不猜** —— 猜错会让连通图凭空多出一条边，
-            # 于是判成"能走"，而实际走过去是一堵墙。
+        p, u = placed
+        n = Vec2(-u.y, u.x)          # 法向，不是切向
+        a, b = _rooms_beside(rooms, p, n)
+
+        if a < 0 or b < 0:
             issues.append(
-                f"第 {i} 扇门的两侧未能都识别出房间（{room_a} / {room_b}），"
+                f"第 {i} 扇门的两侧未能都识别出房间（{a} / {b}），"
                 f"该门不计入通行图"
             )
             continue
@@ -556,11 +573,47 @@ def _build_doors(
                 door_index=i,
                 position=op.center,
                 width_m=op.width_m,
-                from_room=room_a,
-                to_room=room_b,
+                from_room=a,
+                to_room=b,
             )
         )
     return doors, issues
+
+
+def _rooms_beside(rooms: list[RoomNode], p: Vec2,
+                  n: Vec2) -> tuple[int, int]:
+    """
+    门的两侧各是哪间房。
+
+    沿墙法向 `n` 把每间房按**房间中心落在门的哪一侧**分开，
+    两侧各取「矩形离门最近」的那间。
+
+    比「探针走一段」稳的地方在于它不需要猜一个距离 ——
+    无论走廊是 0.26m 还是 3m 宽，答案都一样。
+    """
+    best: dict[int, tuple[float, int]] = {}       # 侧 → (距离, 房间下标)
+    for r in rooms:
+        side = 1 if (r.center.x - p.x) * n.x + (r.center.y - p.y) * n.y >= 0 else -1
+        d = _rect_distance(p, r.free_rect)
+        if side not in best or d < best[side][0]:
+            best[side] = (d, r.index)
+
+    if 1 not in best or -1 not in best:
+        return -1, -1
+
+    # 两侧都太远，说明这扇门不在两间房之间（多半是定位偏了）。
+    # 宁可标成不可通行，也不要凭空连出一条现实中不存在的通路。
+    if best[1][0] > MAX_DOOR_TO_ROOM_M or best[-1][0] > MAX_DOOR_TO_ROOM_M:
+        return -1, -1
+    return best[1][1], best[-1][1]
+
+
+def _rect_distance(p: Vec2, rect: tuple[float, float, float, float]) -> float:
+    """点到轴对齐矩形的距离。点在矩形内时为 0。"""
+    x1, y1, x2, y2 = rect
+    dx = max(x1 - p.x, 0.0, p.x - x2)
+    dy = max(y1 - p.y, 0.0, p.y - y2)
+    return math.hypot(dx, dy)
 
 
 def _room_at(rooms: list[RoomNode], p: Vec2) -> int:

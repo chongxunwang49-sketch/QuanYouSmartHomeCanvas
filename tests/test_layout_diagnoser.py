@@ -442,8 +442,27 @@ class TestDegradation:
         assert out["errors"][0]["agent"] == "A-02"
 
     def test_timeout_circuit_broken(self):
-        """A-02 超时阈值应为 30s（纯文本任务，比 A-01 的 45s 紧）。"""
-        assert LayoutDiagnoserAgent.timeout == 30.0
+        """
+        A-02 的超时阈值**应当比 A-01 紧**（纯文本任务，比多模态解析快），
+        但两者都在 2026-09-23 按实测放宽过一档：
+
+            A-01 解析   45s → 90s
+            A-02 诊断   30s → 60s
+
+        放宽的依据是同一天的实测：连续 5 次真实解析里 **2 次**撞在
+        A-01 的 45s 上，而成功的那几次整条链就要 40–62s —— 余量太薄。
+        A-02 也实打实撞过一次 30s。
+
+        ⚠️ 这条测试守的是**两者的相对关系**，不是某个具体数字：
+        诊断比解析紧，这个设计意图不能被后来的调参抹掉。
+        """
+        from backend.app.agents.layout_parser import LayoutParserAgent
+
+        assert LayoutDiagnoserAgent.timeout < LayoutParserAgent.timeout, (
+            "诊断是纯文本任务，阈值不该比多模态解析还宽松"
+        )
+        assert LayoutDiagnoserAgent.timeout == 60.0
+        assert LayoutParserAgent.timeout == 90.0
 
     def test_requires_vision_false(self):
         """诊断是纯文本任务，不应被走视觉链路（否则白白多花成本）。"""

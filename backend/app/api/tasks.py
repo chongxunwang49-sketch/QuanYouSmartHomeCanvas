@@ -366,6 +366,19 @@ class TaskManager:
         """
         rec.phase = phase
         rec.status = status
+        # ⚠️ `progress` 必须在这里跟着 phase 一起更新。
+        #
+        # 它原来**从来没有被赋值过** —— 一直是 dataclass 默认的 0。
+        # Redis 可用时看不出来（`status()` 优先读 Redis，那边是
+        # `TaskProgressStore` 按 PHASE_PROGRESS 算的）；**Redis 一挂就露馅**：
+        # 回退到内存的 `rec.to_dict()`，进度条从头到尾钉在 0，
+        # 而阶段文案一直在变。用户看到的是"卡死了"，实际一直在跑。
+        #
+        # 本机的 Redis 默认就是没起的（health 里 redis 一直是 false），
+        # 所以这条路径才是**常态**，不是兜底。
+        from ..core.redis_client import PHASE_PROGRESS
+
+        rec.progress = PHASE_PROGRESS.get(phase, rec.progress)
         if error:
             rec.error = error
         if result is not None:

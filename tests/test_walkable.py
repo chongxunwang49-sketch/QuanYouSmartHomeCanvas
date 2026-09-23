@@ -692,3 +692,80 @@ def _in_any_gap(p, ranges) -> bool:
     return any(
         math.dist(p, (cx, cy)) <= r for cx, cy, r in ranges
     )
+
+
+# ══════════════════════════════════════════════════════════════════
+# 门的两侧判定：**窄空间**下的回归
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestDoorSideDetectionInNarrowSpaces:
+    """
+    ⚠️ **这个类守的是一个必然翻车的算法。**
+
+    初版判「门两侧是哪两间房」的办法是：从门中心沿墙法向**各走 0.6m**，
+    看落在哪个房间里。
+
+    实测（2026-09-23，自己生成的两居室）翻车了 —— 那条走廊的净宽只有
+    **0.264m**：0.6m 的探针直接跨过整条走廊打到对面，两侧落进同一间房。
+    连通图于是少一条边，走廊后面的房间全成孤岛，
+    「可逛面积只剩 46%」→ 第一人称漫游被判定为不可用。
+
+    再往前一版是沿墙的**切向**探（±u），症状是"每间房都只跟自己连通"。
+
+    两次的共同点：用「走一段再看落在哪」回答一个**拓扑**问题。
+    距离是猜的，空间宽度不是常量。
+
+    现在的做法不问走多远，直接问门在哪两间房之间：沿法向分侧，
+    各取最近的房间。下面用一个净宽 0.12m 的极端走廊钉住它。
+    """
+
+    #: 一条**极窄**走廊（净宽约 0.12m）连起两间房。
+    #: 0.6m 的探针在这里必然穿过走廊打到对面。
+    NARROW = {
+        "rooms": [
+            {"name": "客厅", "type": "living_room", "bbox": [0, 0, 400, 400]},
+            {"name": "走廊", "type": "other", "bbox": [400, 0, 440, 400]},
+            {"name": "卧室", "type": "bedroom", "bbox": [440, 0, 840, 400]},
+        ],
+        "walls": [
+            {"type": "unknown", "coords": [[0, 0], [840, 0], [840, 400],
+                                           [0, 400], [0, 0]]},
+            {"type": "unknown", "coords": [[400, 0], [400, 400]]},
+            {"type": "unknown", "coords": [[440, 0], [440, 400]]},
+        ],
+        # 两扇门分别开在走廊两侧的墙上
+        "doors": [
+            {"position": [400, 200], "width": 0.9},
+            {"position": [440, 200], "width": 0.9},
+        ],
+        "windows": [],
+        "total_area": 32.0,
+        "confidence": 0.6,
+    }
+
+    def test_窄走廊两侧的门各自连对(self):
+        w = build_walkable(normalize_layout(self.NARROW))
+        assert len(w.doors) == 2, (
+            f"两扇门应当都能定位到两侧房间，实得 {len(w.doors)} 扇"
+            f"：{w.issues}"
+        )
+        pairs = {frozenset((d.from_room, d.to_room)) for d in w.doors}
+        # 客厅(0) ↔ 走廊(1) 和 走廊(1) ↔ 卧室(2)
+        assert frozenset((0, 1)) in pairs, f"客厅与走廊没连上：{pairs}"
+        assert frozenset((1, 2)) in pairs, f"走廊与卧室没连上：{pairs}"
+
+    def test_每扇门连的是两间不同的房(self):
+        """探针方向错了会退化成"自己连自己"，这条直接钉住。"""
+        w = build_walkable(normalize_layout(self.NARROW))
+        for d in w.doors:
+            assert d.from_room != d.to_room, (
+                f"门 {d.door_index} 的两侧是同一间房 —— 两侧判定打偏了"
+            )
+
+    def test_走廊里的房间都够得到(self):
+        """窄，但只要门连对了，三间房就都走得到。"""
+        w = build_walkable(normalize_layout(self.NARROW))
+        assert all(r.reachable for r in w.rooms), (
+            f"有房间走不到：{[r.name for r in w.rooms if not r.reachable]}"
+        )

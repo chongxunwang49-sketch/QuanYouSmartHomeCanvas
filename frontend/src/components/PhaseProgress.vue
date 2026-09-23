@@ -29,9 +29,44 @@ const props = defineProps<{
   /** 阶段变化历史。从轮询 composable 出来的是只读数组，这里按只读接 */
   log?: readonly PhaseLogEntry[]
   status?: 'pending' | 'processing' | 'completed' | 'failed'
+  /** 失败原因。`status='failed'` 时顶上那句话换成它 */
+  error?: string
 }>()
 
+/**
+ * ⚠️ 百分比**只有一个来源**。
+ *
+ * 原来这里有两处各算各的：标题右边写的是
+ * `text === '完成' || status === 'completed' ? 100 : percent`，
+ * 而进度条宽度用的是 `percent`。任务失败时 phase 是 `done`
+ * （文案"完成"）、`percent` 是 0 —— 于是**数字显示 100%、条子却是空的**，
+ * 一屏之内自相矛盾。
+ *
+ * 现在两边都用这一个值。
+ */
 const percent = computed(() => Math.max(0, Math.min(100, props.progress || 0)))
+
+/**
+ * 顶上那句话。
+ *
+ * ⚠️ 失败时**不能照抄后端的阶段文案** —— 失败会把 phase 落成 `done`，
+ * 而 `PHASE_TEXT['done']` 是"完成"。于是界面显示一个大红叉配"完成"，
+ * 用户完全不知道发生了什么。
+ */
+const headline = computed(() =>
+  props.status === 'failed' ? '解析失败' : props.text,
+)
+
+const detail = computed(() => {
+  if (props.status === 'failed') {
+    return props.error || '任务未产出结果，请重试'
+  }
+  const secs = `已等待 ${seconds.value} 秒`
+  // ⚠️ 只有**还在跑**的时候才说"任务仍在进行"。已经失败了再说这句话，
+  //    用户会一直等下去。
+  if (props.overEstimate) return `${secs} · 比预期久一些，任务仍在进行`
+  return secs
+})
 
 const seconds = computed(() => Math.round(props.elapsedMs / 1000))
 
@@ -70,17 +105,14 @@ const duration = (ms: number) => (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed
 
       <div class="min-w-0 flex-1">
         <!-- 主视觉是这句话，不是百分比 -->
-        <p class="truncate text-[14px] font-semibold" :class="tone">{{ text }}</p>
-        <p class="mt-0.5 text-[11px] text-wood-muted">
-          已等待 <span class="num">{{ seconds }}</span> 秒
-          <span v-if="overEstimate" class="ml-1 text-accent-gold">
-            · 比预期久一些，任务仍在进行
-          </span>
+        <p class="truncate text-[14px] font-semibold" :class="tone">{{ headline }}</p>
+        <p class="mt-0.5 text-[11px] leading-relaxed text-wood-muted">
+          {{ detail }}
         </p>
       </div>
 
       <span class="num hidden shrink-0 text-[13px] font-semibold text-wood-muted sm:block">
-        {{ text === '完成' || status === 'completed' ? 100 : percent }}%
+        {{ percent }}%
       </span>
     </div>
 
