@@ -1,0 +1,122 @@
+# ═══════════════════════════════════════════════════════════════════
+# 从 Gitee 同步 main 到 GitHub
+# ═══════════════════════════════════════════════════════════════════
+#
+# ⚠️ 为什么需要这个东西
+# ───────────────────────────────────────────────────────────────────
+# 本机的网络**直连不到 github.com**（实测 `curl https://github.com`
+# 返回 000，必须走本机代理）。所以从这台机器往 GitHub 推代码，
+# 每次都得先确保代理软件在跑 —— 忘了就报
+# `Failed to connect to github.com port 443 after 21s`，
+# 而那个报错看起来像"网络坏了"，不像"少开了个软件"。
+#
+# 这个工作流把推送方向**反过来**：
+#
+#     本机  ──push──▶  Gitee  ◀──pull──  GitHub Actions  ──▶  本仓库
+#     (国内直连)              (都在境外，互访无障碍)
+#
+# 同步动作发生在 GitHub 的服务器上，**本机一个代理都不需要**。
+# 用户只需照常 `git push gitee main`。
+#
+# ⚠️ 不能用 Gitee 的 webhook 触发（Gitee → GitHub API）
+#    因为那要求 **Gitee 的服务器**能访问 api.github.com，
+#    而 Gitee 在国内，方向正好是反的。所以只能由 GitHub 侧主动定时拉。
+#
+# ⚠️ 方向是**单向**的：Gitee 是源、GitHub 是镜像。
+#    不要再往 GitHub 直接推 —— 见下面「分叉」那一段的处理。
+
+name: 从 Gitee 同步
+
+on:
+  schedule:
+    # ⚠️ GitHub 的 cron 一律按 **UTC** 解释，与本机时区无关。
+    # 每 30 分钟一次。刻意避开 :00 / :30 —— 整点是全球工作流最挤的时候，
+    # GitHub 的调度器会往后排队，实测能延迟十几分钟。
+    - cron: '13,43 * * * *'
+  # 允许在 GitHub 网页上手动点「Run workflow」立即同步一次
+  # （浏览器有代理，所以这一步在本机是能用的）
+  workflow_dispatch:
+
+# ⚠️ 必须显式声明。仓库默认的 GITHUB_TOKEN 权限可能是只读的，
+#    那样 checkout 拿到的凭据推不回去，报 403 而原因很不显眼。
+permissions:
+  contents: write
+
+# 同一时刻只跑一个，避免两次调度撞在一起互相覆盖
+concurrency:
+  group: sync-from-gitee
+  cancel-in-progress: false
+
+env:
+  # Gitee 仓库地址。**这是公开地址不是密钥**，可以直接写在文件里。
+  # 该仓库已确认可匿名克隆（`git ls-remote` 不带凭据返回成功）。
+  GITEE_URL: https://gitee.com/wcx547379191/quan-you-smart-home-canvas.git
+  SYNC_BRANCH: main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出 GitHub 侧的 main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          # ⚠️ 必须是完整历史。浅克隆（默认 depth=1）下
+          # `merge --ff-only` 判断不了祖先关系，会直接失败。
+          fetch-depth: 0
+
+      - name: 从 Gitee 拉取
+        run: |
+          set -euo pipefail
+          git remote add gitee "$GITEE_URL"
+          # 只拉需要的分支，tags 不要（这个仓库不发 tag，白拉）
+          git fetch --no-tags gitee "$SYNC_BRANCH"
+
+      - name: 快进到 Gitee 的进度
+        run: |
+          set -euo pipefail
+          GITEE_SHA=$(git rev-parse gitee/$SYNC_BRANCH)
+          GITHUB_SHA=$(git rev-parse origin/$SYNC_BRANCH)
+          echo "GitHub 当前: $GITHUB_SHA"
+          echo "Gitee  当前: $GITEE_SHA"
+
+          if [ "$GITEE_SHA" = "$GITHUB_SHA" ]; then
+            echo "✅ 两边已经一致，无需同步。"
+            exit 0
+          fi
+
+          # ⚠️ 只在「GitHub 是 Gitee 的祖先」时才快进。
+          #
+          #    如果两边分叉了（通常是有人直接往 GitHub 推过），
+          #    **绝不用 `--force` 抹掉** —— 那会静默销毁 GitHub 上的提交，
+          #    而 GitHub 是公开仓库，抹掉的东西别人可能已经拉走了。
+          #    这里选择**大声失败**：工作流标红、GitHub 会发邮件通知。
+          #    分叉的处理办法是人工的：把 GitHub 上那几个提交 cherry-pick
+          #    回本地、推给 Gitee，这边自然就快进得动了。
+          if ! git merge-base --is-ancestor "origin/$SYNC_BRANCH" "gitee/$SYNC_BRANCH"; then
+            echo "::error::GitHub 的 $SYNC_BRANCH 不是 Gitee 的祖先 —— 两边已分叉，停止。"
+            echo "多半是有人直接往 GitHub 推过。请把那些提交合回本地→推给 Gitee，"
+            echo "本工作流不支持、也不会强推覆盖。"
+            exit 1
+          fi
+
+          git merge --ff-only "gitee/$SYNC_BRANCH"
+          echo "已快进到 $GITEE_SHA"
+
+      - name: 推回 GitHub
+        run: |
+          set -euo pipefail
+          # checkout 已经把 GITHUB_TOKEN 留在 origin 的地址里了，无需额外配置
+          git push origin "HEAD:$SYNC_BRANCH"
+
+      - name: 写入摘要
+        if: always()
+        run: |
+          {
+            echo "### 从 Gitee 同步"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Gitee 的 main | \`$(git rev-parse --short gitee/main 2>/dev/null || echo '—')\` |"
+            echo "| 同步后 GitHub 的 main | \`$(git rev-parse --short HEAD)\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
