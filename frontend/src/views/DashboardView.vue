@@ -155,7 +155,7 @@ const checkEntries = computed(() => Object.entries(health.checks))
 </script>
 
 <template>
-  <main class="mx-auto flex w-full max-w-[1760px] flex-1 flex-col gap-4 overflow-y-auto scroll-thin p-6">
+  <main class="mx-auto flex w-full max-w-[1760px] flex-1 flex-col gap-4 overflow-y-auto scroll-thin p-6 surface-glow">
     <PageHeader
       :breadcrumb="['全友·智绘家', '工作台总览']"
       title="工作台总览"
@@ -204,8 +204,10 @@ const checkEntries = computed(() => Object.entries(health.checks))
         而这里的父元素（卡片）高度又是由图片自己撑开的 —— 循环依赖，
         浏览器只好把 `height:100%` 当 `auto`，于是**图片按自身宽高比渲染**。
 
-        后果：图片池里 14 张案例图有横有竖。轮到竖图时卡片被撑高，
-        网格行高跟着变，下面「最近任务 / 系统状态」整段往下跳 ——
+        后果：图片池里 14 张案例图**全是横图，但宽高比从 1.20 到 1.79 不等**
+        （实测，不是"有横有竖"—— 起初我猜错了，实际更隐蔽）。
+        同一宽度下渲染高度能差 124px，于是卡片被撑高、网格行高跟着变、
+        下面「最近任务 / 系统状态」整段往下跳 ——
         每 5 秒轮换一张就抖一次，而且**换一张图页面就变一次样**。
 
         绝对定位之后图片**完全不参与布局计算**，卡片高度只由

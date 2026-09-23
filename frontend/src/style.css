@@ -169,6 +169,116 @@
     }
   }
 
+  /* ══════════════════════════════════════════════════════════════
+     模块背景纹理 —— 把纯色画布换掉，但**不许喧宾夺主**
+     ══════════════════════════════════════════════════════════════
+     四条硬约束（都是明确要求，不是我的审美偏好）：
+
+       ① **极淡，但"淡"的标尺是量出来的，不是我估的。**
+          第一版按 3%–5% 写，实测（截图像素采样）与纯色底的差值只有
+          **0~1 / 255** —— 等于没做。原因是点阵/网格这类纹样
+          **大部分面积本来就是透明的**，取样点落在缝里就是纯色。
+          所以每个背景都是**「一层铺满的淡底 + 一层纹样」**：
+          淡底保证画布任何位置都不是纯色，纹样只负责"有质感"。
+          实测目标（在 #FAF8F3 上采样，差值 / 255）：
+              整体淡底   3 ~ 7    —— 看得出不是纯色，但不构成视觉负担
+              纹样峰值  12 ~ 22   —— 走近有纹路，正常阅读时融进背景
+          超过 25 就开始跟内容抢注意力了。
+       ② **不改色系**。只用调色板里已有的三个色相：
+             botanical #4A7C59 → rgb(74 124 89)
+             wood      #6B4F3A → rgb(107 79 58)
+             accent-gold #C9A961 → rgb(201 169 97)
+          不引入任何新颜色，所以整体色系不会偏移。
+       ③ **不干扰交互**。只用 `background-image`，不加伪元素、不加层、
+          不设 `pointer-events`。背景永远在内容之下，碰不到任何点击。
+       ④ **各模块不同**。换页面时有"换了个房间"的细微感觉，
+          但**同属一个家族** —— 同样的浓度、同样的色相、只有纹样不同，
+          否则会看起来像随机贴的。
+
+     ⚠️ `background-attachment: fixed` 是刻意的：让纹理相对**视口**固定，
+        内容滚动时它不动。否则重复网格会跟着内容一起跑，
+        看起来像"花纹在移动"，那才是真的干扰阅读。
+
+     ⚠️ 用法：加在页面最外层的 `<main>` 上。它铺满内容区且带
+        `overflow-y-auto`，是唯一能覆盖整个可视区、又不会遮住侧栏的元素。
+
+     ⚠️ 页面大部分面积被白色卡片盖住，画布只在**卡片间隙和四周留白**处露出。
+        所以这套背景的作用范围本来就小 —— 这也是为什么浓度要按"露出来的
+        那一圈"来调，而不是按整页面积估。
+     */
+
+  /* 工作台 —— 整体暖底 + 左上叶绿/右下黄铜两团柔光 */
+  .surface-glow {
+    background-image:
+      radial-gradient(40rem 28rem at 4% -8%, rgb(74 124 89 / 0.13), transparent 66%),
+      radial-gradient(34rem 24rem at 104% 108%, rgb(201 169 97 / 0.15), transparent 68%),
+      linear-gradient(158deg, rgb(107 79 58 / 0.045), rgb(74 124 89 / 0.035));
+    background-attachment: fixed;
+  }
+
+  /* 户型解析 —— 淡底 + 22px 方格（呼应建筑制图的坐标纸） */
+  .surface-grid {
+    background-image:
+      linear-gradient(to right, rgb(107 79 58 / 0.085) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(107 79 58 / 0.085) 1px, transparent 1px),
+      linear-gradient(162deg, rgb(107 79 58 / 0.05), rgb(74 124 89 / 0.035));
+    background-size: 22px 22px, 22px 22px, 100% 100%;
+    background-attachment: fixed;
+  }
+
+  /* 方案生成 —— 淡底 + 圆点阵（比网格软，对应这一页是发散/组合的） */
+  .surface-dots {
+    background-image:
+      radial-gradient(rgb(74 124 89 / 0.13) 1.2px, transparent 1.2px),
+      linear-gradient(150deg, rgb(74 124 89 / 0.05), rgb(201 169 97 / 0.04));
+    background-size: 16px 16px, 100% 100%;
+    background-attachment: fixed;
+  }
+
+  /* 避坑审查 —— 淡底 + 斜纹（像校对稿纸） */
+  .surface-diagonal {
+    background-image:
+      repeating-linear-gradient(135deg, transparent 0 18px, rgb(107 79 58 / 0.075) 18px 19.4px),
+      linear-gradient(165deg, rgb(107 79 58 / 0.045), rgb(74 124 89 / 0.03));
+    background-attachment: fixed;
+  }
+
+  /* 知识库 —— 淡底 + 右上角同心弧 */
+  .surface-arcs {
+    background-image:
+      repeating-radial-gradient(circle at 104% -18%, transparent 0 46px, rgb(107 79 58 / 0.075) 46px 47.4px),
+      linear-gradient(172deg, rgb(107 79 58 / 0.05), rgb(74 124 89 / 0.03));
+    background-attachment: fixed;
+  }
+
+  /* 数据分析 —— 淡底 + 46px 细网格（与户型解析的方格区分开） */
+  .surface-grid-fine {
+    background-image:
+      linear-gradient(to right, rgb(74 124 89 / 0.075) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(74 124 89 / 0.075) 1px, transparent 1px),
+      linear-gradient(148deg, rgb(74 124 89 / 0.055), rgb(201 169 97 / 0.035));
+    background-size: 46px 46px, 46px 46px, 100% 100%;
+    background-attachment: fixed;
+  }
+
+  /* 材料价格 —— 两道斜向色带，像纸的受光面（这一页没有纹样，只有光） */
+  .surface-wash {
+    background-image:
+      linear-gradient(118deg, rgb(201 169 97 / 0.11) 0%, transparent 42%),
+      linear-gradient(298deg, rgb(74 124 89 / 0.10) 0%, transparent 44%),
+      linear-gradient(180deg, rgb(107 79 58 / 0.035), rgb(201 169 97 / 0.03));
+    background-attachment: fixed;
+  }
+
+  /* 用户管理 —— 淡底 + 极淡十字交叉（这一页本该朴素，纹样给得最少） */
+  .surface-cross {
+    background-image:
+      repeating-linear-gradient(45deg, transparent 0 30px, rgb(107 79 58 / 0.06) 30px 31.4px),
+      repeating-linear-gradient(-45deg, transparent 0 30px, rgb(107 79 58 / 0.06) 30px 31.4px),
+      linear-gradient(160deg, rgb(107 79 58 / 0.045), rgb(74 124 89 / 0.03));
+    background-attachment: fixed;
+  }
+
   /* ── 细滚动条：4px，颜色取自设计稿 ── */
   .scroll-thin::-webkit-scrollbar {
     width: 4px;

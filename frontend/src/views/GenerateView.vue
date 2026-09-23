@@ -151,7 +151,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="mx-auto flex w-full max-w-[1760px] flex-1 flex-col gap-4 overflow-y-auto scroll-thin p-6">
+  <main class="mx-auto flex w-full max-w-[1760px] flex-1 flex-col gap-4 overflow-y-auto scroll-thin p-6 surface-dots">
     <PageHeader
       :breadcrumb="['全友·智绘家', '方案中心', '多智能体方案并行对比']"
       title="多方案智能对比与价值评估"

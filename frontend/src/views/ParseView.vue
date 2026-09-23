@@ -74,7 +74,7 @@ const traceCode = computed(() =>
 </script>
 
 <template>
-  <main class="mx-auto flex w-full max-w-[1760px] flex-1 flex-col gap-4 overflow-y-auto scroll-thin p-6">
+  <main class="mx-auto flex w-full max-w-[1760px] flex-1 flex-col gap-4 overflow-y-auto scroll-thin p-6 surface-grid">
     <PageHeader
       :breadcrumb="breadcrumb"
       :title="title"

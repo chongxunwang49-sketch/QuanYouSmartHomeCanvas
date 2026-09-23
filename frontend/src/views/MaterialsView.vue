@@ -70,7 +70,7 @@ const ecoTone = (lv: string) => {
 </script>
 
 <template>
-  <main class="mx-auto flex w-full max-w-[1760px] flex-1 flex-col gap-4 overflow-y-auto scroll-thin p-6">
+  <main class="mx-auto flex w-full max-w-[1760px] flex-1 flex-col gap-4 overflow-y-auto scroll-thin p-6 surface-wash">
     <PageHeader
       :breadcrumb="['全友·智绘家', '材料价格查询']"
       title="材料价格查询"

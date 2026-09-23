@@ -60,7 +60,7 @@ onMounted(() => health.refresh())
 </script>
 
 <template>
-  <main class="mx-auto flex w-full max-w-[1760px] flex-1 flex-col gap-4 overflow-y-auto scroll-thin p-6">
+  <main class="mx-auto flex w-full max-w-[1760px] flex-1 flex-col gap-4 overflow-y-auto scroll-thin p-6 surface-arcs">
     <PageHeader
       :breadcrumb="['全友·智绘家', '知识库管理']"
       title="知识库管理"
