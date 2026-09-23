@@ -90,8 +90,36 @@ class TestPrecheckFunction:
         r = precheck_image(_floorplan_png())
         assert r.ok, f"正常图不该被拦：{r.rejections}"
         assert r.width == 1600 and r.height == 1200
-        assert r.blur_score is not None and r.blur_score > 0
         assert "可用" in r.advice
+
+    def test_清晰度检测缺失时优雅降级(self):
+        """
+        `cv2` 是**可选依赖** —— 本机两个 Python 环境里只有一个装了它
+        （base 环境有、pytorch 环境没有）。所以这里断言的是**两种情况下都成立**
+        的性质，而不是"blur_score 必须有值"。
+
+        ⚠️ 第一版这条断言写成 `blur_score is not None`，于是在 pytorch 环境
+        下挂掉 —— 而那个环境才是 README 里文档化的启动环境。
+        断言不该耦合到一个按设计就可选的依赖上。
+        """
+        try:
+            import cv2  # noqa: F401
+
+            has_cv2 = True
+        except ImportError:
+            has_cv2 = False
+
+        r = precheck_image(_floorplan_png())
+        assert r.ok, "缺 cv2 不该影响放行结论"
+
+        if has_cv2:
+            assert r.blur_score is not None and r.blur_score > 0
+            assert not any("未安装 OpenCV" in w for w in r.warnings)
+        else:
+            assert r.blur_score is None
+            assert any("未安装 OpenCV" in w for w in r.warnings), (
+                "缺 cv2 时必须**说出来**，不能静默跳过 —— 静默跳过等于假装检查过了"
+            )
 
     def test_分辨率过低被拒(self):
         r = precheck_image(_floorplan_png(width=300, height=200))

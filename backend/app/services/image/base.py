@@ -147,6 +147,19 @@ class ImageProvider(abc.ABC):
         模型才愿意在此基础上"立起来"做 3D 渲染。
 
         不依赖 opencv（本机未安装），只用 Pillow。
+
+        ⚠️ **等比缩放的修正（2026-09-23 实测）**
+        初版对 x / y 各用一个缩放因子（`x1/max_x`、`y1/max_y`），
+        等于把任意户型**强行拉成正方形** —— 一个 685×505 的三居室会被
+        压扁 1.36 倍，ControlNet 于是照着这个变形的结构去生成。
+
+        同时初版用 `max(bbox[2])` 当分母而不是整体包围盒的 min/max，
+        导致户型左上角不在原点时（实测那张家用户型图从 [40,40] 开始）
+        内容整体偏移、左下留出一条空白带。
+
+        改成：取整体包围盒 → **单一缩放因子**（取宽高较大者）→ 居中。
+        实测同一个户型，质量提升很明显（见 E:/quanyou/outputs/render_ablation
+        的 A 与 C 对比）。
         """
         from PIL import ImageDraw
 
@@ -164,14 +177,27 @@ class ImageProvider(abc.ABC):
             draw.rectangle([size * 0.1, size * 0.1, size * 0.9, size * 0.9],
                            fill=fills[0], outline="black", width=3)
         else:
-            max_x = max(b[2] for b in boxes) or 1
-            max_y = max(b[3] for b in boxes) or 1
+            # 整体包围盒 —— 用 min 和 max 两侧，而不是只取 max
+            min_x = min(b[0] for b in boxes)
+            min_y = min(b[1] for b in boxes)
+            span_x = max(b[2] for b in boxes) - min_x
+            span_y = max(b[3] for b in boxes) - min_y
+            if span_x <= 0 or span_y <= 0:
+                span_x = span_y = 1
+
+            # **单一缩放因子**：等比，不拉伸
+            usable = size * 0.9
+            scale = usable / max(span_x, span_y)
+            # 缩放后居中 —— 长边撑满 90%，短边两侧留白
+            off_x = (size - span_x * scale) / 2
+            off_y = (size - span_y * scale) / 2
+
             for i, (x1, y1, x2, y2) in enumerate(boxes):
                 draw.rectangle(
-                    [x1 / max_x * size * 0.9 + size * 0.05,
-                     y1 / max_y * size * 0.9 + size * 0.05,
-                     x2 / max_x * size * 0.9 + size * 0.05,
-                     y2 / max_y * size * 0.9 + size * 0.05],
+                    [off_x + (x1 - min_x) * scale,
+                     off_y + (y1 - min_y) * scale,
+                     off_x + (x2 - min_x) * scale,
+                     off_y + (y2 - min_y) * scale],
                     fill=fills[i % len(fills)], outline="black", width=3,
                 )
 
