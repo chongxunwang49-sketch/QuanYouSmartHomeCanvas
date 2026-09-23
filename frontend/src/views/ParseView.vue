@@ -6,6 +6,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import DegradedNotice from '@/components/DegradedNotice.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import PhaseProgress from '@/components/PhaseProgress.vue'
+import PlanViewer from '@/components/PlanViewer.vue'
 import { parseLayout } from '@/api'
 import { toast } from '@/utils/toast'
 import { messageOf } from '@/api/client'
@@ -639,6 +640,22 @@ function goGenerate() {
               </ul>
             </div>
           </div>
+
+          <!--
+            矢量户型图 + 物品热区（AC-07 / AC-09 / AC-21）。
+
+            放在房间清单**之前** —— 这是整页最直观的一块，用户解析完
+            第一件想看的不是房间面积表，而是"我家被识别成什么样了"。
+
+            ⚠️ 降级户型也照常挂载：后端会渲染出一张带说明的空状态图
+            （"未识别出房间轮廓，建议换一张更清晰的"），比整块消失更可操作。
+            AC-07 的字面要求就是"**任何**户型都能渲出"。
+          -->
+          <PlanViewer
+            v-if="result.layout_id"
+            :layout-id="result.layout_id"
+            title="户型矢量图 · 物品热区"
+          />
 
           <!-- 五维诊断 -->
           <div v-if="diagnosis" class="card p-4">

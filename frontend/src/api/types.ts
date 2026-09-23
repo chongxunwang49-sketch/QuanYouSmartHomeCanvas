@@ -432,6 +432,94 @@ export interface MaterialPriceData {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// 矢量图与热区（4.3′，AC-07 / AC-09 / AC-21）
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * 热区精确度。
+ *
+ * - `exact`      坐标由几何**量出来**的（矢量图路径）。边界就是房间边界。
+ * - `room_level` 只有房间级近似（AI 生成图路径）。
+ * - `none`       不提供热区。
+ *
+ * ⚠️ `room_level` **必须用视觉样式区分**，悬停时要写"本区域整体参考价"
+ * 而不是假装精确到某一件家具（需求文档 2.2.6 的诚实性原则）。
+ * **用户可以接受近似，不能接受被骗。**
+ */
+export type HotspotPrecision = 'exact' | 'room_level' | 'none'
+
+/** 热区坐标来源，便于溯源。 */
+export type HotspotSource = 'vector_layer' | 'layout_bbox_mapping'
+
+/** 热区里挂的一件商品。 */
+export interface HotspotItem {
+  id: string
+  brand: string
+  name: string
+  /** 区间下限价，用于卡片主展示 */
+  price: number
+  price_range: [number, number]
+  spec: string
+  eco_level: string
+  is_quanyou: boolean
+  url: string
+}
+
+/** 一块热区。 */
+export interface PlanHotspot {
+  /** 与 SVG 里 `data-hotspot="N"` 一一对应 */
+  index: number
+  label: string
+  /** floor / paint / door —— 与材料目录的品类 key 对齐 */
+  category: string
+  /** 画布像素 `[left, top, right, bottom]` */
+  bbox: [number, number, number, number]
+  /** 画布像素顶点。墙面热区是多环，用 `rings` */
+  polygon: [number, number][]
+  /** 子路径。1 个环 = 实心区域；2 个环 = 中间挖空（墙面） */
+  rings: [number, number][][]
+  precision: HotspotPrecision
+  source: HotspotSource
+  /** 计价数量（㎡ 或 樘）。null 表示不按量算 */
+  quantity: number | null
+  unit: string
+  /** 这块热区的几何口径说明（层高是假设值、未扣门窗等） */
+  note: string
+  price_range: [number, number] | null
+  /** 数量 × 单价 = 本区域参考总价 */
+  estimate_range: [number, number] | null
+  items: HotspotItem[]
+  search_url: string
+  notes: string[]
+}
+
+/** 画布变换参数。与 `projection.Projection.as_dict()` 一一对应。 */
+export interface PlanTransform {
+  scale: number
+  offset_x: number
+  offset_y: number
+  draw_width_m: number
+  draw_depth_m: number
+  width_px: number
+  height_px: number
+}
+
+/** `GET /layout/{id}/hotspots` 的返回体。 */
+export interface PlanRenderData {
+  layout_id: string
+  image: { url: string; width: number; height: number }
+  transform: PlanTransform
+  /** 画不准的地方。**不许静默**，界面要么展示要么记日志 */
+  warnings: string[]
+  hotspots: PlanHotspot[]
+  count: number
+  by_precision: Record<string, number>
+  source: string
+  /** 演示价格声明，**必须展示** */
+  disclaimer: string
+}
+
+// ══════════════════════════════════════════════════════════════════
 // 健康检查（4.6）
 // ══════════════════════════════════════════════════════════════════
 

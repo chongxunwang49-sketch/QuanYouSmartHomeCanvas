@@ -141,6 +141,32 @@ export async function request<T>(
   return body.data as T
 }
 
+/**
+ * 取一个**不走统一信封**的接口的原始文本（目前只有 `/plan.svg`）。
+ *
+ * ⚠️ 不能复用 `request<T>()`：那个函数的第一件事就是拆 `{code,msg,data}`，
+ * 拆不动就抛 MALFORMED。而矢量图接口故意返回裸 `image/svg+xml` ——
+ * 它的消费者是 `<img src>` 和浏览器窗口，套上信封就没法渲染了。
+ *
+ * 所以这里单独开一条路：只做错误归一，不碰响应体。
+ */
+export async function requestText(
+  url: string,
+  config: { timeout?: number; signal?: AbortSignal } = {},
+): Promise<string> {
+  const resp = await http.request<string>({
+    method: 'get',
+    url,
+    timeout: config.timeout,
+    signal: config.signal,
+    responseType: 'text',
+    // 覆盖掉默认的 application/json，否则某些代理/浏览器会尝试按 JSON 解析
+    headers: { Accept: 'image/svg+xml,*/*' },
+    transformResponse: [(d: unknown) => d],   // 不要让 axios 试着解析
+  })
+  return typeof resp.data === 'string' ? resp.data : String(resp.data)
+}
+
 /** 从 BizError 里取 trace_id，供界面展示。 */
 export function traceIdOf(err: unknown): string {
   if (err instanceof BizError && err.data && typeof err.data === 'object') {

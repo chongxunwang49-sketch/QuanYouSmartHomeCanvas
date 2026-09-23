@@ -6,12 +6,13 @@
  * 直接返回结果。
  */
 
-import { request } from './client'
+import { request, requestText } from './client'
 import type {
   GenerateRequest,
   HealthData,
   MaterialPriceData,
   ParseRequest,
+  PlanRenderData,
   ReviewRequest,
   TaskCreated,
   TaskStatusData,
@@ -78,6 +79,41 @@ export const taskStatus = <R = unknown>(taskId: string, signal?: AbortSignal) =>
     // 轮询请求要快进快出，卡住会拖慢整条轮询节奏
     timeout: 10_000,
   })
+
+// ══════════════════════════════════════════════════════════════════
+// 4.3′ 矢量图与热区（同步，AC-07 / AC-09 / AC-21）
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * 热区数据 + 画布变换参数。
+ *
+ * ⚠️ 返回的 `hotspots[].bbox` / `polygon` 是**画布像素**，只对同一
+ * `layout_id` 的 `/plan.svg` 有意义。两个接口在后端共用同一个纯函数
+ * 计算变换，所以只要 `layout_id` 相同，坐标必然对得上 ——
+ * **前端不需要、也不应该自己做任何坐标换算。**
+ */
+export const layoutHotspots = (layoutId: string) =>
+  request<PlanRenderData>('get', `/layout/${encodeURIComponent(layoutId)}/hotspots`, undefined, {
+    timeout: 10_000,
+  })
+
+/**
+ * 取矢量户型图的 SVG **源码**。
+ *
+ * 拿源码而不是 `<img src>` 的 URL，是为了把 SVG 内联进 DOM ——
+ * 内联之后热区的命中测试交给浏览器（`fill-rule="evenodd"` 的挖空区域
+ * 会自动穿透到下层），前端一行几何计算都不用写。
+ * `<img>` 方式下这些都做不到。
+ */
+export const layoutPlanSvg = (layoutId: string, signal?: AbortSignal) =>
+  requestText(`/layout/${encodeURIComponent(layoutId)}/plan.svg`, {
+    timeout: 10_000,
+    signal,
+  })
+
+/** 给"在新窗口打开/下载"用的直链。 */
+export const layoutPlanSvgUrl = (layoutId: string) =>
+  `/api/v1/layout/${encodeURIComponent(layoutId)}/plan.svg`
 
 // ══════════════════════════════════════════════════════════════════
 // 4.5 材料价格查询（同步，纯查表）
