@@ -11,22 +11,35 @@ HTTP 路由。
     GET  /api/v1/layout/{id}/plan.svg  4.3′ 矢量户型图（同步，AC-07）
     GET  /api/v1/layout/{id}/hotspots  4.3′ 物品热区+价格（同步，AC-09/21）
     GET  /api/v1/layout/{id}/walkable  4.3″ 3D 漫游几何（同步，第一人称）
+    POST /api/v1/auth/login            4.1 登录（AC-01）
+    GET  /api/v1/auth/me               4.1 当前用户
     GET  /api/v1/system/health         4.6 健康检查
 
 **四个异步接口的形状是一致的**：立即返回 task_id，客户端轮询 4.4。
 差别只在 `kind` 与起始 `stages`。
 
-未实现（依赖 M1 认证与本机服务）：4.1 登录、4.6 的 knowledge/upload、
-/system/metrics。见 README 的「未开始」。
+**门控分布**（AC-01 + AC-13，判定逻辑见 `api/deps.py`）：
+
+    接口              免费用户            会员            管理员/设计师
+    layout/parse      可用（5 次/日）      可用（5 次/日）  不限
+    design/generate   **需开通**（4005）   可用（3 次/日）  不限
+    avoid-pit/review  **需开通**（4005）   可用            不限
+
+⚠️ 会员**照样受配额约束** —— 配额防的是跑飞，与是否付费无关。
+
+未实现（依赖本机服务）：4.6 的 knowledge/upload、/system/metrics。
+见 README 的「未开始」。
 """
 
 from __future__ import annotations
 
 from typing import Any, get_args
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from loguru import logger
 
+from ..core import auth
+from ..core.auth import User
 from ..core.capabilities import OperationNotAllowedError
 from ..core.config import settings
 from ..graph.state import initial_state
@@ -36,10 +49,12 @@ from ..services.geometry import build_walkable
 from ..services.material import catalog
 from ..services.render import hotspot_payload, render_plan_for
 from . import store as layout_store
+from .deps import consume_quota, current_user, require_paid
 from .schemas import (
     ApiError,
     ApiResponse,
     GenerateRequest,
+    LoginRequest,
     ParseRequest,
     ReviewRequest,
 )
@@ -54,20 +69,81 @@ def _trace_id(request: Request) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════
+# 4.1 认证（AC-01）
+# ══════════════════════════════════════════════════════════════════
+#
+# ⚠️ 这三个接口的约定与其它接口**不同**，写清楚免得后来的人改错：
+#
+#   · `/auth/login` 是唯一**不需要**令牌的写接口（否则死锁）。
+#   · 认证失败是 **HTTP 200 + code 4003**，不是 401 ——
+#     理由见 `api/deps.py` 模块说明。前端拿到 4003 就跳 /login。
+#   · 口令错误**不区分**"用户不存在"与"口令错误"，两种情况返回同一句话。
+#     区分开等于给了一个枚举用户名的接口。
+
+
+@router.post("/auth/login", response_model=ApiResponse)
+async def auth_login(req: LoginRequest, request: Request) -> ApiResponse:
+    """
+    登录，返回访问令牌与用户信息。
+
+    ⚠️ **没有 refresh token。** 需求文档 2.3.2 要求双令牌，这里有意偏离：
+    演示场景下 12 小时的有效期足够，双令牌的复杂度换不来演示价值。
+    偏离理由写在 `core/auth.py` 的文件头。
+    """
+    user = auth.verify_credentials(req.username, req.password)
+    if user is None:
+        logger.info(f"[auth] 登录失败 username={req.username!r} trace={_trace_id(request)}")
+        # ⚠️ 不区分"用户不存在"与"口令错误" —— 区分开就是一个用户名枚举接口
+        raise ApiError(4001, "用户名或口令不正确")
+
+    token, expires_in = auth.issue_token(user)
+    logger.info(f"[auth] 登录成功 user={user.username} role={user.role} trace={_trace_id(request)}")
+    return ApiResponse.ok({
+        "access_token": token,
+        "token_type": "Bearer",
+        "expires_in": expires_in,
+        "user": user.to_dict(),
+    })
+
+
+@router.get("/auth/me", response_model=ApiResponse)
+async def auth_me(user: User = Depends(current_user)) -> ApiResponse:
+    """
+    当前登录用户。
+
+    前端刷新页面后靠它恢复登录态 —— 令牌存在 localStorage，
+    但**用户信息不做本地持久化**，每次重新问一次：
+    管理员刚改了某人的角色/档位，刷新就该看到新的，
+    而不是从 localStorage 里读出一个过期快照。
+    """
+    return ApiResponse.ok({"user": user.to_dict()})
+
+
+# ══════════════════════════════════════════════════════════════════
 # 4.2 户型解析
 # ══════════════════════════════════════════════════════════════════
 
 
 @router.post("/layout/parse", response_model=ApiResponse)
-async def parse_layout(req: ParseRequest, request: Request) -> ApiResponse:
+async def parse_layout(
+    req: ParseRequest,
+    request: Request,
+    user: User = Depends(current_user),
+) -> ApiResponse:
     """
     提交户型图解析。**立即返回 task_id**，结果经 `/task/{id}/status` 轮询。
 
     只跑「解析 → 诊断」这一段（实测 33–48 秒）。方案生成是另一个接口 ——
     在这里顺带跑完会多花 90 秒、多调十几次 LLM，而调用方只要那份户型 JSON。
+
+    解析是**免费功能**（不受会员档位限制），但受每日配额约束（AC-13）。
     """
     if not req.image.strip():
         raise ApiError(4001, "image 不能为空")
+
+    # ⚠️ 顺序是有意的：**先校验入参、再扣额度**。
+    #    反过来的话，一个拼错的请求也会白扣用户一次配额。
+    await consume_quota(user, "parse")
 
     tm = get_task_manager()
     rec = tm.create("parse", trace_id=_trace_id(request))
@@ -101,9 +177,15 @@ async def parse_layout(req: ParseRequest, request: Request) -> ApiResponse:
 
 
 @router.post("/design/generate", response_model=ApiResponse)
-async def design_generate(req: GenerateRequest, request: Request) -> ApiResponse:
+async def design_generate(
+    req: GenerateRequest,
+    request: Request,
+    user: User = Depends(current_user),
+) -> ApiResponse:
     """
     按 `layout_id` 生成方案。**立即返回 task_id**。
+
+    生成是**付费功能**：免费用户在入口就被 4005 拦下。
 
     ⚠️ **不重新解析户型图。** 视觉解析约 16 秒，且模型有随机性 ——
     同一个 `layout_id` 重新解析可能得到不同的房间数。用户会发现自己看的户型
@@ -112,6 +194,10 @@ async def design_generate(req: GenerateRequest, request: Request) -> ApiResponse
 
     所以这里从暂存里取户型，图从 `diagnose_layout` 进（跳过已做过的解析）。
     """
+    # ⚠️ 授权检查放在**读户型之前** —— 先答"你能不能做这件事"，
+    #    再答"这份数据在不在"。反过来等于给了一个探测 layout_id 的接口。
+    require_paid(user, "装修方案生成")
+
     layout = await layout_store.load(req.layout_id)
     if layout is None:
         raise ApiError(
@@ -162,6 +248,8 @@ async def design_generate(req: GenerateRequest, request: Request) -> ApiResponse
             },
         )
 
+    await consume_quota(user, "generate")
+
     tm = get_task_manager()
     rec = tm.create("generate", trace_id=_trace_id(request))
 
@@ -197,14 +285,25 @@ async def design_generate(req: GenerateRequest, request: Request) -> ApiResponse
 
 
 @router.post("/avoid-pit/review", response_model=ApiResponse)
-async def avoid_pit_review(req: ReviewRequest, request: Request) -> ApiResponse:
+async def avoid_pit_review(
+    req: ReviewRequest,
+    request: Request,
+    user: User = Depends(current_user),
+) -> ApiResponse:
     """
     审查一份报价单/合同。**立即返回 task_id**。
 
     走的是 A-06 的 quote 模式（唯一模式 —— 分支内的 plan 模式由链上自动触发）。
+
+    审查是**付费功能**：免费用户在入口就被 4005 拦下。
+    ⚠️ 它**不占用解析/生成的配额** —— `TaskType` 只有 parse 与 generate
+    两个桶（见 `redis_client.py`），审查没有自己的计数器。
+    这不是遗漏：审查成本约 19 秒、一次 LLM 调用，与生成不是一个量级。
     """
     if not req.quote_text.strip():
         raise ApiError(4001, "quote_text 不能为空")
+
+    require_paid(user, "报价单避坑审查")
 
     tm = get_task_manager()
     rec = tm.create("review", trace_id=_trace_id(request))

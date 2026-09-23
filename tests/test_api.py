@@ -59,6 +59,33 @@ FULL_LAYOUT: dict[str, Any] = {
 NO_WALLS_LAYOUT = {**FULL_LAYOUT, "walls": []}
 
 
+# ══════════════════════════════════════════════════════════════════
+# 认证（AC-01 之后，三个任务接口都要求登录）
+# ══════════════════════════════════════════════════════════════════
+#
+# ⚠️ 默认用**管理员**令牌，理由是这些用例测的是业务逻辑本身，
+#    不该每条都被权限拦住。门控本身另有专门的用例（见文件末尾 TestAuthGate）。
+#
+# ⚠️ 令牌按 (username) 缓存 —— conftest 已把 AUTH_SECRET 钉死，
+#    所以整个会话内令牌稳定，不会因为别处重置密钥而失效。
+
+_TOKENS: dict[str, str] = {}
+
+
+def _token(username: str = "admin") -> str:
+    if username not in _TOKENS:
+        from backend.app.core import auth
+
+        user = next(u for u in auth.users() if u.username == username)
+        _TOKENS[username] = auth.issue_token(user)[0]
+    return _TOKENS[username]
+
+
+def _auth_headers(username: str | None = "admin") -> dict[str, str]:
+    """`username=None` 表示**不带令牌**（用来测未登录路径）。"""
+    return {} if username is None else {"Authorization": f"Bearer {_token(username)}"}
+
+
 @pytest.fixture
 def client():
     """进程内 ASGI 客户端。**不用 TestClient**，避免它与绊线纠缠。"""
@@ -67,7 +94,8 @@ def client():
     async def _run():
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport,
-                                     base_url="http://test") as c:
+                                     base_url="http://test",
+                                     headers=_auth_headers()) as c:
             yield c
 
     return _run
@@ -84,9 +112,16 @@ def _clean_state():
 
 
 async def _client() -> httpx.AsyncClient:
+    """默认以**管理员**身份请求。要测门控请用 `_client_with()`。"""
+    return await _client_with("admin")
+
+
+async def _client_with(username: str | None) -> httpx.AsyncClient:
+    """按指定身份构造客户端。`None` = 不带令牌。"""
     app = create_app()
     transport = httpx.ASGITransport(app=app)
-    return httpx.AsyncClient(transport=transport, base_url="http://test")
+    return httpx.AsyncClient(transport=transport, base_url="http://test",
+                             headers=_auth_headers(username))
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -705,3 +740,154 @@ class TestProgressIsReported:
         assert rec.error == "boom"
         # 后端如实把它记成"阶段走完"，界面**不能**据此显示成功
         assert rec.progress >= mid
+
+
+# ══════════════════════════════════════════════════════════════════
+# 门控（AC-01 / AC-13）
+# ══════════════════════════════════════════════════════════════════
+
+
+async def _reset_quota(username: str) -> None:
+    """
+    清掉某个演示用户当天的额度计数。
+
+    ⚠️ **不清理的话测试会随运行次数变得不稳定** —— 这是实测踩到的：
+    额度存在 Redis 里、按日期累计（`qy:quota:{kind}:{user_id}:{date}`），
+    而本机的 `qy-redis` 容器就映射在 `localhost:6379`，所以它**跨 pytest
+    运行也持久**。重复跑几次之后，`vip`（普通用户档，3 次/日）就被用光了，
+    表现为"第一次跑全绿、第二次开始失败"，而失败原因看着像权限问题。
+    """
+    from datetime import date
+
+    from backend.app.core import auth
+    from backend.app.core.config import settings
+    from backend.app.core.redis_client import get_redis
+
+    user = next(u for u in auth.users() if u.username == username)
+    client = await get_redis().client()
+    if client is None:
+        return  # Redis 不可用时额度走内存回退，本来就是干净的
+    today = date.today().isoformat()
+    keys = [
+        f"{settings.REDIS_QUOTA_PREFIX}:{kind}:{user.id}:{today}"
+        for kind in ("parse", "generate")
+    ]
+    await client.delete(*keys)
+
+
+class TestAuthGate:
+    """三层门控里**接口层**那一层 —— 真正拦得住 curl 的那层。"""
+
+    async def test_未登录不能解析(self):
+        async with await _client_with(None) as c:
+            r = await c.post("/api/v1/layout/parse", json={"image": TINY_PNG})
+        body = r.json()
+        assert r.status_code == 200, "未登录也走业务码，不用 401 —— 见 deps.py"
+        assert body["code"] == 4003
+        assert body["data"]["action"] == "login"
+
+    async def test_未登录不能生成(self):
+        async with await _client_with(None) as c:
+            r = await c.post("/api/v1/design/generate", json={"layout_id": "x"})
+        assert r.json()["code"] == 4003
+
+    async def test_无效令牌被拒(self):
+        """
+        ⚠️ 令牌用 ASCII 垃圾串 —— HTTP 头只能放 ASCII/latin-1，
+        写中文的话 httpx 会在**发请求之前**就抛 UnicodeEncodeError，
+        测的根本不是服务端行为。
+        """
+        async with await _client_with(None) as c:
+            r = await c.post("/api/v1/layout/parse",
+                             json={"image": TINY_PNG},
+                             headers={"Authorization": "Bearer not.a.real-token"})
+        assert r.json()["code"] == 4003
+
+    async def test_读接口不要求登录(self):
+        """`/system/health`、`/material/price` 这类读接口保持开放 ——
+        否则登录页自己都拿不到健康状态。"""
+        async with await _client_with(None) as c:
+            r = await c.get("/api/v1/system/health")
+        assert r.status_code == 200 and r.json()["code"] == 0
+
+    async def test_免费用户生成方案需要开通会员(self):
+        """**这条是付费墙的存在证明。**"""
+        await layout_store.save("layout_ok", FULL_LAYOUT)
+        async with await _client_with("demo") as c:
+            r = await c.post("/api/v1/design/generate",
+                             json={"layout_id": "layout_ok"})
+        body = r.json()
+        assert body["code"] == 4005, f"期望 4005（需开通会员），实际 {body}"
+        # 拒绝必须说清缺什么、怎么办（capabilities.py 的立场）
+        assert body["data"]["required_membership"] == "paid"
+        assert body["data"]["upgrade_hint"]
+
+    async def test_免费用户可以解析(self):
+        """解析是免费功能 —— 付费墙不能把入口也堵死，否则新用户无从体验。"""
+        await _reset_quota("demo")
+        async with await _client_with("demo") as c:
+            r = await c.post("/api/v1/layout/parse", json={"image": TINY_PNG})
+        assert r.json()["code"] == 0
+
+    async def test_会员用户可以生成(self):
+        await _reset_quota("vip")
+        await layout_store.save("layout_ok", FULL_LAYOUT)
+        async with await _client_with("vip") as c:
+            r = await c.post("/api/v1/design/generate",
+                             json={"layout_id": "layout_ok"})
+        assert r.json()["code"] == 0, r.json()
+
+    async def test_设计师不限量且不受会员档位限制(self):
+        await _reset_quota("designer")
+        await layout_store.save("layout_ok", FULL_LAYOUT)
+        async with await _client_with("designer") as c:
+            r = await c.post("/api/v1/design/generate",
+                             json={"layout_id": "layout_ok"})
+        assert r.json()["code"] == 0, r.json()
+
+    async def test_会员也会被每日配额拦住(self):
+        """
+        **AC-13 的核心：付费 ≠ 无限。**
+
+        配额与会员是两个维度 —— 会员解锁的是"能不能用"，
+        配额管的是"一天能用几次"。把它写成用例，是因为很容易
+        在实现时顺手写成"付费用户直接放行"，那样防跑飞的闸门就没了。
+        """
+        await _reset_quota("vip")
+        await layout_store.save("layout_ok", FULL_LAYOUT)
+
+        from backend.app.core.auth import users as all_users
+        from backend.app.core.config import settings
+
+        vip = next(u for u in all_users() if u.username == "vip")
+        limit = settings.QUOTA_USER_GENERATE_PER_DAY
+        assert limit and limit > 0, "普通用户档必须有配额，否则这条用例没意义"
+
+        async with await _client_with("vip") as c:
+            codes = []
+            for _ in range(limit + 1):
+                r = await c.post("/api/v1/design/generate",
+                                 json={"layout_id": "layout_ok"})
+                codes.append(r.json()["code"])
+
+        assert codes[:limit] == [0] * limit, f"前 {limit} 次应当放行，实际 {codes}"
+        assert codes[limit] == 4006, f"第 {limit + 1} 次应当被额度拦住，实际 {codes}"
+
+    async def test_超额响应说清额度与重置时间(self):
+        """拒绝必须可操作（capabilities.py 的立场）：说清用了几次、上限多少、何时重置。"""
+        await _reset_quota("vip")
+        await layout_store.save("layout_ok", FULL_LAYOUT)
+
+        from backend.app.core.config import settings
+
+        async with await _client_with("vip") as c:
+            body = {}
+            for _ in range(settings.QUOTA_USER_GENERATE_PER_DAY + 1):
+                body = (await c.post("/api/v1/design/generate",
+                                     json={"layout_id": "layout_ok"})).json()
+
+        assert body["code"] == 4006
+        d = body["data"]
+        assert d["limit"] == settings.QUOTA_USER_GENERATE_PER_DAY
+        assert d["reset_at"], "必须告诉用户什么时候恢复"
+        assert d["upgrade_hint"]

@@ -524,3 +524,40 @@ def get_redis() -> RedisClient:
     if _redis is None:
         _redis = RedisClient()
     return _redis
+
+
+_quota: QuotaLimiter | None = None
+
+
+def get_quota_limiter() -> QuotaLimiter:
+    """
+    额度限流的进程级单例（AC-13）。
+
+    与 `get_redis()` 同一个形状。单独开一个访问器而不是让调用方自己
+    `QuotaLimiter(get_redis())` —— 后者每次请求都新建一个包装对象，
+    虽然它没有状态、代价可以忽略，但**每次 new 一个"限流器"读起来
+    像是每次都在重置限流**，容易被误读。
+    """
+    global _quota
+    if _quota is None:
+        _quota = QuotaLimiter(get_redis())
+    return _quota
+
+
+def reset_redis_client() -> None:
+    """
+    丢掉进程级单例。**仅供测试**，与 `api/tasks.py` 的 `reset_task_manager()`
+    是同一个模式。
+
+    ⚠️ 为什么测试必须调它：`redis.asyncio` 的客户端**绑定创建它的事件循环**。
+    而 pytest-asyncio 默认**每个用例一个新循环** —— 单例一旦被第一个用例
+    创建，后续用例拿到的是"绑定在已关闭循环上的客户端"，
+    报 `RuntimeError: Event loop is closed`。症状是"文件里第一个碰 Redis 的
+    用例通过、后面的全挂"，很容易被误读成业务代码有并发 bug。
+
+    生产环境只有一个循环，不存在这个问题 —— 所以这是纯粹的测试隔离需求，
+    不是缺陷修补。
+    """
+    global _redis, _quota
+    _redis = None
+    _quota = None

@@ -54,6 +54,49 @@ for _stream in (sys.stdout, sys.stderr):
 # ══════════════════════════════════════════════════════════════════
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _fixed_auth_secret():
+    """
+    把 `AUTH_SECRET` 钉死成一个测试值。
+
+    ⚠️ 这条是**跨测试文件**的必需品，不是洁癖：
+
+    `core/auth.py` 在密钥未配置时**每个进程随机生成**一把。而 pytest
+    整个会话跑在同一个进程里 —— 只要有一个测试重置了密钥缓存
+    （`tests/test_auth.py` 的 autouse fixture 就会），
+    别处已经签发、还在用的令牌就全部失效，
+    表现为"下游某个用例莫名其妙 4003"，而原因离现场很远。
+
+    钉死之后令牌在整个测试会话里稳定，`test_auth.py` 里那两条
+    专门验证密钥行为的用例会**临时改回空值**来测真实路径。
+    """
+    from backend.app.core import auth
+    from backend.app.core.config import settings
+
+    original = settings.AUTH_SECRET
+    settings.AUTH_SECRET = "conftest-fixed-secret-not-a-real-key"
+    auth.reset_secret_cache()
+    yield
+    settings.AUTH_SECRET = original
+    auth.reset_secret_cache()
+
+
+@pytest.fixture(autouse=True)
+def _reset_redis_singleton():
+    """
+    每个用例丢掉 Redis 单例。
+
+    pytest-asyncio 每个用例一个新事件循环，而 `redis.asyncio` 的客户端
+    绑定在创建它的循环上 —— 不重置的话，同一文件里**第二个**碰 Redis 的
+    用例就会报 `Event loop is closed`。详见 `reset_redis_client()` 的说明。
+    """
+    from backend.app.core.redis_client import reset_redis_client
+
+    reset_redis_client()
+    yield
+    reset_redis_client()
+
+
 @pytest.fixture(autouse=True)
 def _block_real_llm(request, monkeypatch):
     """

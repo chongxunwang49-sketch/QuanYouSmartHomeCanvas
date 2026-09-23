@@ -51,8 +51,11 @@ class ApiResponse(BaseModel, Generic[T]):
 ErrorCode = Literal[
     4001,  # 参数不合法
     4002,  # 数据不支撑该操作（对应 OperationNotAllowedError，AC-33）
+    4003,  # 未登录 / 令牌无效或已过期（AC-01）
     4004,  # 任务不存在
     4009,  # 任务已存在同名
+    4005,  # 权限不足 / 需要开通会员（AC-01 + AC-13）
+    4006,  # 超出每日额度（AC-13）
     5001,  # 执行失败
     5002,  # 依赖不可用（Redis / 模型 / 知识库）
 ]
@@ -125,3 +128,13 @@ __all__ = [
     "ApiResponse", "ApiError", "ErrorCode",
     "ParseRequest", "GenerateRequest", "ReviewRequest",
 ]
+
+
+class LoginRequest(BaseModel):
+    """4.1 登录。"""
+
+    username: str = Field(description="用户名（大小写不敏感）")
+    password: str = Field(description="口令")
+
+
+__all__ += ["LoginRequest"]  # type: ignore[name-defined]

@@ -56,6 +56,18 @@ class Settings(BaseSettings):
     # 显式开关：若某天需要局域网内用手机看效果，改成 true 并自行承担风险。
     ALLOW_LAN_ACCESS: bool = False
 
+    # ── 认证（AC-01）──────────────────────────────────────
+    # ⚠️ **刻意不给默认值。** 留空时 `core/auth.py` 会**每个进程随机生成**
+    #    一把密钥，并打一条警告。代价只是"进程重启后需要重新登录"。
+    #
+    #    为什么不写一个默认密钥：那等于把"所有部署共用同一把钥匙"
+    #    固化成默认行为，而它看起来还挺正常 —— 正是本项目反复在防的
+    #    "静默的不安全默认值"。留空 + 随机反而更诚实。
+    #
+    # 要在重启后保持登录，在 `.env` 里设一个，例如：
+    #     AUTH_SECRET=<openssl rand -base64 48 的输出>
+    AUTH_SECRET: str = ""
+
     # ── DeepSeek（多模态主模型）───────────────────────────
     # 实测：/v1 与 /anthropic 两个端点都能直接读图，本客户端走 /v1（OpenAI 兼容）
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"

@@ -1,0 +1,71 @@
+{
+  "_readme": [
+    "演示用户种子数据 —— 与 seed_data/ 下其它文件同一定位：**演示数据**。",
+    "",
+    "⚠️ 口令是**公开的演示口令**（admin123 / designer123 / demo123 / vip123），",
+    "   写在 README 里给面试官直接登录用。它们不是任何真实系统的凭据。",
+    "",
+    "⚠️ **口令不是明文存储**，但也不是生产级方案。",
+    "   `password_hash = sha256(命名空间 + salt + 口令)`。",
+    "   · 为什么不用 bcrypt/passlib：项目 requirements.txt 明确不装它们",
+    "     （见该文件【C】段），而为了一个演示账号引入新依赖会牵连容器重建。",
+    "   · 为什么这样仍然不够：SHA-256 太快，抗不住离线爆破。",
+    "     生产方案见 docs/需求/需求文档.md 2.3.2（bcrypt + 数据库）。",
+    "   · 公开仓库里放这些哈希 **不是漏洞** —— 口令本来就公开写在 README 里。",
+    "",
+    "── 角色与会员是两个正交维度 ──",
+    "   role       admin / designer / user      —— 决定**能看什么**",
+    "   membership free / paid                  —— 决定**用多少**",
+    "   admin 与 designer 不受会员限制（需求文档 2.2.7：不限量）。"
+  ],
+  "users": [
+    {
+      "id": 1,
+      "username": "admin",
+      "display_name": "系统管理员",
+      "title": "超级管理员 · 全部权限",
+      "avatar_text": "管",
+      "role": "admin",
+      "membership": "paid",
+      "salt": "740e77734ee9d230",
+      "password_hash": "235132b1c386381c40ed46f768a0ff4d7854ee006fe28252de7dca6345dbf50c",
+      "is_active": true
+    },
+    {
+      "id": 2,
+      "username": "designer",
+      "display_name": "李设计",
+      "title": "设计师 · 专业工具不限量",
+      "avatar_text": "设",
+      "role": "designer",
+      "membership": "paid",
+      "salt": "f47916a000df65a5",
+      "password_hash": "e2d6aa183baa1d22891b3286244b86b82efe2a182b7881e8fe51afa8050aab24",
+      "is_active": true
+    },
+    {
+      "id": 3,
+      "username": "demo",
+      "display_name": "演示用户",
+      "title": "普通用户 · 免费版",
+      "avatar_text": "用",
+      "role": "user",
+      "membership": "free",
+      "salt": "9fced7bcfe5a1c5d",
+      "password_hash": "7fa86e88372cedd11c63fe57ce72a81f010392fb85891bb3dd3a133e1bf84b73",
+      "is_active": true
+    },
+    {
+      "id": 4,
+      "username": "vip",
+      "display_name": "会员用户",
+      "title": "普通用户 · 已开通会员",
+      "avatar_text": "会",
+      "role": "user",
+      "membership": "paid",
+      "salt": "32a373d8912502bd",
+      "password_hash": "7c7957fd3d57d04b50da162d424cc59a4df2a3fb85797d81afd11b473cc40dbc",
+      "is_active": true
+    }
+  ]
+}
