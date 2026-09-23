@@ -64,22 +64,60 @@ MIN_SEGMENT_M = 0.02
 
 @dataclass(frozen=True)
 class CollisionSeg:
-    """一段**实心**墙。门洞处已经被切掉。"""
+    """
+    一段**实心**墙。门洞处已经被切掉。
+
+    ══════════════════════════════════════════════════════════════════
+    `a`/`b` 与 `render_a`/`render_b` 为什么要分开
+    ══════════════════════════════════════════════════════════════════
+    碰撞用的是**中心线**（`a`/`b`）：玩家撞墙撞的是这条线。
+
+    3D 渲染用的是一条**带宽度的墙体**：把中心线两侧各铺开半个墙厚。
+    问题出在墙角 —— 两段墙的中心线在角点**正好相交于一点**，
+    各自铺开 0.1m 之后，外侧会留下一个 0.1×0.1m 的**方口**。
+    站在屋里看，每个墙角都有一道竖着的缝，缝后面是空的。
+
+    直觉的修法是"每端各往外延半个墙厚"把角填实 —— 但那样会**把门洞挤窄**：
+    0.9m 的门被两侧各吃掉 0.1m，变成 0.7m。而"门比看上去窄"这件事
+    在画面上完全看不出来。
+
+    所以这里分开：
+      · `a`/`b`              精确的碰撞中心线，**不外延**
+      · `render_a`/`render_b` 渲染用：**墙角外延，门洞边缘不外延**
+
+    判据是"这个端点是不是贴着门洞"—— 贴着就不外延。
+    """
 
     a: Vec2
     b: Vec2
     wall_index: int
+    #: 3D 渲染用的端点。默认等于 a/b（没有墙角需要填时）。
+    render_a: Vec2 | None = None
+    render_b: Vec2 | None = None
 
     @property
     def length_m(self) -> float:
         return math.dist((self.a.x, self.a.y), (self.b.x, self.b.y))
 
+    @property
+    def ra(self) -> Vec2:
+        return self.render_a if self.render_a is not None else self.a
+
+    @property
+    def rb(self) -> Vec2:
+        return self.render_b if self.render_b is not None else self.b
+
     def to_dict(self) -> dict[str, Any]:
         # 毫米精度就够 —— 碰撞体比这精细没有意义，而小数位直接决定
         # 这份 JSON 的体积（它就压在轮询响应里）。
+        def p3(v: Vec2) -> list[float]:
+            return [round(v.x, 3), round(v.y, 3)]
+
         return {
-            "a": [round(self.a.x, 3), round(self.a.y, 3)],
-            "b": [round(self.b.x, 3), round(self.b.y, 3)],
+            "a": p3(self.a),
+            "b": p3(self.b),
+            "render_a": p3(self.ra),
+            "render_b": p3(self.rb),
             "wall": self.wall_index,
         }
 
@@ -327,6 +365,8 @@ def _cut_door_gaps(scene: Scene, half: float) -> list[CollisionSeg]:
         if hi > lo:
             gaps.setdefault(op.wall_index, []).append((lo, hi))
 
+    gap_ends = _door_gap_ends(scene)
+
     out: list[CollisionSeg] = []
     for wi, wall in enumerate(scene.walls):
         for a, b in wall.segments():
@@ -338,11 +378,62 @@ def _cut_door_gaps(scene: Scene, half: float) -> list[CollisionSeg]:
             cursor = 0.0
             for lo, hi in cuts:
                 if lo - cursor >= MIN_SEGMENT_M:
-                    out.append(CollisionSeg(*_lerp(a, b, cursor, lo, seg_len), wi))
+                    out.append(
+                        _make_seg(a, b, cursor, lo, seg_len, wi, half, gap_ends)
+                    )
                 cursor = max(cursor, hi)
             if seg_len - cursor >= MIN_SEGMENT_M:
-                out.append(CollisionSeg(*_lerp(a, b, cursor, seg_len, seg_len), wi))
+                out.append(
+                    _make_seg(a, b, cursor, seg_len, seg_len, wi, half, gap_ends)
+                )
     return out
+
+
+def _door_gap_ends(scene: Scene) -> list[tuple[Vec2, float]]:
+    """
+    每扇门的**两个洞缘点**及容差。用来判断"这段墙的端点是不是贴在门洞上"。
+
+    只在门的两个边缘取点，不是取门中心 —— 要判的是"端点是否正好在洞口边上"，
+    而洞口在门中心两侧各半个门宽处。
+    """
+    ends: list[tuple[Vec2, float]] = []
+    for op in scene.openings:
+        if op.kind != "door" or op.wall_index < 0:
+            continue
+        if op.wall_index >= len(scene.walls):
+            continue
+        placed = wall_point_at(scene.walls[op.wall_index], op.offset_along_wall_m)
+        if placed is None:
+            continue
+        p, u = placed
+        for sign in (1, -1):
+            ends.append(
+                (
+                    Vec2(p.x + u.x * op.width_m / 2 * sign,
+                         p.y + u.y * op.width_m / 2 * sign),
+                    0.03,
+                )
+            )
+    return ends
+
+
+def _make_seg(a: Vec2, b: Vec2, lo: float, hi: float, seg_len: float,
+              wi: int, half: float, gap_ends: list[tuple[Vec2, float]]
+              ) -> CollisionSeg:
+    """切出一段碰撞线，并算出它的**渲染**端点（墙角外延、门洞边缘不外延）。"""
+    p, q = _lerp(a, b, lo, hi, seg_len)
+    ux, uy = (q.x - p.x), (q.y - p.y)
+    length = math.hypot(ux, uy) or 1.0
+    ux, uy = ux / length, uy / length
+
+    def at_gap(pt: Vec2) -> bool:
+        return any(
+            math.dist((pt.x, pt.y), (e.x, e.y)) <= tol for e, tol in gap_ends
+        )
+
+    ra = p if at_gap(p) else Vec2(p.x - ux * half, p.y - uy * half)
+    rb = q if at_gap(q) else Vec2(q.x + ux * half, q.y + uy * half)
+    return CollisionSeg(a=p, b=q, wall_index=wi, render_a=ra, render_b=rb)
 
 
 def _merge(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:

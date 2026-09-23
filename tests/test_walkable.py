@@ -532,3 +532,133 @@ class TestSerialization:
         for c in d["collision"]:
             for v in list(c["a"]) + list(c["b"]):
                 assert len(str(v).split(".")[-1]) <= 3, f"坐标精度未裁剪：{v}"
+
+
+# ══════════════════════════════════════════════════════════════════
+# 3D 渲染端点：墙角要填实，但**不能把门挤窄**
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestRenderEndpoints:
+    """
+    碰撞用中心线，3D 渲染用"带宽度的墙条"。
+
+    ⚠️ 两者对端点的要求是**相反**的，这是这个类存在的理由：
+
+      · 墙角：两段墙的中心线正好交于一点，各自铺开半个墙厚之后
+        外面留一个 0.1×0.1m 的方口 —— **必须往外延**才填得上
+      · 门洞：往外延会**把门挤窄**（0.9m 变 0.7m）—— **绝不能延**
+
+    而这两种错在画面上都不显眼：墙角缝是"一道细缝"，门变窄是"看着还行"。
+    """
+
+    def test_墙角被填实(self):
+        """
+        沿每段墙的中心线走一遍，除了门洞范围，**任何一点都不该离
+        最近的渲染墙条超过半个墙厚**。
+
+        这一条直接说"3D 的墙没有洞"。不外延的话，墙角处会出现
+        一个中心线覆盖不到的小区域，这里就会红。
+        """
+        scene = normalize_layout(REAL_LAYOUT)
+        w = build_walkable(scene)
+        half = max(wall.thickness_m for wall in scene.walls) / 2
+
+        gap_ranges = _door_ranges_along_walls(scene)
+
+        for wall in scene.walls:
+            for wi_seg in wall.segments():
+                samples = 120
+                for i in range(samples + 1):
+                    t = i / samples
+                    p = (wi_seg[0].x + (wi_seg[1].x - wi_seg[0].x) * t,
+                         wi_seg[0].y + (wi_seg[1].y - wi_seg[0].y) * t)
+                    if _in_any_gap(p, gap_ranges):
+                        continue      # 门洞里本来就是空的
+                    d = min(
+                        _dist_to_seg(p, s.ra, s.rb) for s in w.collision
+                    )
+                    assert d <= half + 0.02, (
+                        f"墙上的点 {p} 离最近的渲染墙条 {d:.3f}m "
+                        f"（超过半墙厚 {half:.3f}m）—— 这里会漏出一条缝"
+                    )
+
+    def test_门洞没有被外延挤窄(self):
+        """
+        ⚠️ **这条守的是"门比看上去窄"这个看不见的错。**
+
+        渲染端点在门洞两侧**必须保持原样**。各外延半个墙厚的话，
+        0.9m 的门在 3D 里只剩 0.7m，而画面上完全看不出来。
+        """
+        scene = normalize_layout(REAL_LAYOUT)
+        w = build_walkable(scene)
+
+        for op in scene.openings:
+            if op.kind != "door" or op.wall_index < 0:
+                continue
+            placed = wall_point_at(scene.walls[op.wall_index],
+                                   op.offset_along_wall_m)
+            assert placed is not None
+            p, u = placed
+
+            # 门洞两个边缘点，各自到最近的**渲染端点**的距离
+            for sign in (1, -1):
+                edge = (p.x + u.x * op.width_m / 2 * sign,
+                        p.y + u.y * op.width_m / 2 * sign)
+                d = min(
+                    min(math.dist(edge, _xy(s.ra)), math.dist(edge, _xy(s.rb)))
+                    for s in w.collision
+                )
+                assert d < 0.03, (
+                    f"门洞边缘 {edge} 被渲染墙条侵入 {d:.3f}m —— "
+                    f"3D 里这个门会比 {op.width_m}m 窄"
+                )
+
+    def test_外延量恰好是半个墙厚(self):
+        """角落处的渲染端点应当恰好外延 half，多了会捅进隔壁房间。"""
+        scene = normalize_layout(REAL_LAYOUT)
+        w = build_walkable(scene)
+        half = max(wall.thickness_m for wall in scene.walls) / 2
+
+        outermost = max(
+            max(_xy(s.ra)[i], _xy(s.rb)[i]) for s in w.collision for i in (0, 1)
+        )
+        # 外墙中心线在 0 与 7.8905；外延 half 后最远到 7.8905 + 0.1
+        assert outermost == pytest.approx(7.8905 + half, abs=0.02), (
+            f"最远渲染端点 {outermost:.3f}，应当是墙线 + 半墙厚 {7.8905 + half:.3f}"
+        )
+
+    def test_碰撞中心线保持在墙体上(self):
+        """
+        外延**只改渲染端点**。碰撞中心线（`a`/`b`）必须仍在原来那条墙上 ——
+        否则玩家会被挡在离墙 0.1m 的地方，表现为"贴不到墙"，
+        而画面上墙就在眼前，很难说清哪里不对。
+        """
+        scene = normalize_layout(REAL_LAYOUT)
+        w = build_walkable(scene)
+        wall_segs = [s for wall in scene.walls for s in wall.segments()]
+
+        for s in w.collision:
+            for e in (s.a, s.b):
+                d = min(
+                    _dist_to_seg((e.x, e.y), a, b) for a, b in wall_segs
+                )
+                assert d < 1e-6, (
+                    f"碰撞端点 ({e.x:.3f},{e.y:.3f}) 偏离墙体中心线 {d:.4f}m —— "
+                    f"外延泄漏进了碰撞几何"
+                )
+
+
+def _door_ranges_along_walls(scene) -> list[tuple[float, float]]:
+    """所有门洞在**全局**坐标下的近似圆盘，用于"这点在不在门洞里"的判定。"""
+    out = []
+    for op in scene.openings:
+        if op.kind == "door":
+            out.append((op.center.x, op.center.y, op.width_m / 2 + 0.02))
+    return out
+
+
+def _in_any_gap(p, ranges) -> bool:
+    return any(
+        math.dist(p, (cx, cy)) <= r for cx, cy, r in ranges
+    )
