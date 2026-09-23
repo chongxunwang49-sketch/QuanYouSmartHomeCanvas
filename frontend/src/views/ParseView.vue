@@ -27,7 +27,8 @@ import { useTaskStore } from '@/stores/task'
 const router = useRouter()
 const route = useRoute()
 const tasks = useTaskStore()
-const poll = useTaskPolling<ParseResult>()
+/** 会话键：轮询状态跨页面切换保留，见 useTaskPolling 的说明 */
+const poll = useTaskPolling<ParseResult>('parse')
 
 //: 模板里 `ref="fileInput"` 绑的就是它。
 // ⚠️ **这个声明不能漏。** 漏掉时模板里 `fileInput` 不存在，
@@ -184,21 +185,38 @@ async function submit() {
   }
 }
 
-/** 从地址栏的 task_id 恢复：刷新页面不该丢掉正在跑的任务。 */
+/**
+ * 恢复上一次的任务。
+ *
+ * ⚠️ 光看地址栏的 query **不够** —— 从侧栏点回「户型解析」走的是
+ * `router.push('/parse')`，query 是空的。而任务其实还在后端跑
+ * （结果留 1 小时），前端却把它忘了：用户回来看到的是一张白纸，
+ * 得重新上传。
+ *
+ * 所以三级兜底：
+ *   ① 地址栏 query（同一个标签页内刷新）
+ *   ② 轮询会话表（路由切走再切回，进程内存里还有）
+ *   ③ sessionStorage（整页刷新、甚至关了标签页重开）
+ */
 onMounted(async () => {
-  const taskId = String(route.query.task || '')
+  const taskId = String(route.query.task || '') || poll.savedTaskId()
   if (!taskId) return
-  const snap = await poll.start(taskId)
-  if (snap?.result) {
-    tasks.track({
-      taskId,
-      kind: 'parse',
-      summary: snap.result.layout
-        ? `${snap.result.layout.rooms?.length ?? 0} 个房间 · ${snap.result.layout.total_area ?? 0} ㎡`
-        : '',
-    })
-    tasks.update(taskId, { status: snap.status, phaseText: snap.phase_text })
+
+  // 把 id 写回地址栏：刷新、分享链接都还能用
+  if (String(route.query.task || '') !== taskId) {
+    router.replace({ query: { ...route.query, task: taskId } })
   }
+
+  const snap = await poll.start(taskId)
+  if (!snap) return
+  tasks.track({
+    taskId,
+    kind: 'parse',
+    summary: snap.result?.layout
+      ? `${snap.result.layout.rooms?.length ?? 0} 个房间 · ${snap.result.layout.total_area ?? 0} ㎡`
+      : '',
+  })
+  tasks.update(taskId, { status: snap.status, phaseText: snap.phase_text })
 })
 
 // ── 展示辅助 ──────────────────────────────────────────────

@@ -34,6 +34,55 @@ const CEILING_COLOR = 0xfaf7f1
 /** 每个房间地面的抬升步长，用来避免相邻房间共面时的 z-fighting。 */
 const FLOOR_STEP = 0.0015
 
+/** 门洞高度（米）。国内住宅门洞常见 2.0–2.1m。 */
+const DOOR_HEIGHT_M = 2.05
+/** 门扇厚度（米）。 */
+const LEAF_THICK_M = 0.045
+const DOOR_COLOR = 0x8a6a4b
+
+/**
+ * 门扇的转轴与开合。
+ *
+ * ══════════════════════════════════════════════════════════════════
+ * 几何全部来自后端，这里只负责"摆"和"转"
+ * ══════════════════════════════════════════════════════════════════
+ * `hinge`（转轴）、`along`（门扇边长方向）、`normal`（全开时朝的方向）
+ * 都是后端算好的 —— 见 `walkable.py` 里 `DoorEdge` 的说明。
+ * 前端自己从"墙 + 偏移"再推一遍的话，两套只要差一点，
+ * 门扇就会挂偏半个门宽或者转轴埋进墙里。
+ *
+ * 转向的算法：门组绕自身 Y 轴转 θ 时，局部 +X 会转到
+ * `(cosθ, 0, -sinθ)`。让 θ 从 0 转到 +90°，正好把"沿墙"转到"垂直于墙"，
+ * 也就是从关到开。这个符号是推出来的，不是试出来的。
+ */
+/**
+ * 让一个"长度沿局部 +X"的盒子对齐到给定的**图纸平面**方向。
+ *
+ * ⚠️ 符号是推出来的：盒子绕自身 Y 轴转 θ 时，局部 +X 会转到
+ * `(cosθ, 0, -sinθ)`；而图纸方向 `(ax, ay)` 在 Three 里是 `(ax, -ay)`。
+ * 于是 `cosθ = ax`、`sinθ = ay`，即 `θ = atan2(ay, ax)`。
+ *
+ * 写反了（`-atan2`）对**对称的墙盒**看不出来 —— ±90° 转出来的形状一样。
+ * 但对**门扇**是致命的：门扇的质心偏在 +X 一侧、把手也在那一端，
+ * 转反了门就挂到门洞外面去了。
+ */
+function yawAlong(along: [number, number]): number {
+  return Math.atan2(along[1], along[0])
+}
+
+export interface DoorHandle {
+  index: number
+  /** 门中心的**图纸平面**坐标（米）。找最近的门用它 */
+  planPos: [number, number]
+  /** 门的宽度，用于判断"够不够近" */
+  widthM: number
+  /** 0 = 关，1 = 全开 */
+  setOpen(t: number): void
+  isOpen(): boolean
+  /** 关着的时候，这块地方应当挡住人。返回图纸平面上的线段 */
+  blockingSegment(): [[number, number], [number, number]] | null
+}
+
 export interface SceneHandles {
   scene: THREE.Scene
   /** 按画质档位重建可变部分（灯光） */
@@ -41,6 +90,8 @@ export interface SceneHandles {
   dispose(): void
   /** 包围盒（米），给相机远近裁剪面用 */
   bounds: { sizeX: number; sizeZ: number; height: number }
+  /** 可开关的门。**默认全部打开** */
+  doors: DoorHandle[]
 }
 
 export function buildScene(data: WalkableResponse): SceneHandles {
@@ -84,6 +135,85 @@ export function buildScene(data: WalkableResponse): SceneHandles {
     wallGroup.add(mesh)
   }
   scene.add(wallGroup)
+
+  // ══════════════════════════════════════════════════════════════
+  // 门洞上方的过梁
+  // ══════════════════════════════════════════════════════════════
+  // 碰撞线段在门洞处是断的 —— 3D 墙体于是也断到顶。不加过梁的话，
+  // 门洞是一个**通到天花板的洞**，看着不像门、像墙塌了一块。
+  // 补一段 2.05m 以上的墙，门洞才读得出"门"的形状。
+  for (const d of w.doors) {
+    const h = Math.max(height - DOOR_HEIGHT_M, 0)
+    if (h <= 0.01) continue
+    const geo = track(new THREE.BoxGeometry(d.width_m, h, halfThick * 2))
+    const mesh = new THREE.Mesh(geo, wallMat)
+    const [ex, , ez] = planToEngine(d.position[0], d.position[1],
+                                    DOOR_HEIGHT_M + h / 2)
+    mesh.position.set(ex, DOOR_HEIGHT_M + h / 2, ez)
+    mesh.rotation.y = yawAlong(d.along)
+    wallGroup.add(mesh)
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // 门扇
+  // ══════════════════════════════════════════════════════════════
+  const leafMat = track(new THREE.MeshLambertMaterial({ color: DOOR_COLOR }))
+  const doors: DoorHandle[] = []
+
+  for (const d of w.doors) {
+    const [hx, hy] = d.hinge
+    const [axp, ayp] = d.along
+
+    // 门组挂在铰链上，门扇沿组的局部 +X 伸出去
+    const group = new THREE.Group()
+    const [gx, , gz] = planToEngine(hx, hy, 0)
+    group.position.set(gx, 0, gz)
+
+    // 局部 +X 对齐"沿墙方向"。绕 Y 转 θ 会把 +X 送到 (cosθ, 0, -sinθ)，
+    // 所以 θ = atan2(-dz, dx)，其中 (dx,dz) 是沿墙方向在 Three 里的表示
+    const base = yawAlong([axp, ayp])
+
+    const leafGeo = track(new THREE.BoxGeometry(
+      d.width_m, DOOR_HEIGHT_M, LEAF_THICK_M,
+    ))
+    const leaf = new THREE.Mesh(leafGeo, leafMat)
+    leaf.position.set(d.width_m / 2, DOOR_HEIGHT_M / 2, 0)
+    group.add(leaf)
+
+    // 门把手：一个小方块，让"这是门"一眼可见
+    const knobGeo = track(new THREE.BoxGeometry(0.09, 0.09, 0.14))
+    const knob = new THREE.Mesh(knobGeo, wallMat)
+    knob.position.set(d.width_m - 0.12, 1.0, 0)
+    group.add(knob)
+
+    scene.add(group)
+
+    let open = true                      // ⚠️ 默认全部打开
+    const apply = (t: number) => {
+      group.rotation.y = base + t * (Math.PI / 2)
+    }
+    apply(1)
+
+    doors.push({
+      index: d.index,
+      planPos: [d.position[0], d.position[1]],
+      widthM: d.width_m,
+      setOpen(t: number) {
+        open = t > 0.5
+        apply(t)
+      },
+      isOpen: () => open,
+      blockingSegment() {
+        if (open) return null
+        // 关着 → 门洞里多一段实心墙。用**碰撞中心线**那套端点，
+        // 不是渲染端点（渲染端点是外延过的，会把门挤窄）
+        return [
+          [hx, hy],
+          [hx + axp * d.width_m, hy + ayp * d.width_m],
+        ]
+      },
+    })
+  }
 
   // ══════════════════════════════════════════════════════════════
   // 地面 / 天花板 —— 每间房一块
@@ -156,6 +286,7 @@ export function buildScene(data: WalkableResponse): SceneHandles {
   return {
     scene,
     applyTier,
+    doors,
     bounds: { sizeX, sizeZ, height },
     dispose() {
       for (const d of disposables) d.dispose()

@@ -11,6 +11,9 @@ import {
 import type { WalkableData, WalkableResponse } from '../api'
 import { cappedPixelRatio, readGpuInfo, useFrameStats, type GpuInfo } from '../composables/useFrameStats'
 import type { CameraRig } from '../three/rig'
+// ⚠️ 从 coords 引，不从 rig 引 —— rig 会静态拉进 three（570KB）
+import { DEFAULT_HFOV_DEG, MAX_HFOV_DEG, MIN_HFOV_DEG } from '../three/coords'
+
 import type { SceneHandles } from '../three/scene'
 
 /**
@@ -54,12 +57,23 @@ const mode = ref<'walk' | 'fly'>('walk')
 const currentRoom = ref('')
 const bumping = ref(false)
 
+/** 当前水平视场角。用户可调，存 localStorage —— 这是主观偏好，不该写死。 */
+const hFov = ref(Number(localStorage.getItem('qy.viewer.hfov') || DEFAULT_HFOV_DEG))
+
+/** 离玩家最近、且够近可以够得着的那扇门 */
+const nearDoor = ref<{ index: number; open: boolean; dist: number } | null>(null)
+/** 最近一次开关门的提示 */
+const doorToast = ref('')
+let doorToastAt = 0
+
 const stats = useFrameStats()
 /** 探测到的显卡。拿不到就是 null，不影响运行。 */
 const gpu = shallowRef<GpuInfo | null>(null)
 const webglFailed = ref('')
 
 const walkable = computed<WalkableData | null>(() => data.value?.walkable ?? null)
+/** 模板里要读门的状态，用一个浅引用桥接（handles 是普通变量，Vue 追踪不到） */
+const handlesRef = shallowRef<SceneHandles | null>(null)
 const canWalk = computed(() => walkable.value?.mode === 'walk')
 
 /**
@@ -78,6 +92,10 @@ let rig: CameraRig | null = null
 let ro: ResizeObserver | null = null
 let lastT = 0
 let bumpTimer = 0
+let doorAt = 0
+
+/** 够得着门的距离（米）。门宽 0.9m，站在门口一两步之内 */
+const DOOR_REACH_M = 2.0
 
 const keys = {
   forward: false, back: false, left: false, right: false,
@@ -154,10 +172,12 @@ async function build() {
   renderer.shadowMap.enabled = false   // 见下方「为什么不开阴影」
 
   handles = sceneMod.buildScene(payload)
+  handlesRef.value = handles
   handles.applyTier(stats.tier.value)
 
   const aspect = (canvasEl.value?.clientWidth || 16) / (canvasEl.value?.clientHeight || 9)
   rig = new rigMod.CameraRig(payload.walkable, aspect)
+  rig.setHorizontalFov(hFov.value)
 
   resize()
   ro = new ResizeObserver(resize)
@@ -184,11 +204,16 @@ function resize() {
   if (w === 0 || h === 0) return
   renderer.setPixelRatio(cappedPixelRatio(stats.tier.value))
   renderer.setSize(w, h, false)
-  if (rig) {
-    rig.camera.aspect = w / h
-    rig.camera.updateProjectionMatrix()
-  }
+  // ⚠️ 必须走 rig.setAspect：它同时重算垂直 FOV。
+  // 只改 aspect 的话画面一变形，视野宽窄也跟着变。
+  rig?.setAspect(w / h)
 }
+
+// 视野变了立刻生效，并存下来（用户偏好）
+watch(hFov, (v) => {
+  rig?.setHorizontalFov(v)
+  localStorage.setItem('qy.viewer.hfov', String(v))
+})
 
 // 画质降档后要立刻生效
 watch(
@@ -212,6 +237,16 @@ function frame(now: number) {
   //    dt 会是几十秒，玩家一帧之内被瞬移到户型外面。
   const hit = rig.update({ ...keys }, dt)
   currentRoom.value = rig.currentRoom()
+
+  // 门相关的提示与"够得着"判定，按 10Hz 更新就够了
+  if (now - doorAt >= 100) {
+    doorAt = now
+    updateNearDoor()
+    if (doorToastAt > 0) {
+      doorToastAt -= 100
+      if (doorToastAt <= 0) doorToast.value = ''
+    }
+  }
 
   if (hit) {
     bumping.value = true
@@ -252,8 +287,11 @@ function onKeyDown(e: KeyboardEvent) {
     e.preventDefault()   // 方向键/空格会滚动页面
     return
   }
-  if (e.code === 'KeyR') { rig?.respawn(); e.preventDefault() }
-  if (e.code === 'KeyF') { toggleMode(); e.preventDefault() }
+  if (e.code === 'KeyR') { rig?.respawn(); e.preventDefault(); return }
+  // F = 开关门（游戏惯例）。**切换行走/自由视角改成 G** ——
+  // 用户明确要的是"走到门口按 F 开门"，那就得把 F 让给门。
+  if (e.code === 'KeyF') { toggleDoor(); e.preventDefault(); return }
+  if (e.code === 'KeyG') { toggleMode(); e.preventDefault() }
 }
 
 function onKeyUp(e: KeyboardEvent) {
@@ -292,6 +330,55 @@ function toggleMode() {
   if (!canWalk.value) return          // 后端判了不可行走，就不给切回来
   mode.value = mode.value === 'walk' ? 'fly' : 'walk'
   rig?.setMode(mode.value)
+}
+
+/**
+ * 找玩家够得着的那扇门。
+ *
+ * 射线检测在这里是多余的 —— 门只有个位数，直接比距离就够，
+ * 而且"隔着一堵墙也能按 F 开对面的门"这种问题，用距离判定天然不存在
+ * （够得着的门一定在同一间房里）。
+ */
+function updateNearDoor() {
+  const ds = handles?.doors ?? []
+  if (!rig || !ds.length) {
+    nearDoor.value = null
+    return
+  }
+  const [px, py] = rig.planPosition()
+  let best: { index: number; open: boolean; dist: number } | null = null
+  for (const d of ds) {
+    const dist = Math.hypot(d.planPos[0] - px, d.planPos[1] - py)
+    if (dist > DOOR_REACH_M) continue
+    if (!best || dist < best.dist) {
+      best = { index: d.index, open: d.isOpen(), dist }
+    }
+  }
+  nearDoor.value = best
+}
+
+/** 开关最近的那扇门。 */
+function toggleDoor() {
+  const near = nearDoor.value
+  const ds = handles?.doors ?? []
+  if (!near || !ds.length) return
+  const d = ds.find((x) => x.index === near.index)
+  if (!d) return
+  const willOpen = !d.isOpen()
+  d.setOpen(willOpen ? 1 : 0)
+  syncDoorCollision()
+  doorToast.value = willOpen ? '门已打开' : '门已关上'
+  doorToastAt = 1400
+  updateNearDoor()
+}
+
+/** 把关着的门变成碰撞线段交给 rig —— 否则关上门还能直接走过去。 */
+function syncDoorCollision() {
+  const segs = (handles?.doors ?? [])
+    .map((d) => d.blockingSegment())
+    .filter((s): s is [[number, number], [number, number]] => s !== null)
+    .map((s) => ({ a: s[0], b: s[1] }))
+  rig?.setExtraCollision(segs)
 }
 
 /** 跳到某个房间的中心。房间中心是后端算好的**净空中心**，一定站得住。 */
@@ -411,8 +498,8 @@ const devicePixelRatio = window.devicePixelRatio || 1
 
 const controlHint = computed(() =>
   mode.value === 'walk'
-    ? 'W A S D 行走 · 鼠标转头 · Shift 疾走 · R 回起点 · F 切自由视角'
-    : 'W A S D 平移 · Space/E 上升 · C/Q 下降 · 鼠标转头 · R 回起点 · F 切回行走',
+    ? 'W A S D 行走 · 鼠标转头 · Shift 疾走 · F 开关门 · R 回起点 · G 切自由视角'
+    : 'W A S D 平移 · Space/E 上升 · C/Q 下降 · 鼠标转头 · F 开关门 · R 回起点 · G 切回行走',
 )
 </script>
 
@@ -440,7 +527,7 @@ const controlHint = computed(() =>
           class="rounded-lg border border-warm-border px-2.5 py-1.5 text-[11px] font-medium text-wood transition hover:bg-botanical-surface"
           @click="toggleMode"
         >
-          {{ mode === 'walk' ? '切自由视角' : '切回行走' }}
+          {{ mode === 'walk' ? '切自由视角 (G)' : '切回行走 (G)' }}
         </button>
         <span
           v-if="stats.fps.value"
@@ -532,6 +619,39 @@ const controlHint = computed(() =>
         </div>
       </div>
 
+      <!-- 门提示：走到门口时出现 -->
+      <div
+        v-if="locked && nearDoor"
+        class="pointer-events-none absolute inset-x-0 bottom-16 flex justify-center"
+      >
+        <div class="rounded-xl bg-wood-dark/80 px-3.5 py-2 text-center backdrop-blur-sm">
+          <p class="text-[12px] font-semibold text-white">
+            <kbd class="rounded bg-white/20 px-1.5 py-0.5 font-mono">F</kbd>
+            {{ nearDoor.open ? '关 门' : '开 门' }}
+          </p>
+          <p class="mt-0.5 text-[10px] text-white/70">
+            当前状态：{{ nearDoor.open ? '已打开' : '已关闭（会挡住去路）' }}
+          </p>
+        </div>
+      </div>
+
+      <!-- 开关门的瞬时反馈 -->
+      <Transition
+        enter-active-class="transition duration-150"
+        enter-from-class="opacity-0 translate-y-1"
+        leave-active-class="transition duration-200"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="doorToast"
+          class="pointer-events-none absolute inset-x-0 bottom-32 flex justify-center"
+        >
+          <span class="rounded-full bg-botanical/90 px-3 py-1 text-[11px] font-medium text-white">
+            {{ doorToast }}
+          </span>
+        </div>
+      </Transition>
+
       <!-- 撞墙提示 -->
       <div
         v-if="bumping && mode === 'walk'"
@@ -589,9 +709,41 @@ const controlHint = computed(() =>
           <dd class="num text-wood">{{ devicePixelRatio.toFixed(2) }}</dd>
           <dt class="text-wood-muted">显卡</dt>
           <dd class="break-all text-wood">{{ gpu?.renderer || '未能读取' }}</dd>
+          <dt class="text-wood-muted">门</dt>
+          <dd class="text-wood">
+            {{ handlesRef?.doors.length ?? 0 }} 扇 ·
+            {{ (handlesRef?.doors ?? []).filter((d) => d.isOpen()).length }} 扇开着
+            （默认全开，走到门口按 F 开关）
+          </dd>
           <dt class="text-wood-muted">阴影</dt>
           <dd class="text-wood">关闭 —— {{ SHADOWS_OFF_REASON }}</dd>
         </dl>
+        <!--
+          视野调节。**做成可调的是有意的** —— "房间看起来多大"是主观感受，
+          跟屏幕尺寸、坐姿、个人习惯都有关系，写死一个值总有人觉得不对。
+          水平视场角：70–80° 接近人眼；更窄看得更"近"，更宽看得更"远"。
+        -->
+        <div class="mt-2.5">
+          <label class="flex items-center gap-2 text-[10px] text-wood-muted">
+            <span class="shrink-0">视野</span>
+            <input
+              v-model.number="hFov"
+              type="range"
+              :min="MIN_HFOV_DEG"
+              :max="MAX_HFOV_DEG"
+              step="1"
+              class="h-1 flex-1 accent-botanical"
+            />
+            <span class="num w-16 shrink-0 text-right text-wood">
+              {{ hFov }}° 水平
+            </span>
+          </label>
+          <p class="mt-0.5 text-[10px] leading-relaxed text-wood-muted/80">
+            调小 = 看得更近（房间显大）；调大 = 看得更广（房间显小）。
+            {{ hFov > 88 ? '当前偏广角，房间会显得小。' : hFov < 66 ? '当前偏长焦，会有压迫感。' : '当前接近人眼观感。' }}
+          </p>
+        </div>
+
         <p v-if="stats.degradeNote.value" class="mt-2 text-[10px] text-accent-gold">
           ⚠️ {{ stats.degradeNote.value }}
         </p>

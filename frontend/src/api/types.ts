@@ -636,6 +636,12 @@ export interface WalkDoor {
   width_m: number
   from_room: number
   to_room: number
+  /** 转轴位置（米）。门扇绕它旋转 */
+  hinge: [number, number]
+  /** 沿墙的单位方向：从铰链指向门洞另一端 */
+  along: [number, number]
+  /** 墙的单位法向。门扇全开时朝这个方向 */
+  normal: [number, number]
 }
 
 export interface WalkableData {

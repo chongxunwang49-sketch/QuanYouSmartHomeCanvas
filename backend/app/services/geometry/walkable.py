@@ -177,13 +177,34 @@ class RoomNode:
 
 @dataclass(frozen=True)
 class DoorEdge:
-    """一扇门，以及它连通的两个房间。"""
+    """
+    一扇门：它连通的两个房间，**以及 3D 里画出这扇门所需的几何**。
+
+    ══════════════════════════════════════════════════════════════════
+    为什么后端要算铰链和法向
+    ══════════════════════════════════════════════════════════════════
+    3D 里要让门能开关，需要三样东西：**转轴在哪**、**门扇朝哪边长**、
+    **往哪边开**。这三样全都能从 `wall_index` + `offset_along_wall_m`
+    推出来 —— 而推它们的代码已经在 `wall_point_at` 里了。
+
+    如果让前端自己推，就会多出第二套"从墙和偏移算门框"的计算。
+    两套只要差一点，表现就是**门扇和门洞对不上**：门挂偏半个门宽、
+    或者转轴跑到墙里面去。而这类偏差在画面上不一定显眼。
+
+    所以这里一次算清，前端只管摆位置。
+    """
 
     door_index: int
     position: Vec2
     width_m: float
     from_room: int
     to_room: int
+    #: 转轴位置（米）。门扇绕它旋转
+    hinge: Vec2
+    #: 沿墙的单位方向：从铰链指向门洞的另一端
+    along: Vec2
+    #: 墙的单位法向。门扇"全开"时朝这个方向
+    normal: Vec2
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -192,6 +213,9 @@ class DoorEdge:
             "width_m": round(self.width_m, 3),
             "from_room": self.from_room,
             "to_room": self.to_room,
+            "hinge": self.hinge.as_list(),
+            "along": [round(self.along.x, 4), round(self.along.y, 4)],
+            "normal": [round(self.normal.x, 4), round(self.normal.y, 4)],
         }
 
 
@@ -568,6 +592,10 @@ def _build_doors(
             )
             continue
 
+        # 铰链取门洞的一端。哪一端都行（门可以左开也可以右开），
+        # 取靠近墙起点的这一端，保证同一份输入每次得到同一扇门 ——
+        # 否则重放时门会左右横跳。
+        half = op.width_m / 2
         doors.append(
             DoorEdge(
                 door_index=i,
@@ -575,6 +603,9 @@ def _build_doors(
                 width_m=op.width_m,
                 from_room=a,
                 to_room=b,
+                hinge=Vec2(p.x - u.x * half, p.y - u.y * half),
+                along=u,
+                normal=n,
             )
         )
     return doors, issues

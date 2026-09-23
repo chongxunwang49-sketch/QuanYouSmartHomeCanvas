@@ -1,7 +1,16 @@
 import * as THREE from 'three'
 
 import type { WalkableData } from '../api'
-import { engineToPlan, headingToEngine, lookYawTowards, planToEngine } from './coords'
+import {
+  DEFAULT_HFOV_DEG,
+  MAX_HFOV_DEG,
+  MIN_HFOV_DEG,
+  engineToPlan,
+  headingToEngine,
+  lookYawTowards,
+  planToEngine,
+  verticalFovDeg,
+} from './coords'
 
 /**
  * 第一人称相机：**贴地行走（有碰撞）** 与 **自由视角（无碰撞）** 两种模式。
@@ -64,10 +73,22 @@ export class CameraRig {
   /** 自由视角模式下的高度（图纸坐标的"高度"是独立的一个量） */
   private flyHeight = 1.6
   private colliding = true
+  /**
+   * **额外的**碰撞线段（图纸平面坐标）。目前只有一种来源：**关着的门**。
+   *
+   * 墙的碰撞段是静态的（来自后端），而门的开合是运行期状态 ——
+   * 关上门就该挡住人，否则"关门"只是个视觉动作，走过去直接穿帮。
+   */
+  private extra: { a: [number, number]; b: [number, number] }[] = []
+
+  /** 当前的水平视场角（度）。用户可调 —— 见 HUD 的视野控制。 */
+  private hFov = DEFAULT_HFOV_DEG
 
   constructor(data: WalkableData, aspect: number) {
     this.data = data
-    this.camera = new THREE.PerspectiveCamera(68, aspect, 0.05, 200)
+    this.camera = new THREE.PerspectiveCamera(
+      verticalFovDeg(this.hFov, aspect), aspect, 0.05, 200,
+    )
 
     this.px = data.spawn.x
     this.py = data.spawn.y
@@ -91,6 +112,27 @@ export class CameraRig {
   setMode(mode: 'walk' | 'fly') {
     this.colliding = mode === 'walk'
     if (mode === 'walk') this.flyHeight = this.floorY
+  }
+
+  /**
+   * 画布尺寸变了。**必须同时重算垂直 FOV** ——
+   * 只改 `aspect` 的话，画面一变形，视野的宽窄也跟着变。
+   */
+  setAspect(aspect: number) {
+    this.camera.aspect = aspect
+    this.camera.fov = verticalFovDeg(this.hFov, aspect)
+    this.camera.updateProjectionMatrix()
+  }
+
+  /** 设置水平视场角（度）。用户偏好，调用方负责持久化。 */
+  setHorizontalFov(deg: number) {
+    this.hFov = Math.min(MAX_HFOV_DEG, Math.max(MIN_HFOV_DEG, deg))
+    this.camera.fov = verticalFovDeg(this.hFov, this.camera.aspect)
+    this.camera.updateProjectionMatrix()
+  }
+
+  get horizontalFov(): number {
+    return this.hFov
   }
 
   /** 鼠标移动 → 视角。`PointerLockControls` 的手感：右移视线右转。 */
@@ -210,10 +252,20 @@ export class CameraRig {
     return hit
   }
 
+  /** 更新"关着的门"带来的碰撞。调用方在每次开关门后调一次。 */
+  setExtraCollision(segs: { a: [number, number]; b: [number, number] }[]) {
+    this.extra = segs
+  }
+
   /** 该位置站得下吗（离所有墙都超过玩家半径）。 */
   private free(x: number, y: number): boolean {
     const r = this.data.player_radius_m
     for (const seg of this.data.collision) {
+      const [ax, ay] = seg.a
+      const [bx, by] = seg.b
+      if (distToSeg(x, y, ax, ay, bx, by) < r) return false
+    }
+    for (const seg of this.extra) {
       const [ax, ay] = seg.a
       const [bx, by] = seg.b
       if (distToSeg(x, y, ax, ay, bx, by) < r) return false

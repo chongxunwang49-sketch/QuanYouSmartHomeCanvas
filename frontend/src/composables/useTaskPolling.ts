@@ -1,4 +1,4 @@
-import { onScopeDispose, readonly, ref, type DeepReadonly, type Ref } from 'vue'
+import { onScopeDispose, readonly, ref, watch, type DeepReadonly, type Ref } from 'vue'
 
 import { taskStatus } from '@/api'
 import { BizError, type TaskStatusData } from '@/api/types'
@@ -79,9 +79,67 @@ export interface TaskPolling<R> {
   phaseLog: DeepReadonly<Ref<PhaseLogEntry[]>>
   start: (taskId: string, estimatedSeconds?: number) => Promise<TaskStatusData<R> | null>
   stop: () => void
+  /** 上次这个页面跑过的 task_id（进程内存优先，其次 sessionStorage） */
+  savedTaskId: () => string
 }
 
-export function useTaskPolling<R = unknown>(): TaskPolling<R> {
+export interface TaskPollingOptions {
+  sessionKey?: string
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════════
+ * 会话记忆：**离开页面再回来，任务不能丢**
+ * ══════════════════════════════════════════════════════════════════
+ * 这是一条实测出来的用户反馈（2026-09-23）：
+ *
+ *   「上传平面图解析时不能浏览其它网页，一点开其它网页再回来
+ *     进度完全消失，还要重新上传。更糟的是解析完成后点开别的窗口，
+ *     回来所有结果也没了。」
+ *
+ * 成因是两处都只在内存里：
+ *   ① 轮询状态（status / phaseLog）是**组件内的 ref**，卸载即销毁
+ *   ② `task_id` 只写在地址栏的 query 里 —— 而从侧栏点回「户型解析」
+ *      走的是 `router.push('/parse')`，**query 没有了**
+ *
+ * 结果就是：任务其实一直在后端跑（结果留 1 小时），但前端把它忘了。
+ *
+ * 修法分两层：
+ *   · 模块级 `SESSIONS`：组件卸载不销毁，路由切回来立刻能显示
+ *   · `sessionStorage`：只存 task_id（几十字节），**整页刷新也能接回**
+ *
+ * ⚠️ 只存 id、不存结果。结果是上百 KB 的 JSON，塞进 sessionStorage
+ * 有配额风险；而且后端的 `RESULT_TTL` 本来就是 1 小时 ——
+ * 回来时重新拉一次状态就能拿到，没必要在前端也备一份。
+ */
+interface PollSession {
+  taskId: string
+  status: unknown
+  phaseLog: PhaseLogEntry[]
+  beganAt: number
+  estimatedSeconds?: number
+}
+
+/** 进程内会话表。key 是任务类型（parse / generate / review）。 */
+const SESSIONS = new Map<string, PollSession>()
+
+const SS_PREFIX = 'qy.poll.'
+function ssGet(key: string): string {
+  try {
+    return sessionStorage.getItem(SS_PREFIX + key) || ''
+  } catch {
+    return ''      // 隐私模式下 sessionStorage 可能不可用 —— 不能因此崩掉
+  }
+}
+function ssSet(key: string, taskId: string) {
+  try {
+    sessionStorage.setItem(SS_PREFIX + key, taskId)
+  } catch {
+    /* 存不下就只靠内存，功能不退化到不可用 */
+  }
+}
+
+export function useTaskPolling<R = unknown>(sessionKey = 'default'): TaskPolling<R> {
   // `as Ref<...>`：泛型 T 经过 Vue 的 UnwrapRef 之后类型会漂，这是 Vue 3
   // 对"泛型 ref"的已知限制。断言在这里是安全的——ref 里存的确实就是这个类型。
   const status = ref<TaskStatusData<R> | null>(null) as Ref<TaskStatusData<R> | null>
@@ -91,6 +149,15 @@ export function useTaskPolling<R = unknown>(): TaskPolling<R> {
   const error = ref('')
   const timedOut = ref(false)
   const phaseLog = ref<PhaseLogEntry[]>([])
+
+  // ── 恢复上一次的会话 ──
+  // 组件重新挂载时先把结果填回去，用户立刻看到上次的内容；
+  // 随后 `start()` 会向后端再拉一次，拿到最新的（可能已经完成了）。
+  const restored = SESSIONS.get(sessionKey)
+  if (restored) {
+    status.value = restored.status as TaskStatusData<R> | null
+    phaseLog.value = restored.phaseLog
+  }
 
   let cancelled = false
   let abort: AbortController | null = null
@@ -111,16 +178,30 @@ export function useTaskPolling<R = unknown>(): TaskPolling<R> {
   // 后台一堆孤儿请求，而它们的结果没人看。
   onScopeDispose(stop)
 
+  const savedTaskId = () => SESSIONS.get(sessionKey)?.taskId || ssGet(sessionKey)
+
   async function start(
     taskId: string,
     estimatedSeconds?: number,
   ): Promise<TaskStatusData<R> | null> {
+    const sameTask = SESSIONS.get(sessionKey)?.taskId === taskId
     stop()
     cancelled = false
     timedOut.value = false
     error.value = ''
-    phaseLog.value = []
+    // ⚠️ **同一个任务不要清空阶段轨迹。** 从别的页面切回来会再调一次
+    //    `start()`，清掉的话"系统做过什么"那条记录就没了 ——
+    //    而那正是用户回来最想看到的东西。
+    if (!sameTask) phaseLog.value = []
     running.value = true
+    SESSIONS.set(sessionKey, {
+      taskId,
+      status: status.value as unknown,
+      phaseLog: phaseLog.value,
+      beganAt: SESSIONS.get(sessionKey)?.beganAt ?? Date.now(),
+      estimatedSeconds,
+    })
+    ssSet(sessionKey, taskId)
 
     const beganAt = Date.now()
     // 估算值只用来判断"是不是比预期久了"，不参与调速
@@ -185,6 +266,21 @@ export function useTaskPolling<R = unknown>(): TaskPolling<R> {
     }
   }
 
+  // ── 状态一变就回写会话 ──
+  // 卸载之后 `status` 这个 ref 就没了，会话表是唯一还留着它的地方。
+  watch(status, (v) => {
+    const cur = SESSIONS.get(sessionKey)
+    if (cur) cur.status = v as unknown
+  })
+  watch(
+    phaseLog,
+    (v) => {
+      const cur = SESSIONS.get(sessionKey)
+      if (cur) cur.phaseLog = [...v]
+    },
+    { deep: true },
+  )
+
   return {
     status,
     // 只读暴露：这几个字段由轮询驱动，让调用方误写会破坏时序
@@ -196,5 +292,6 @@ export function useTaskPolling<R = unknown>(): TaskPolling<R> {
     phaseLog: readonly(phaseLog),
     start,
     stop,
+    savedTaskId,
   }
 }

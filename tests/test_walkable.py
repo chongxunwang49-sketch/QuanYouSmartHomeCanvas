@@ -769,3 +769,105 @@ class TestDoorSideDetectionInNarrowSpaces:
         assert all(r.reachable for r in w.rooms), (
             f"有房间走不到：{[r.name for r in w.rooms if not r.reachable]}"
         )
+
+
+# ══════════════════════════════════════════════════════════════════
+# 门扇几何：3D 里要把门画在门洞上
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestDoorLeafGeometry:
+    """
+    3D 要让门能开关，需要三样东西：**转轴在哪**、**门扇朝哪边长**、
+    **往哪边开**。这三样由后端从 `wall_index` + `offset_along_wall_m` 算好，
+    前端只管摆位置。
+
+    反过来（前端自己推）就会多出第二套计算，两套差一点的表现是
+    **门扇挂偏半个门宽、或者转轴埋进墙里** —— 而这类偏差在画面上不一定显眼。
+    """
+
+    def test_铰链加方向乘门宽落在门洞另一端(self):
+        """
+        `hinge + along × width` 必须正好是门洞的**另一端**：
+        间距恰好是门宽，中点在墙线上。
+
+        ⚠️ 中点**不等于**模型报的门中心 —— 实测两者差 **3–8cm**（六扇门实测）。
+        模型给的门位置本来就略微偏离墙线（它是在图上"看"出来的一个点），
+        而门必须开在**墙上**。
+
+        所以后端用的是"把门中心投影到墙上"的那个点，不是原始位置。
+        这条如果按"中点 == 模型报的位置"去断言会挂 —— 而且挂得对：
+        **是断言错了，代码是对的**。
+        """
+        scene = normalize_layout(REAL_LAYOUT)
+        w = build_walkable(scene)
+        for d in w.doors:
+            other = (d.hinge.x + d.along.x * d.width_m,
+                     d.hinge.y + d.along.y * d.width_m)
+            assert math.dist(other, (d.hinge.x, d.hinge.y)) == pytest.approx(
+                d.width_m, abs=1e-9
+            ), f"门 {d.door_index} 的两端间距不等于门宽"
+
+            mid = ((d.hinge.x + other[0]) / 2, (d.hinge.y + other[1]) / 2)
+            # 中点必须在**墙线上**（到墙中心线距离 ≈ 0）
+            on_wall = min(
+                _dist_to_seg(mid, (a.x, a.y), (b.x, b.y))
+                for wall in scene.walls for a, b in wall.segments()
+            )
+            assert on_wall < 1e-6, (
+                f"门 {d.door_index} 的门扇中点离墙线 {on_wall:.4f}m —— 门没开在墙上"
+            )
+            # 与模型报的位置的差距应当在"关联容差"之内（1m）
+            off = math.dist(mid, (d.position.x, d.position.y))
+            assert off < 1.0, f"门扇离模型报的位置 {off:.3f}m，太远了"
+
+    def test_沿墙方向是单位向量(self):
+        for d in _walk().doors:
+            n = math.hypot(d.along.x, d.along.y)
+            assert n == pytest.approx(1.0, abs=1e-9), f"along 不是单位向量：{n}"
+
+    def test_法向与沿墙方向垂直(self):
+        """
+        ⚠️ 不垂直的话门扇"全开"之后不是贴着墙的，会以一个奇怪的角度戳出去。
+
+        顺带：法向是**单位向量**也要查 —— 3D 里门扇摆动的方向由它给。
+        """
+        for d in _walk().doors:
+            dot = d.along.x * d.normal.x + d.along.y * d.normal.y
+            assert abs(dot) < 1e-9, f"门 {d.door_index} 的 along·normal = {dot}"
+            assert math.hypot(d.normal.x, d.normal.y) == pytest.approx(1.0, abs=1e-9)
+
+    def test_关着的门挡得住人(self):
+        """
+        `hinge → hinge+along×width` 这一段在门关着时是**实心**的。
+
+        判据用门板自己的中点（在墙线上），不是模型报的门中心 ——
+        见上一条的说明。
+        """
+        for d in _walk().doors:
+            other = (d.hinge.x + d.along.x * d.width_m,
+                     d.hinge.y + d.along.y * d.width_m)
+            mid = ((d.hinge.x + other[0]) / 2, (d.hinge.y + other[1]) / 2)
+            assert _dist_to_seg(mid, (d.hinge.x, d.hinge.y), other) == pytest.approx(
+                0, abs=1e-9
+            ), "门板中点不在门板自己上面（说明铰链/方向算错了）"
+
+    def test_开门时那段不在碰撞几何里(self):
+        """
+        反向：碰撞几何里**本来就没有**这段（后端切门洞时把它切掉了）。
+        所以"关着的门挡人"必须由前端运行时补一段 ——
+        这也是为什么 `setExtraCollision` 存在。
+        """
+        w = _walk()
+        for d in w.doors:
+            other = (d.hinge.x + d.along.x * d.width_m,
+                     d.hinge.y + d.along.y * d.width_m)
+            mid = (d.position.x, d.position.y)
+            # 静态碰撞线段离门中心的距离应当 ≥ 半个门宽（因为门洞被切开了）
+            nearest = min(_dist_to_seg(mid, (s.a.x, s.a.y), (s.b.x, s.b.y))
+                          for s in w.collision)
+            assert nearest >= d.width_m / 2 - 0.05, (
+                f"门 {d.door_index} 中心离最近的碰撞段只有 {nearest:.3f}m，"
+                f"说明门洞没切成 —— 关门的碰撞叠加就没有意义了"
+            )
+            del other

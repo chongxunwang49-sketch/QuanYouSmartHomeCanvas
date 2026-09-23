@@ -63,3 +63,47 @@ export function headingToEngine(yawDeg: number): [number, number] {
 export function lookYawTowards(dx: number, dz: number): number {
   return Math.atan2(-dx, -dz)
 }
+
+
+// ══════════════════════════════════════════════════════════════════
+// 相机视场角
+// ══════════════════════════════════════════════════════════════════
+//
+// ⚠️ **放在这个文件里，不放 rig.ts。**
+//
+// `rig.ts` 顶部 import 了 three（570KB）。`SceneViewer` 只是在模板里
+// 显示一个默认值，如果从 rig.ts 引这个常量，**three 就被静态拉回主包** ——
+// ParseView 的分包会从 45KB 涨回 437KB，而动态 import 的意义全没了。
+//
+// 实测踩过：加完门和视野控制之后重新构建，ParseView 从 45KB 变成 437KB。
+// 这个文件不 import three，放这里就安全。
+
+/**
+ * 默认**水平**视场角（度）。
+ *
+ * ══════════════════════════════════════════════════════════════════
+ * ⚠️ 这里踩过一个坑：Three.js 的 `fov` 是**垂直**的
+ * ══════════════════════════════════════════════════════════════════
+ * 初版直接写 `new PerspectiveCamera(68, aspect, ...)`，心里想的是
+ * "68 度，跟游戏差不多"。但文档原话是
+ * *vertical field of view, from bottom to top* —— **垂直**视场角。
+ *
+ * 68° 垂直换算成水平是 `2·atan(tan(34°)·1.7) ≈ 98°` —— 超广角。
+ * 而广角会让东西看起来**更小更远**。用户的原话是"感觉房间都很小"，
+ * 可房间的实际尺寸是对的（实测主卧算出来 3.99×3.10m，图纸上 4.0×3.2m）。
+ * **不是几何错了，是镜头错了。**
+ *
+ * 人坐在屏幕前看，水平 70–80° 最接近"身临其境"。
+ */
+export const DEFAULT_HFOV_DEG = 78
+
+/** 水平视场角的可调范围。再窄像望远镜，再宽像鱼眼。 */
+export const MIN_HFOV_DEG = 50
+export const MAX_HFOV_DEG = 100
+
+/** 由水平视场角与画布宽高比反算**垂直**视场角（度）。 */
+export function verticalFovDeg(hFovDeg: number, aspect: number): number {
+  const h = (hFovDeg * Math.PI) / 180
+  const v = 2 * Math.atan(Math.tan(h / 2) / Math.max(aspect, 0.2))
+  return (v * 180) / Math.PI
+}
