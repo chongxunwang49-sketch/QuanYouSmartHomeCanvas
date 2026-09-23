@@ -595,3 +595,86 @@ export const SEVERITY_LABEL: Record<string, string> = {
 }
 
 export const label = (dict: Record<string, string>, key: string): string => dict[key] ?? key
+
+// ══════════════════════════════════════════════════════════════════
+// 3D 漫游（4.3″，第一人称行走）
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * 3D 渲染用的墙条。
+ *
+ * ⚠️ `a`/`b` 与 `render_a`/`render_b` 是**两套端点**，不要混用：
+ * - 碰撞用 `a`/`b`（精确中心线）
+ * - 建 3D 几何用 `render_a`/`render_b`（墙角外延、门洞边缘不外延）
+ *
+ * 用错的表现：用 a/b 建墙 → 每个墙角一道竖缝；
+ * 用 render_* 做碰撞 → 玩家被挡在离墙 10cm 的地方，贴不到墙。
+ */
+export interface WalkCollisionSeg {
+  a: [number, number]
+  b: [number, number]
+  render_a: [number, number]
+  render_b: [number, number]
+  wall: number
+}
+
+export interface WalkRoom {
+  index: number
+  name: string
+  kind: string
+  center: [number, number]
+  free_rect: [number, number, number, number]
+  size_m: [number, number]
+  area_m2: number
+  standable: boolean
+  reachable: boolean
+}
+
+export interface WalkDoor {
+  index: number
+  position: [number, number]
+  width_m: number
+  from_room: number
+  to_room: number
+}
+
+export interface WalkableData {
+  ok: boolean
+  /** `walk` = 贴地行走（有碰撞）；`fly` = 自由视角（可穿墙） */
+  mode: 'walk' | 'fly'
+  spawn: { x: number; y: number; room: number; yaw_deg: number }
+  player_radius_m: number
+  eye_height_m: number
+  ceiling_height_m: number
+  collision: WalkCollisionSeg[]
+  rooms: WalkRoom[]
+  doors: WalkDoor[]
+  graph: [number, number][]
+  /** 不能走的原因。`ok=false` 时必定非空 */
+  issues: string[]
+  notes: string[]
+}
+
+/** `GET /layout/{id}/walkable` 的返回体。 */
+export interface WalkableResponse {
+  layout_id: string
+  /** 米制场景。3D 建几何用这份，不用再算一遍坐标 */
+  scene: SceneData
+  walkable: WalkableData
+  plan_transform: PlanTransform
+}
+
+/** 米制场景（与后端 `Scene.to_dict()` 对齐）。 */
+export interface SceneData {
+  units: 'm'
+  px_per_m: number
+  width_m: number
+  depth_m: number
+  ceiling_height_m: number
+  assumptions: string[]
+  walls: { kind: string; thickness_m: number; is_loop: boolean; length_m: number; points: [number, number][] }[]
+  openings: { kind: string; center: [number, number]; width_m: number; wall_index: number; width_is_assumed: boolean }[]
+  rooms: { name: string; kind: string; area_m2: number; polygon: [number, number][]; polygon_is_bbox: boolean }[]
+  quality: { walls_closed: boolean; wall_count: number; can_build_walls: boolean; issues: string[] }
+  confidence: number
+}

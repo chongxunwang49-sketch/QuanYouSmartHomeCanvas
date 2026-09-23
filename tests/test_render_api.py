@@ -311,3 +311,144 @@ class TestModelOutputCannotBreakTheSvg:
         async with await _client() as c:
             r = await c.get("/api/v1/layout/quote/plan.svg")
         assert "&quot;" in r.text, "引号没有转义 —— 属性可以被提前闭合"
+
+
+# ══════════════════════════════════════════════════════════════════
+# 3D 漫游的几何输入
+# ══════════════════════════════════════════════════════════════════
+
+
+#: 可漫游测试专用：在上面那份户型上**补全三扇门**。
+#:
+#: ⚠️ 不能直接用 `LAYOUT` —— 它只有一扇门（只够热区测试用），
+#: 于是两间卧室都没有入口，`walkable.ok` 本来就该是 False。
+#: 写这个类的时候我第一版就是直接用了 LAYOUT，断言 `ok is True` 挂了 ——
+#: **挂得对**，是断言写错了不是代码错了。
+WALK_LAYOUT = {
+    **LAYOUT,
+    "doors": [
+        {"position": [367, 197], "width": 0.0},
+        {"position": [142, 315], "width": 0.0},
+        {"position": [400, 407], "width": 0.0},
+    ],
+}
+
+
+class TestWalkableEndpoint:
+    async def test_返回场景与可漫游性(self):
+        await layout_store.save(LAYOUT_ID, WALK_LAYOUT)
+        async with await _client() as c:
+            r = await c.get(f"/api/v1/layout/{LAYOUT_ID}/walkable")
+
+        body = r.json()
+        assert body["code"] == 0
+        d = body["data"]
+        assert d["scene"]["units"] == "m"
+        w = d["walkable"]
+        assert w["ok"] is True, f"这份户型应当可漫游：{w['issues']}"
+        assert w["mode"] == "walk"
+        assert w["collision"], "没有碰撞线段"
+        assert len(w["rooms"]) == 3
+        assert len(w["doors"]) == 3
+
+    async def test_门洞在碰撞几何里是切开的(self):
+        """
+        接口层再确认一次：碰撞线段的总长 + 门洞总长 == 墙体总长。
+        少了这个等式，3D 里人就被关在房间里。
+        """
+        await layout_store.save(LAYOUT_ID, WALK_LAYOUT)
+        async with await _client() as c:
+            r = await c.get(f"/api/v1/layout/{LAYOUT_ID}/walkable")
+        d = r.json()["data"]
+
+        import math
+
+        wall_len = sum(
+            math.dist(a, b)
+            for wall in d["scene"]["walls"]
+            for a, b in zip(wall["points"], wall["points"][1:])
+        )
+        seg_len = sum(
+            math.dist(s["a"], s["b"]) for s in d["walkable"]["collision"]
+        )
+        gates = sum(
+            o["width_m"] for o in d["scene"]["openings"]
+            if o["kind"] == "door" and o["wall_index"] >= 0
+        )
+        # ⚠️ 容差 1cm 而不是 1e-6：JSON 里的坐标**故意**裁到毫米
+        #    （见 CollisionSeg.to_dict 的说明），9 段相加会累积到毫米级。
+        #    拿 1e-6 去卡，卡的是"序列化精度"而不是"几何对不对"。
+        assert seg_len + gates == pytest.approx(wall_len, abs=0.01)
+
+    async def test_渲染端点已外延而碰撞端点没有(self):
+        """
+        两套端点必须**不同**，否则说明外延没生效（墙角会漏缝）
+        或者泄漏进了碰撞（玩家贴不到墙）。
+        """
+        await layout_store.save(LAYOUT_ID, WALK_LAYOUT)
+        async with await _client() as c:
+            r = await c.get(f"/api/v1/layout/{LAYOUT_ID}/walkable")
+        segs = r.json()["data"]["walkable"]["collision"]
+
+        extended = [s for s in segs if s["render_a"] != s["a"] or s["render_b"] != s["b"]]
+        assert extended, "没有任何一段墙被外延 —— 3D 里墙角会漏缝"
+
+        import math
+
+        # 外延量应当恰好是半个墙厚
+        d0 = extended[0]
+        delta = math.dist(d0["a"], d0["render_a"])
+        assert delta == pytest.approx(0.1, abs=0.01), f"外延量 {delta}"
+
+    async def test_未知户型返回业务码(self):
+        async with await _client() as c:
+            r = await c.get("/api/v1/layout/not_exist/walkable")
+        assert r.status_code == 200
+        assert r.json()["code"] == 4004
+
+    async def test_两个接口对同一份户型给出同一套坐标(self):  # noqa: D401
+        """
+        ⚠️ **这条是跨接口的交叉验证。**
+
+        `/plan.svg` 画的是 2D 图，`/walkable` 给的是 3D 碰撞 —— 两边的
+        房间坐标来自**分别计算**的两条路径。这里把 3D 那侧的房间中心
+        用**平面图那侧的投影参数**换算成画布像素，再检查它是否落在
+        平面图里该房间的多边形内。
+
+        两边任何一处坐标不一致（比例、留白、Y 轴方向），
+        点就会落到别的房间里 —— 而 3D 画面本身完全看不出来。
+        前端 `SceneViewer` 里的运行时自检用的是同一套思路。
+        """
+        await layout_store.save(LAYOUT_ID, WALK_LAYOUT)
+        async with await _client() as c:
+            svg = await c.get(f"/api/v1/layout/{LAYOUT_ID}/plan.svg")
+            wk = await c.get(f"/api/v1/layout/{LAYOUT_ID}/walkable")
+
+        t = wk.json()["data"]["plan_transform"]
+        root = ET.fromstring(svg.text)
+        ns = "{http://www.w3.org/2000/svg}"
+
+        poly_of: dict[int, list[tuple[float, float]]] = {}
+        for el in root.iter(f"{ns}polygon"):
+            rid = el.get("id") or ""
+            if rid.startswith("room-"):
+                poly_of[int(rid.split("-")[1])] = [
+                    tuple(float(v) for v in pair.split(","))
+                    for pair in (el.get("points") or "").split()
+                ]
+        assert poly_of, "平面图里没有房间多边形"
+
+        for room in wk.json()["data"]["walkable"]["rooms"]:
+            cx, cy = room["center"]
+            # 与后端 Projection.to_px 同一个公式
+            px = t["offset_x"] + cx * t["scale"]
+            py = t["offset_y"] + (t["draw_depth_m"] - cy) * t["scale"]
+
+            poly = poly_of[room["index"]]
+            xs = [p[0] for p in poly]
+            ys = [p[1] for p in poly]
+            assert min(xs) <= px <= max(xs) and min(ys) <= py <= max(ys), (
+                f"「{room['name']}」的 3D 中心换算到平面图上落在 "
+                f"({px:.0f},{py:.0f})，不在它的轮廓 {poly_of[room['index']]} 内 —— "
+                f"两个接口的坐标对不上（多半是 Y 轴方向反了）"
+            )

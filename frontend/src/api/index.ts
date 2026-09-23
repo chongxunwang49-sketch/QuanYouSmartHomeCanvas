@@ -13,6 +13,7 @@ import type {
   MaterialPriceData,
   ParseRequest,
   PlanRenderData,
+  WalkableResponse,
   ReviewRequest,
   TaskCreated,
   TaskStatusData,
@@ -109,6 +110,19 @@ export const layoutPlanSvg = (layoutId: string, signal?: AbortSignal) =>
   requestText(`/layout/${encodeURIComponent(layoutId)}/plan.svg`, {
     timeout: 10_000,
     signal,
+  })
+
+/**
+ * 3D 漫游的全部几何输入：米制场景 + 碰撞线段 + 连通图 + 出生点。
+ *
+ * ⚠️ 返回体里的 `walkable.mode` 决定前端走哪条路：
+ * `walk` 做第一人称贴地行走，`fly` 降级成自由视角。
+ * **不要自己判断能不能走** —— 判据（墙闭合、房间站得下、门够宽、连通）
+ * 都在后端，且有测试。前端重算一遍就会出现两套判据。
+ */
+export const layoutWalkable = (layoutId: string) =>
+  request<WalkableResponse>('get', `/layout/${encodeURIComponent(layoutId)}/walkable`, undefined, {
+    timeout: 10_000,
   })
 
 /** 给"在新窗口打开/下载"用的直链。 */

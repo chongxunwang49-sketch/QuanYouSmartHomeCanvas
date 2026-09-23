@@ -7,6 +7,7 @@ import DegradedNotice from '@/components/DegradedNotice.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import PhaseProgress from '@/components/PhaseProgress.vue'
 import PlanViewer from '@/components/PlanViewer.vue'
+import SceneViewer from '@/components/SceneViewer.vue'
 import { parseLayout } from '@/api'
 import { toast } from '@/utils/toast'
 import { messageOf } from '@/api/client'
@@ -655,6 +656,19 @@ function goGenerate() {
             v-if="result.layout_id"
             :layout-id="result.layout_id"
             title="户型矢量图 · 物品热区"
+          />
+
+          <!--
+            3D 户型漫游（第一人称行走）。
+
+            放在平面图**之后** —— 平面图回答"识别成什么样"，3D 回答
+            "走进去是什么感觉"。顺序反过来的话，用户会先被 3D 挡住，
+            而 3D 的几何完全依赖平面图那份解析结果。
+          -->
+          <SceneViewer
+            v-if="result.layout_id"
+            :layout-id="result.layout_id"
+            height="540px"
           />
 
           <!-- 五维诊断 -->
