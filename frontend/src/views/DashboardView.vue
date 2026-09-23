@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { imageAttribution, imagePool } from '@/assets/images/pool'
 import AppIcon from '@/components/AppIcon.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import ImageLightbox from '@/components/ImageLightbox.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useHealthStore } from '@/stores/health'
 import { useTaskStore } from '@/stores/task'
@@ -30,13 +31,78 @@ const cases = imagePool.main
 const galleryIndex = ref(0)
 const heroSrc = computed(() => cases[galleryIndex.value % Math.max(cases.length, 1)] ?? '')
 
+/**
+ * 灯箱状态。-1 = 关着。
+ *
+ * ⚠️ **主图和三排画廊共用同一个下标空间**（都是 `cases` 的下标），
+ * 所以从画廊点开第 9 张后按 → 能翻到第 10 张，而不是回到画廊第一张。
+ * 若各处各存一个下标，翻页范围就会莫名其妙地变小。
+ */
+const lightboxIndex = ref(-1)
+const lightboxOpen = computed(() => lightboxIndex.value >= 0)
+
+const HERO_INTERVAL_MS = 5000
+let heroTimer: ReturnType<typeof setInterval> | null = null
+
 onMounted(() => {
   health.refresh()
   // 5 秒换一张实景图。慢一点——这是个"氛围"位，不是轮播广告。
-  setInterval(() => {
+  heroTimer = setInterval(() => {
+    // 灯箱开着时不换 —— 用户正盯着某一张看，背后悄悄换掉会让人
+    // 关掉灯箱后发现"图变了"，像是点错了。
+    if (lightboxOpen.value) return
     if (cases.length) galleryIndex.value = (galleryIndex.value + 1) % cases.length
-  }, 5000)
+  }, HERO_INTERVAL_MS)
 })
+
+// ⚠️ 原来没有这个清理。工作台是常被切走的一页，定时器不清就会
+// 一直跑（每 5 秒改一个已经没人看的 ref），而且回来时会有多个定时器叠加。
+onUnmounted(() => {
+  if (heroTimer) {
+    clearInterval(heroTimer)
+    heroTimer = null
+  }
+})
+
+/** 打开灯箱。`i` 是 `cases` 里的下标。 */
+function openAt(i: number) {
+  if (i >= 0 && i < cases.length) lightboxIndex.value = i
+}
+
+/** 点主图：放大当前正在展示的那一张。 */
+function openHero() {
+  if (cases.length) openAt(galleryIndex.value % cases.length)
+}
+
+/**
+ * 两排画廊。**按下标切开，不切成两份字符串数组** ——
+ * 因为灯箱要用全局下标翻页（见上面 `lightboxIndex` 的说明）。
+ */
+const galleryRows = computed(() => {
+  const n = cases.length
+  if (n < 2) return [] as { key: string; idx: number[]; reverse: boolean }[]
+  const half = Math.ceil(n / 2)
+  const range = (from: number, to: number) =>
+    Array.from({ length: Math.max(to - from, 0) }, (_, k) => from + k)
+  return [
+    { key: 'row-a', idx: range(0, half), reverse: false },
+    { key: 'row-b', idx: range(half, n), reverse: true },
+  ]
+})
+
+/**
+ * 每排的滚动时长。
+ *
+ * 按**图片数量**算而不是写死 —— 写死的话，案例图数量一变
+ * （公开仓库里回落到 12 张 Pexels 照片，本地是 14 张全友案例）
+ * 速度就跟着变，而"适中"是按速度定的、不是按时长定的。
+ *
+ * 两排速度**故意不同**（36 / 30 px 每秒）：等速会让两排看起来像
+ * 一整块东西在平移，而不是两排在各自流动。
+ */
+const ITEM_W = 200
+const rowDuration = (n: number, reverse: boolean) =>
+  `${Math.round((n * ITEM_W) / (reverse ? 30 : 36))}s`
 
 const ENTRIES = [
   {
@@ -128,18 +194,51 @@ const checkEntries = computed(() => Object.entries(health.checks))
         </button>
       </div>
 
-      <!-- 实景图：真实采集的全友装修案例 -->
-      <div class="card relative overflow-hidden">
+      <!--
+        实景图：真实采集的全友装修案例。
+
+        ⚠️⚠️ **图片必须是 `absolute inset-0`，这是修一个真实的布局 bug。**
+
+        原来写的是 `<img class="h-full min-h-[260px] w-full object-cover">`。
+        `h-full` = `height:100%` 需要一个**有确定高度的父元素**才能解析；
+        而这里的父元素（卡片）高度又是由图片自己撑开的 —— 循环依赖，
+        浏览器只好把 `height:100%` 当 `auto`，于是**图片按自身宽高比渲染**。
+
+        后果：图片池里 14 张案例图有横有竖。轮到竖图时卡片被撑高，
+        网格行高跟着变，下面「最近任务 / 系统状态」整段往下跳 ——
+        每 5 秒轮换一张就抖一次，而且**换一张图页面就变一次样**。
+
+        绝对定位之后图片**完全不参与布局计算**，卡片高度只由
+        `min-h-[260px]` 和同行左栏（三张入口卡）决定，与图片内容无关。
+        `object-cover` 负责在固定框里裁切填满。
+      -->
+      <div
+        class="card group relative min-h-[260px] cursor-zoom-in overflow-hidden"
+        role="button"
+        tabindex="0"
+        :aria-label="`放大查看：${imagePool.isQuanyouCase ? '全友装修实景案例' : '家居实拍参考'}`"
+        @click="openHero"
+        @keydown.enter="openHero"
+        @keydown.space.prevent="openHero"
+      >
         <img
           v-if="heroSrc"
           :src="heroSrc"
           :alt="imagePool.isQuanyouCase ? '全友装修实景案例' : '家居实拍参考'"
-          class="h-full min-h-[260px] w-full object-cover transition-opacity duration-500"
+          class="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
         />
         <div
           class="pointer-events-none absolute inset-0 bg-gradient-to-t from-wood-dark/45 via-transparent to-transparent"
         />
-        <div class="absolute bottom-0 left-0 right-0 p-4">
+
+        <!-- 放大提示。只在 hover 出现 —— 常驻会跟右下角的版权标注抢注意力 -->
+        <span
+          class="pointer-events-none absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-white/25 bg-white/85 text-wood opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100"
+        >
+          <AppIcon name="magnifying-glass" :size="15" />
+        </span>
+
+        <div class="pointer-events-none absolute bottom-0 left-0 right-0 p-4">
           <span
             class="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/85 px-2.5 py-0.5 text-[11px] font-semibold text-wood backdrop-blur-sm"
           >
@@ -278,7 +377,7 @@ const checkEntries = computed(() => Object.entries(health.checks))
       </div>
     </section>
 
-    <!-- ══ 下部：实景画廊 ══ -->
+    <!-- ══ 下部：实景画廊（两排反向滚动）══ -->
     <section class="card p-4">
       <div class="mb-3 flex items-center justify-between">
         <div class="flex items-center gap-2">
@@ -288,30 +387,81 @@ const checkEntries = computed(() => Object.entries(health.checks))
           </h2>
           <span class="tag">{{ cases.length }} 张</span>
         </div>
-        <span class="text-[11px] text-wood-muted">选方案时可对照参考</span>
+        <span class="text-[11px] text-wood-muted">悬停暂停 · 点击放大</span>
       </div>
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+
+      <!--
+        两排反向滚动。结构上有个**必须照做**的细节：
+
+        每一项自带 `pr-3`（内边距）而**不是**外层用 `gap` —— 见 style.css
+        里 `.marquee` 的注释。简单说：动画靠"复制一份、位移 -50%"，用 gap
+        的话一半宽度不等于整份，循环到接缝会跳。
+
+        每排渲染 `2` 份同样的列表，第二份 `aria-hidden` 且 `tabindex="-1"`，
+        免得屏幕阅读器和 Tab 键把每张图念两遍。
+      -->
+      <div class="flex flex-col gap-3">
         <div
-          v-for="(src, i) in cases"
-          :key="src"
-          class="group relative overflow-hidden rounded-xl border border-warm-border"
+          v-for="row in galleryRows"
+          :key="row.key"
+          class="marquee"
+          :class="row.reverse && 'marquee-reverse'"
         >
-          <img
-            :src="src"
-            :alt="imagePool.isQuanyouCase ? '全友装修实景' : '家居实拍'"
-            loading="lazy"
-            class="aspect-[4/3] w-full object-cover transition-transform duration-500 group-hover:scale-105"
-          />
-          <span
-            class="absolute left-1.5 top-1.5 rounded bg-white/90 px-1.5 py-0.5 font-mono text-[9px] text-wood-muted backdrop-blur-sm"
-          >
-            {{ String(i + 1).padStart(2, '0') }}
-          </span>
+          <div class="marquee-track" :style="{ animationDuration: rowDuration(row.idx.length, row.reverse) }">
+            <template v-for="copy in 2" :key="copy">
+              <div
+                v-for="gi in row.idx"
+                :key="`${copy}-${gi}`"
+                class="w-[200px] shrink-0 pr-3"
+                :aria-hidden="copy === 2"
+              >
+                <button
+                  class="group relative block w-full cursor-zoom-in overflow-hidden rounded-xl border border-warm-border"
+                  type="button"
+                  :tabindex="copy === 2 ? -1 : 0"
+                  :aria-label="`放大查看第 ${gi + 1} 张`"
+                  @click="openAt(gi)"
+                >
+                  <img
+                    :src="cases[gi]"
+                    :alt="imagePool.isQuanyouCase ? '全友装修实景' : '家居实拍'"
+                    loading="lazy"
+                    class="aspect-[4/3] w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                  <span
+                    class="absolute left-1.5 top-1.5 rounded bg-white/90 px-1.5 py-0.5 font-mono text-[9px] text-wood-muted backdrop-blur-sm"
+                  >
+                    {{ String(gi + 1).padStart(2, '0') }}
+                  </span>
+                  <span
+                    class="absolute inset-0 flex items-center justify-center bg-wood-dark/0 opacity-0 transition-all duration-200 group-hover:bg-wood-dark/25 group-hover:opacity-100"
+                  >
+                    <span
+                      class="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-wood"
+                    >
+                      <AppIcon name="magnifying-glass" :size="15" />
+                    </span>
+                  </span>
+                </button>
+              </div>
+            </template>
+          </div>
         </div>
       </div>
+
       <p class="mt-3 text-[11px] leading-relaxed text-wood-muted/80">
         素材来源：{{ imageAttribution }}。
       </p>
     </section>
+
+    <!-- 灯箱。主图与两排画廊共用一套下标，翻页能一路翻到底 -->
+    <ImageLightbox
+      :images="cases"
+      :index="lightboxIndex"
+      :alt="imagePool.isQuanyouCase ? '全友装修实景案例' : '家居实拍参考'"
+      :caption="imageAttribution"
+      @close="lightboxIndex = -1"
+      @update:index="lightboxIndex = $event"
+    />
   </main>
 </template>

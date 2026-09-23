@@ -174,6 +174,29 @@ const yuan = (n: number) => `¥${Math.round(n).toLocaleString('zh-CN')}`
       </a>
     </header>
 
+    <!--
+      ══════════════════════════════════════════════════════════════
+      ⚠️ 这里为什么要拆成左右两列
+      ══════════════════════════════════════════════════════════════
+      后端渲染的 SVG 是 **1024×1024 的正方形**（`build_projection` 会把短边
+      补到 `min_side_px`）。而内容区最宽 1760px —— 按 `width:100%` 铺开的话，
+      **高度也跟着被拉到 1700px 左右**，整页冲到 1.85 屏，用户必须滚过一整张
+      图才能看到下面的热区清单。
+
+      单纯加 `max-height` 也能压矮，但那会让方形图缩在 1700px 宽的容器中间、
+      两侧空出大片底色 —— 那是"空洞"，不是"清晰"。
+
+      所以宽屏（xl 及以上）改成**图占左列、清单占右列**：用横向空间换纵向，
+      图仍然是这一屏里最大的东西，清单也一屏可见，两边都不浪费。
+      窄屏退回上下堆叠（原本的样子）。
+
+      ⚠️ 热区清单**不能**拆到独立子页去 —— 它和图上热区是**联动**的
+      （清单行 `@mouseenter` 高亮图上的热区，反之亦然）。拆开就把
+      "点一下看看是哪块"这个动作切断了。
+    -->
+    <div class="flex flex-col xl:flex-row">
+      <!-- 左列：画布 + 画不准的地方 -->
+      <div class="min-w-0 xl:flex-1">
     <!-- ── 画布 ── -->
     <div
       ref="canvasEl"
@@ -289,9 +312,15 @@ const yuan = (n: number) => `¥${Math.round(n).toLocaleString('zh-CN')}`
       </ul>
     </div>
 
+      </div>
+      <!-- 右列 -->
+
     <!-- ── 热区清单 ── -->
-    <div v-if="data && !compact" class="border-t border-warm-border">
-      <div class="grid grid-cols-1 gap-px bg-warm-border sm:grid-cols-2">
+    <div
+      v-if="data && !compact"
+      class="scroll-thin border-t border-warm-border xl:max-h-[70vh] xl:w-[360px] xl:shrink-0 xl:overflow-y-auto xl:border-l xl:border-t-0"
+    >
+      <div class="grid grid-cols-1 gap-px bg-warm-border sm:grid-cols-2 xl:grid-cols-1">
         <a
           v-for="h in hotspots"
           :key="h.index"
@@ -319,6 +348,7 @@ const yuan = (n: number) => `¥${Math.round(n).toLocaleString('zh-CN')}`
           />
         </a>
       </div>
+    </div>
     </div>
 
     <!-- ── 演示数据声明，**必须展示**（需求文档 5.3 / R-09）── -->
@@ -359,6 +389,17 @@ const yuan = (n: number) => `¥${Math.round(n).toLocaleString('zh-CN')}`
   display: block;
   width: 100%;
   height: auto;
+  /*
+   * ⚠️ **必须封顶。** 后端渲染的是 1024×1024 的正方形（短边会被
+   * `build_projection` 补到 `min_side_px`），而内容区最宽 1760px ——
+   * 只有 `width:100%` 时高度会一路涨到 1700px，整页 1.85 屏。
+   *
+   * 根元素带 `viewBox` 且有确定的内在比例，所以浏览器的
+   * min/max 规则会**按比例反算宽度**（不是压扁），配 `margin: auto`
+   * 居中即可。实测：加了这一条之后整页从 2216px 降到一屏内。
+   */
+  max-height: 70vh;
+  margin: 0 auto;
 }
 /* 渲染中不要闪旧图 */
 .plan-canvas.is-busy .plan-svg {

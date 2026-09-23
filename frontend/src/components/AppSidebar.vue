@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import AppIcon from './AppIcon.vue'
+import { NAV, isNavActive } from '@/config/nav'
 import { useInfoPanel } from '@/composables/useInfoPanel'
 import { useHealthStore } from '@/stores/health'
 
@@ -12,26 +13,61 @@ import { useHealthStore } from '@/stores/health'
  * 结构完全照 `ui参考/stitch_ai` 的稿子：品牌区 h-16 → 分组标题 → 导航项
  * → 底部用户卡。导航项**选中态是叶绿浅底 + 1.5px 圆点**，不是常见的左侧
  * 竖条 —— 竖条在这套圆角语言里显得硬。
+ *
+ * 菜单数据来自 `@/config/nav`（唯一真源，⌘K 面板读同一份）。
  */
 const route = useRoute()
 const health = useHealthStore()
 const { show: showInfo } = useInfoPanel()
 
-const NAV = [
-  { to: '/', icon: 'squares-four', label: '工作台' },
-  { to: '/parse', icon: 'blueprint', label: '户型解析' },
-  { to: '/generate', icon: 'sparkle', label: '方案生成' },
-  { to: '/knowledge', icon: 'book-open', label: '知识库管理' },
-  { to: '/analytics', icon: 'chart-line', label: '数据分析' },
-  { to: '/users', icon: 'users', label: '用户管理' },
-] as const
+/**
+ * 展开的父项集合。
+ *
+ * ⚠️ 用「当前路径自动展开」而不是「记住用户上次的展开状态」：
+ * 侧栏是导航，用户从 ⌘K、从工作台卡片、从解析结果的「下一步」跳进
+ * `/parse/drawing` 时，**必须**看到自己在哪个模块的哪一页。
+ * 如果只能靠手点展开，那些入口进来的人会看到一组全部折叠的菜单，
+ * 而当前页的入口藏在里面 —— 导航失去意义。
+ *
+ * 手动折叠仍然允许（点箭头），但下一次路由变化会把它再展开回来。
+ */
+const expanded = ref<Set<string>>(new Set())
 
-const isActive = (to: string) =>
-  to === '/' ? route.path === '/' : route.path.startsWith(to)
+function toggle(to: string) {
+  const next = new Set(expanded.value)
+  if (next.has(to)) next.delete(to)
+  else next.add(to)
+  expanded.value = next
+}
+
+const isExpanded = (to: string) => expanded.value.has(to)
+
+watch(
+  () => route.path,
+  (path) => {
+    const next = new Set(expanded.value)
+    let changed = false
+    for (const item of NAV) {
+      if (item.children && isNavActive(path, item.to, false) && !next.has(item.to)) {
+        next.add(item.to)
+        changed = true
+      }
+    }
+    if (changed) expanded.value = next
+  },
+  { immediate: true },
+)
+
+/**
+ * 一级判定用 `startsWith`（在 `/parse/overview` 时「户型解析」也要亮）；
+ * 二级用精确匹配 —— 详见 `@/config/nav` 文件头。
+ */
+const topActive = (to: string) => isNavActive(route.path, to, false)
+const subActive = (to: string) => isNavActive(route.path, to, true)
 
 /** 导航项图标在 hover 时染成叶绿 —— 稿子里悬停的颜色变化就是这一处 */
 const iconTone = (to: string) =>
-  isActive(to) ? 'text-botanical' : 'text-wood-muted group-hover:text-botanical'
+  topActive(to) ? 'text-botanical' : 'text-wood-muted group-hover:text-botanical'
 
 const degradedDeps = computed(() =>
   Object.entries(health.checks).filter(([, c]) => !c.ok),
@@ -71,17 +107,55 @@ const degradedDeps = computed(() =>
 
       <!-- ── 导航 ── -->
       <nav class="flex flex-col gap-1 px-3">
-        <RouterLink
-          v-for="item in NAV"
-          :key="item.to"
-          :to="item.to"
-          :class="isActive(item.to) ? 'nav-item-active' : 'nav-item group'"
-        >
-          <AppIcon :name="item.icon" :size="19" :class="iconTone(item.to)" />
-          <span class="flex-1">{{ item.label }}</span>
-          <!-- 选中态的小圆点。稿子里就是这么做的，比竖条柔和 -->
-          <span v-if="isActive(item.to)" class="h-1.5 w-1.5 rounded-full bg-botanical" />
-        </RouterLink>
+        <template v-for="item in NAV" :key="item.to">
+          <!--
+            一级项整体套一个带 padding 的容器（.nav-item 自带 px-3 py-2），
+            里面再放路由链接 —— 这样右侧的展开箭头能落在同一块高亮底上。
+            直接把 RouterLink 当容器的话，箭头就得嵌在 <a> 里，
+            点箭头会同时触发跳转。
+          -->
+          <div :class="[topActive(item.to) ? 'nav-item-active' : 'nav-item group', '!gap-2']">
+            <RouterLink :to="item.to" class="flex min-w-0 flex-1 items-center gap-3">
+              <AppIcon :name="item.icon" :size="19" :class="iconTone(item.to)" />
+              <span class="flex-1 truncate">{{ item.label }}</span>
+              <!-- 选中态的小圆点。稿子里就是这么做的，比竖条柔和 -->
+              <span v-if="topActive(item.to)" class="h-1.5 w-1.5 rounded-full bg-botanical" />
+            </RouterLink>
+
+            <!--
+              ⚠️ 箭头只能用 caret-down + 旋转。图标集里**没有** caret-right /
+              chevron，写 name="caret-right" 会静默渲染成 "?" 占位方块
+              （见 AppIcon 的兜底逻辑）—— 不报错，只是难看。
+            -->
+            <button
+              v-if="item.children?.length"
+              class="-mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-wood-muted/70 transition-colors hover:bg-white/70 hover:text-wood-dark"
+              type="button"
+              :title="isExpanded(item.to) ? '收起子菜单' : '展开子菜单'"
+              :aria-expanded="isExpanded(item.to)"
+              @click="toggle(item.to)"
+            >
+              <AppIcon
+                name="caret-down"
+                :size="13"
+                class="transition-transform duration-200"
+                :class="isExpanded(item.to) ? '' : '-rotate-90'"
+              />
+            </button>
+          </div>
+
+          <!-- 二级列表 -->
+          <div v-if="item.children?.length && isExpanded(item.to)" class="flex flex-col gap-0.5">
+            <RouterLink
+              v-for="child in item.children"
+              :key="child.to"
+              :to="child.to"
+              :class="subActive(child.to) ? 'nav-subitem-active' : 'nav-subitem'"
+            >
+              <span class="flex-1 truncate">{{ child.label }}</span>
+            </RouterLink>
+          </div>
+        </template>
       </nav>
 
       <!-- ── 依赖健康：后端哪个依赖挂了在这里如实说 ── -->

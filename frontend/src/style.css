@@ -96,6 +96,79 @@
            bg-botanical-light text-wood border border-botanical/20 shadow-xs;
   }
 
+  /* ── 侧栏二级导航（子列表）──
+     比一级**轻一档**，三处刻意收着做：
+
+     ① 缩进对齐到父项**文字**的左边缘。父项是 px-3(12px) + 图标 19px +
+        gap-3(12px) = 43px，所以这里 pl-11(44px)。子项自己**不带图标** ——
+        240px 宽里 5 个子项各挂一个图标会很吵，而且它们的语义（总览/矢量图/
+        漫游/诊断）靠文字已经说清了。图标留在 nav.ts 里给 ⌘K 面板用。
+     ② 字号 13px→12px、圆角 xl→lg，视觉重量低于父项。
+     ③ **不加边框也不加阴影。** 父项的选中态已经用了叶绿浅底 + 右侧圆点 +
+        1px 叶绿边，子项再套一层会跟父项抢焦点；子项选中只用底色区分。
+     ⚠️ 这条与 `DegradedNotice` 的"警告不能被点掉"是同一类考虑：层级要
+        看得出高低，否则用户扫视时会把子项当成和父项同级的入口。 */
+  .nav-subitem {
+    @apply flex items-center rounded-lg py-1.5 pl-11 pr-3 text-[12px] font-medium
+           text-wood-muted transition-colors duration-150 hover:bg-white/60 hover:text-wood-dark;
+  }
+  .nav-subitem-active {
+    @apply flex items-center rounded-lg py-1.5 pl-11 pr-3 text-[12px] font-semibold
+           bg-botanical-light text-botanical;
+  }
+
+  /* ── 无限滚动画廊（工作台的实景图）──
+     ⚠️ **每一项自带 `pr-3`，不要用 `gap`。**
+     动画的原理是把列表复制一份、整体位移 -50%，正好等于一份的宽度。
+     用 `gap` 的话总宽是 `2N×图宽 + (2N-1)×间隙`，一半不等于"一份 + 一个间隙"，
+     接缝处会差半个间隙 —— 表现为循环到接缝时**图片猛地跳一下**。
+     把间隙做进每一项的内边距里，`2N×(图宽+间隙)` 的一半就精确等于一份。 */
+  .marquee {
+    @apply relative overflow-hidden;
+    /* 两侧渐隐：图从边缘淡出，而不是被硬生生切成一条直线 */
+    mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent);
+  }
+  .marquee-track {
+    @apply flex w-max;
+    animation: marquee-scroll linear infinite;
+  }
+  /* 悬停/聚焦暂停。**这条是功能性的不是装饰**：滚动的图上点不准大图，
+     用户要能停下来再点。`:focus-within` 是给键盘用户的。 */
+  .marquee:hover .marquee-track,
+  .marquee:focus-within .marquee-track {
+    animation-play-state: paused;
+  }
+  /* 第二排反向滚 —— 两排同向会看起来像一整块在平移 */
+  .marquee-reverse .marquee-track {
+    animation-direction: reverse;
+  }
+
+  /**
+   * 滚动关键帧。
+   *
+   * ⚠️ `translate3d` 而不是 `translateX`：前者会走 GPU 合成层，
+   * 在滚动着的页面上（工作台本身也在滚）不会掉帧。
+   *
+   * ⚠️ 位移 -50% 依赖 DOM 里**恰好两份**列表，见 `.marquee` 的注释。
+   * 改成三份的话这里必须跟着改成 -33.333%。
+   */
+  @keyframes marquee-scroll {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate3d(-50%, 0, 0);
+    }
+  }
+
+  /* 系统开了"减少动态效果"就不滚 —— 这是无障碍要求，不是偏好 */
+  @media (prefers-reduced-motion: reduce) {
+    .marquee-track {
+      animation: none;
+    }
+  }
+
   /* ── 细滚动条：4px，颜色取自设计稿 ── */
   .scroll-thin::-webkit-scrollbar {
     width: 4px;

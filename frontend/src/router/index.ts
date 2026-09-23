@@ -11,11 +11,55 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/DashboardView.vue'),
     meta: { title: '工作台总览' },
   },
+  /**
+   * 户型解析 —— **嵌套路由**。
+   *
+   * ⚠️ 这里的分层不是为了"路径好看"，是**功能性的**：
+   *
+   * `ParseView.vue` 持有解析会话（轮询 + 结果，见 `useParseSession`），
+   * 而 `useTaskPolling` 有 `onScopeDispose(stop)` —— 谁卸载谁停轮询。
+   * 父路由组件在 `/parse` 及其全部子路由下**始终挂载**，所以用户在
+   * 「识别总览 → 3D 漫游」之间切换时，正在跑的解析不会被掐断。
+   *
+   * 拆子路由的动因是另一个：识别结果是重内容（2D 矢量图 ~1000px、
+   * 3D 漫游 ~600px、五维诊断 ~700px），全部平铺在一页里纵向超过
+   * 3000px，用户要一直滚。拆成"每页只答一个问题"。
+   */
   {
     path: '/parse',
-    name: 'parse',
     component: () => import('@/views/ParseView.vue'),
-    meta: { title: '户型图解析与重建' },
+    children: [
+      {
+        path: '',
+        name: 'parse',
+        component: () => import('@/views/parse/ParseUploadView.vue'),
+        meta: { title: '户型图解析与重建' },
+      },
+      {
+        path: 'overview',
+        name: 'parse-overview',
+        component: () => import('@/views/parse/ParseOverviewView.vue'),
+        meta: { title: '识别总览' },
+      },
+      {
+        path: 'drawing',
+        name: 'parse-drawing',
+        component: () => import('@/views/parse/ParseDrawingView.vue'),
+        meta: { title: '户型矢量图' },
+      },
+      {
+        path: 'walkthrough',
+        name: 'parse-walkthrough',
+        component: () => import('@/views/parse/ParseWalkthroughView.vue'),
+        meta: { title: '3D 漫游' },
+      },
+      {
+        path: 'diagnosis',
+        name: 'parse-diagnosis',
+        component: () => import('@/views/parse/ParseDiagnosisView.vue'),
+        meta: { title: '户型诊断' },
+      },
+    ],
   },
   {
     path: '/generate',

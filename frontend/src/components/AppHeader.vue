@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppIcon from './AppIcon.vue'
+import { flattenNav } from '@/config/nav'
 import { useInfoPanel } from '@/composables/useInfoPanel'
 import { useTaskStore } from '@/stores/task'
 
@@ -29,14 +30,22 @@ interface Entry {
   run: () => void
 }
 
-const routes: Entry[] = [
-  { label: '工作台', hint: '总览与最近任务', icon: 'squares-four', run: () => router.push('/') },
-  { label: '户型解析', hint: '上传户型图并识别', icon: 'blueprint', run: () => router.push('/parse') },
-  { label: '方案生成', hint: '多方案对比与明细', icon: 'sparkle', run: () => router.push('/generate') },
-  { label: '知识库管理', hint: 'RAG 语料与检索', icon: 'book-open', run: () => router.push('/knowledge') },
-  { label: '数据分析', hint: '调用与性能指标', icon: 'chart-line', run: () => router.push('/analytics') },
-  { label: '用户管理', hint: '账号与权限', icon: 'users', run: () => router.push('/users') },
-]
+/**
+ * ⚠️ **这份菜单表从 `@/config/nav` 现推，不再自己维护一份。**
+ *
+ * 之前这里和 `AppSidebar.vue` 各写了一份（字段还不一样：这份的 `run`
+ * 是闭包，侧栏那份是路径字符串）。6 个平级项时靠"改完记得改另一边"
+ * 还能撑，加了子列表之后必定漏 —— 表现是"侧栏里有这个页面，⌘K 搜不到"，
+ * 而用户只会觉得是 bug。
+ *
+ * `flattenNav()` 展开顶层 + 全部子项，所以子页面也能被搜到。
+ */
+const routes: Entry[] = flattenNav().map((leaf) => ({
+  label: leaf.label,
+  hint: leaf.hint,
+  icon: leaf.icon,
+  run: () => router.push(leaf.to),
+}))
 
 const entries = computed<Entry[]>(() => {
   const q = query.value.trim().toLowerCase()
