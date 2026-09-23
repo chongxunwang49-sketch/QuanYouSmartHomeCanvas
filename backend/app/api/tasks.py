@@ -45,13 +45,19 @@ from loguru import logger
 from ..core.logger import with_trace_id
 from ..core.redis_client import TaskProgressStore, get_redis
 from ..graph.state import HomeDecoState, initial_state
-from ..graph.workflow import get_compiled_graph
+from ..graph.workflow import PrecheckError, get_compiled_graph
 
 TaskKind = Literal["parse", "generate", "review"]
 TaskStatus = Literal["pending", "processing", "completed", "failed"]
 
 #: 节点名 → 语义化阶段。**这张表由 runner 拥有**，见模块说明。
+#:
+#: ⚠️ 表里的每一项都必须对应一个**真实存在的节点**。
+#: 之前 `prechecking` 不在这张表里 —— 它是任务启动时无条件写死的一个阶段，
+#: 而"检查图片质量"这件事根本没发生（界面在撒谎）。现在它对应
+#: `precheck_image` 节点的真实执行，见 workflow.precheck_image。
 _NODE_PHASE: dict[str, str] = {
+    "precheck_image": "prechecking",
     "parse_layout": "analyzing",
     "diagnose_layout": "diagnosing",
     "generate_plan": "planning",
@@ -60,6 +66,25 @@ _NODE_PHASE: dict[str, str] = {
     "review_risks": "planning",
     "aggregate_plans": "finalizing",
 }
+
+
+def _phase_for(node: str, kind: TaskKind) -> str | None:
+    """
+    节点名 → 阶段。**审查任务的措辞要单独处理。**
+
+    同一个 `review_risks` 节点在两种语境下含义不同：
+      · `kind="review"` —— 用户提交的是一份报价单，该说「正在审查报价单…」
+      · `kind="generate"` —— 它在方案生成链里跑，说「正在生成装修方案…」才对
+
+    实测踩过：走报价单审查时，界面全程显示「正在生成装修方案…」。
+    用户看的是一份合同，却被告知系统在生成方案 —— 这正是需求文档 2.2.4
+    最在意的那件事（「用户看到的是正在做什么」，而不是进程名）。
+
+    所以映射不能只看节点名，得带上任务类型。
+    """
+    if node == "review_risks" and kind == "review":
+        return "reviewing"
+    return _NODE_PHASE.get(node)
 
 #: 结果保留秒数。1 小时支持"刷新页面后重新获取"（4.4）。
 RESULT_TTL = 3600
@@ -195,7 +220,13 @@ class TaskManager:
         # 用 with_trace_id（contextvars）而非 bind_trace_id（全局配置）：
         # 多个任务并发时，全局配置会互相覆盖。
         with with_trace_id(rec.trace_id):
-            await self._write(rec, progress, phase="prechecking", status="processing")
+            # 只写一个"已接收"的初始态，之后**全部阶段由真实的节点事件驱动**。
+            #
+            # ⚠️ 这里以前写的是 `phase="prechecking"`（"正在检查图片质量…"），
+            # 但那时代码里根本没有图片质检动作 —— 那句文案是假的。
+            # 现在 `prechecking` 由 `precheck_image` 节点触发（见 _NODE_PHASE），
+            # 界面显示它的时候，检查确实正在发生。
+            await self._write(rec, progress, phase="queued", status="processing")
             try:
                 # ⚠️ 用 `astream_events` 而不是 `astream(stream_mode="updates")`。
                 #
@@ -210,7 +241,7 @@ class TaskManager:
                 async for ev in graph.astream_events(state, cfg, version="v2"):
                     if ev.get("event") != "on_chain_start":
                         continue
-                    phase = _NODE_PHASE.get(str(ev.get("name")))
+                    phase = _phase_for(str(ev.get("name")), rec.kind)
                     if phase:
                         await self._write(rec, progress, phase=phase,
                                           status="processing")
@@ -248,6 +279,18 @@ class TaskManager:
                 logger.warning(f"[task] {rec.task_id} 被取消")
                 raise
 
+            except PrecheckError as e:
+                # 图片不合格**不是系统故障**，是用户需要处理的一件事。
+                # 所以只把可操作的那句话交出去，不带异常类名 ——
+                # 用户要读的是「图片分辨率过低，请换一张更清晰的」，
+                # 不是「PrecheckError: ...」。零 Token 消耗。
+                rec.status = "failed"
+                rec.error = e.advice
+                rec.result = {"precheck": e.result.to_dict()}
+                logger.info(f"[task] {rec.task_id} 图片未通过预检：{e.result.rejections}")
+                await self._write(rec, progress, phase="done", status="failed",
+                                  error=rec.error, result=rec.result)
+
             except Exception as e:  # noqa: BLE001 —— 任务级兜底，转成可轮询的失败态
                 rec.status = "failed"
                 rec.error = f"{type(e).__name__}: {e}"
@@ -268,6 +311,9 @@ class TaskManager:
             return {
                 "layout_id": final.get("layout_id"),
                 "layout": final.get("layout"),
+                # 图片质量预检结果（AC-27）。前端可以据此显示
+                # "1920×1080 · 清晰度 412" 这类信息，以及未阻断的提醒。
+                "precheck": final.get("precheck"),
                 "diagnosis": final.get("diagnosis"),
                 "capabilities": (final.get("layout") or {}).get("capabilities"),
                 "degraded": bool(final.get("degraded")),

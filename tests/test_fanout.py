@@ -28,6 +28,7 @@ from backend.app.agents.space_planner import SpacePlannerAgent
 from backend.app.core.llm_client import LLMError, LLMResult
 from backend.app.graph import workflow
 from backend.app.graph.state import initial_state
+from tests.helpers import floorplan_data_uri
 from backend.app.schemas.budget import BudgetNarrative
 from backend.app.schemas.layout import LayoutDiagnosis, LayoutSchema
 from backend.app.schemas.material import MaterialPlan
@@ -297,7 +298,7 @@ def _patch_all(monkeypatch, llm):
 
 
 def _state(**over) -> dict:
-    return initial_state(task_id="t-fanout", image_ref="data:image/png;base64,AAAA", **over)
+    return initial_state(task_id="t-fanout", image_ref=floorplan_data_uri(), **over)
 
 
 def _run(monkeypatch, llm, **state_kw) -> dict:

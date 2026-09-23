@@ -1,0 +1,3978 @@
+{
+  "generated_at": "2026-09-22T21:57:50",
+  "assets": [
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-door.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/door.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:door",
+      "bytes": 281,
+      "sha1": "537785843e4c0658ebec92d7c70d9fd9fb1eeb68",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-door-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/door-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:door-bold",
+      "bytes": 285,
+      "sha1": "85ca7763e0c75cbfd3e3cb0d1aea7d060d63ab89",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-app-window.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/app-window.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:app-window",
+      "bytes": 318,
+      "sha1": "7411368e0506cc5cd98f47abd74acf6ee641f25b",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-app-window-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/app-window-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:app-window-bold",
+      "bytes": 319,
+      "sha1": "8ebdee996d4901b50ba616cd8994a7d856a55e66",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-ruler.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/ruler.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:ruler",
+      "bytes": 458,
+      "sha1": "6aa13fb09c377d3025bce7e569737e9ddbb8b8b6",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-ruler-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/ruler-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:ruler-bold",
+      "bytes": 438,
+      "sha1": "b8709779470659063d84c5b6b7c6b0a8c9881cb4",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-compass.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/compass.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:compass",
+      "bytes": 422,
+      "sha1": "9e7e0e327c214be65e8af6bec0cde84afbb4ae7e",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-compass-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/compass-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:compass-bold",
+      "bytes": 391,
+      "sha1": "529e9d70009836e29c8ac3220efdf12af4568c35",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-blueprint.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/blueprint.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:blueprint",
+      "bytes": 544,
+      "sha1": "80e5dd1add138c0e0a6cab2edf06258824f7bd1e",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-blueprint-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/blueprint-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:blueprint-bold",
+      "bytes": 576,
+      "sha1": "dafb470e58d604adb67fb9c6a33688b453f01758",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-layout.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/layout.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:layout",
+      "bytes": 270,
+      "sha1": "7881b81a3a7ce0a30e6e0a573b363f5a1c8d8132",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-layout-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/layout-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:layout-bold",
+      "bytes": 268,
+      "sha1": "8141899ebdeef9837cae6b3f329359d19f67c19d",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-cube.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/cube.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:cube",
+      "bytes": 420,
+      "sha1": "8df1716a84e7a3a60d4480a5efa350594830517a",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-cube-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/cube-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:cube-bold",
+      "bytes": 426,
+      "sha1": "ff864f35031d0990c4f0b15ec3a1d3661880856c",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/tabler-sofa.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/tabler/sofa.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · tabler:sofa",
+      "bytes": 357,
+      "sha1": "80267c4c6a93fea0e20f9cc0c4b56bb78948a19f",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/tabler-sofa-off.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/tabler/sofa-off.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · tabler:sofa-off",
+      "bytes": 368,
+      "sha1": "ad8506e0fdf9be24b879cdc889825ff7ef037086",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/ph-bed.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/bed.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · ph:bed",
+      "bytes": 270,
+      "sha1": "64e3ed5609d1ddd45713ffbeabd946019d082737",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/ph-bed-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/bed-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · ph:bed-bold",
+      "bytes": 285,
+      "sha1": "2612b540a9cd540bef537e01e99359edaa0152d7",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/ph-bathtub.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/bathtub.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · ph:bathtub",
+      "bytes": 533,
+      "sha1": "a2b1c227466f06810a47d0f7ffc144ec22e23536",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/ph-bathtub-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/bathtub-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · ph:bathtub-bold",
+      "bytes": 548,
+      "sha1": "299e2eb82b45e484962063e75393a91dc421779e",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/ph-toilet.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/toilet.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · ph:toilet",
+      "bytes": 497,
+      "sha1": "8159173fabacb4f764d7142a4d1330111c3d38c0",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/ph-toilet-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/toilet-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · ph:toilet-bold",
+      "bytes": 529,
+      "sha1": "f62c29ac044d8040dd042cab998899d38f03cd51",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/ph-lamp.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/lamp.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · ph:lamp",
+      "bytes": 348,
+      "sha1": "57c9f7db37191099745a97f8b7e7df10bcddee3d",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/ph-lamp-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/lamp-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · ph:lamp-bold",
+      "bytes": 354,
+      "sha1": "79f10ee6f12ad723301bc37f526b837c7181ae19",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/ph-plant.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/plant.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · ph:plant",
+      "bytes": 941,
+      "sha1": "2c37280926ee4a43a414221a088886d1fda57659",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/ph-plant-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/plant-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · ph:plant-bold",
+      "bytes": 942,
+      "sha1": "1dbfe4606a39a4f776f82a17d1c7a62d247097cc",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/ph-armchair.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/armchair.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · ph:armchair",
+      "bytes": 522,
+      "sha1": "bfe1a9694e97a1a139563db03716670ffc26f5a8",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/家具与品类/ph-armchair-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/armchair-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "家具与品类 · ph:armchair-bold",
+      "bytes": 563,
+      "sha1": "8b0e03b948050057a2179827fc1a579f93dadc21",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-currency-cny.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/currency-cny.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:currency-cny",
+      "bytes": 398,
+      "sha1": "9a4fad2aad7cbd02b3682e8b3233a21cf2506223",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-currency-cny-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/currency-cny-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:currency-cny-bold",
+      "bytes": 426,
+      "sha1": "c78400489804fed5685ce33d113a316c62b63867",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-coins.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/coins.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:coins",
+      "bytes": 1033,
+      "sha1": "2b22c97e0e47774eb2d7a0f5680c5182351fce82",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-coins-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/coins-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:coins-bold",
+      "bytes": 1277,
+      "sha1": "8fe632e5d69294d23124df28ce8ed7c72ee68d08",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-receipt.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/receipt.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:receipt",
+      "bytes": 555,
+      "sha1": "4faced03ecc1d089bc1f28fc41b3c935d5457e6d",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-receipt-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/receipt-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:receipt-bold",
+      "bytes": 589,
+      "sha1": "3a39884ac8e8cb2101462e5302bc6fd6a48d57b7",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-calculator.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/calculator.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:calculator",
+      "bytes": 576,
+      "sha1": "c775fdd0ee76b97d4eafd1eef5c7f9ffa15e6782",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-calculator-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/calculator-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:calculator-bold",
+      "bytes": 468,
+      "sha1": "521c2c51f9a7454d928b4e6cc1a1cf8cd75dcf1e",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-chart-line.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/chart-line.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:chart-line",
+      "bytes": 329,
+      "sha1": "f45dd8c98f8977d92ea1e85e0f3b84eaf1496623",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-chart-line-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/chart-line-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:chart-line-bold",
+      "bytes": 344,
+      "sha1": "166dcaaf33ea49ef4e149313c1a893b1204a4fc3",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-wallet.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/wallet.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:wallet",
+      "bytes": 354,
+      "sha1": "e83585b9ae8dbcc8246e51b7123c0f8a7b648529",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-wallet-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/wallet-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:wallet-bold",
+      "bytes": 421,
+      "sha1": "94761077f2b76bb4b1a3e53486b512e212d79c00",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-invoice.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/invoice.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:invoice",
+      "bytes": 475,
+      "sha1": "377e8ca412568cb60079aca8e788ec03f097f5e9",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-invoice-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/invoice-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:invoice-bold",
+      "bytes": 514,
+      "sha1": "42ea785d5847e341a69caa9178cb249c4f086f54",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-percent.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/percent.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:percent",
+      "bytes": 422,
+      "sha1": "afbb4e04106fd5824d24f0fc7af4305b4c4f3191",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/预算与报价/ph-percent-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/percent-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "预算与报价 · ph:percent-bold",
+      "bytes": 417,
+      "sha1": "5b8a8eb1fec8532dbfcb993ae85335c6bfdcdb7e",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-shield-check.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/shield-check.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:shield-check",
+      "bytes": 552,
+      "sha1": "4d9748dd4e5e47ac0ea351637c919ecae5510952",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-shield-check-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/shield-check-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:shield-check-bold",
+      "bytes": 554,
+      "sha1": "1995987c949a249a1da29901a9c2e540fb466f59",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-warning.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/warning.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:warning",
+      "bytes": 553,
+      "sha1": "59a220306a48d1b1bbaf19b852b9447a1201f044",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-warning-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/warning-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:warning-bold",
+      "bytes": 549,
+      "sha1": "02e412a63dda76b6b580bf467f52d02bc528bca5",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-magnifying-glass.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/magnifying-glass.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:magnifying-glass",
+      "bytes": 265,
+      "sha1": "752748697d60435a9a5b67352ffe335f9cf8ec4e",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-magnifying-glass-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/magnifying-glass-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:magnifying-glass-bold",
+      "bytes": 251,
+      "sha1": "f3bc6142d44725ab32118584d07a936b667187f7",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/tabler-clipboard-check.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/tabler/clipboard-check.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · tabler:clipboard-check",
+      "bytes": 370,
+      "sha1": "ff00a9c444ed61e86fa7b91704a91a21b5996c87",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/tabler-clipboard-check-filled.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/tabler/clipboard-check-filled.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · tabler:clipboard-check-filled",
+      "bytes": 388,
+      "sha1": "7a0084452fcad90b1c0fe93a2f9298479447dce3",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-file-text.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/file-text.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:file-text",
+      "bytes": 423,
+      "sha1": "564af4e488cb9981324c019b5d5b54cb262e6bd3",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-file-text-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/file-text-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:file-text-bold",
+      "bytes": 444,
+      "sha1": "163718a6036226e20bacedff67b53bfdd885999d",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-scales.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/scales.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:scales",
+      "bytes": 667,
+      "sha1": "4c16cb4909c827be7dfb6eef7bcb7fa94066a89b",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-scales-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/scales-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:scales-bold",
+      "bytes": 772,
+      "sha1": "e13247409602dc04b4775a23108d83e41b7ccf5b",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-bug.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/bug.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:bug",
+      "bytes": 724,
+      "sha1": "3c53e82ad391526621fc8245bcbbfadd6c2bcb27",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-bug-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/bug-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:bug-bold",
+      "bytes": 695,
+      "sha1": "db68fa5f9229bf516edc0005cc7734bf3ce23530",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-first-aid.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/first-aid.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:first-aid",
+      "bytes": 415,
+      "sha1": "ae8938b210d7f6236d83877fab221cb96a2e8ddf",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/审查与风控/ph-first-aid-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/first-aid-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "审查与风控 · ph:first-aid-bold",
+      "bytes": 432,
+      "sha1": "d910131fe4bd4f83904f0d26f8026afde98b84b9",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/AI与智能/ph-robot.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/robot.svg",
+      "source_page": "https://iconify.design/",
+      "title": "AI与智能 · ph:robot",
+      "bytes": 566,
+      "sha1": "09cde49fc627af0f0a5e3c5105cb166ccf0dcb99",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/AI与智能/ph-robot-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/robot-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "AI与智能 · ph:robot-bold",
+      "bytes": 575,
+      "sha1": "35049eea6eb6fa1d162efd190722c94627ac840d",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/AI与智能/ph-sparkle.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/sparkle.svg",
+      "source_page": "https://iconify.design/",
+      "title": "AI与智能 · ph:sparkle",
+      "bytes": 683,
+      "sha1": "7af892ed4c5c53ad4d516fcbaaee3277e6c363ae",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/AI与智能/ph-sparkle-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/sparkle-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "AI与智能 · ph:sparkle-bold",
+      "bytes": 743,
+      "sha1": "0bc0e24f7ff987e07a91028701173bc187386afc",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/AI与智能/ph-cpu.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/cpu.svg",
+      "source_page": "https://iconify.design/",
+      "title": "AI与智能 · ph:cpu",
+      "bytes": 527,
+      "sha1": "b38bf38be2af453f1e097a7c2c027d62b8ae337d",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/AI与智能/ph-cpu-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/cpu-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "AI与智能 · ph:cpu-bold",
+      "bytes": 560,
+      "sha1": "820a6487a31c02445a984d5a1cbe6247bce848a4",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/AI与智能/ph-brain.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/brain.svg",
+      "source_page": "https://iconify.design/",
+      "title": "AI与智能 · ph:brain",
+      "bytes": 849,
+      "sha1": "be7992ca83f33e70d3a69c7a3f4726c0af8b38dd",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/AI与智能/ph-brain-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/brain-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "AI与智能 · ph:brain-bold",
+      "bytes": 852,
+      "sha1": "6160b94bda39fac7d972bddde80a7bb8808a86b8",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/AI与智能/ph-magic-wand.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/magic-wand.svg",
+      "source_page": "https://iconify.design/",
+      "title": "AI与智能 · ph:magic-wand",
+      "bytes": 621,
+      "sha1": "3b4679aae8bf854d8b549b5b354df8a70b5347dd",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/AI与智能/ph-magic-wand-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/magic-wand-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "AI与智能 · ph:magic-wand-bold",
+      "bytes": 654,
+      "sha1": "79f5d176eb7f85e668c334c7c7073452070d38f5",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/AI与智能/ph-lightning.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/lightning.svg",
+      "source_page": "https://iconify.design/",
+      "title": "AI与智能 · ph:lightning",
+      "bytes": 396,
+      "sha1": "11ca82ae55d165930fe877f4e6a128e603d3e90f",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/AI与智能/ph-lightning-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/lightning-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "AI与智能 · ph:lightning-bold",
+      "bytes": 436,
+      "sha1": "45d445963583bcfa861e890d7d7939dd9c77e4a1",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-upload-simple.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/upload-simple.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:upload-simple",
+      "bytes": 347,
+      "sha1": "1d5b8ad6bb3e38fe9f054a34649862cc45bf9a16",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-upload-simple-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/upload-simple-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:upload-simple-bold",
+      "bytes": 346,
+      "sha1": "67e84e0694b74584009c60ee430bbe869f6b4978",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-download-simple.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/download-simple.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:download-simple",
+      "bytes": 341,
+      "sha1": "b853e6ba2c4c8df98d30133708e62055c402ce32",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-download-simple-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/download-simple-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:download-simple-bold",
+      "bytes": 340,
+      "sha1": "f855fa8e5a47c610015e9648ac124b1dbfa82a4a",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-arrow-right.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/arrow-right.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:arrow-right",
+      "bytes": 263,
+      "sha1": "b76e218db1b67b81fa5c92bb98963169f1313a4c",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-arrow-right-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/arrow-right-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:arrow-right-bold",
+      "bytes": 255,
+      "sha1": "c091faf90963c52cf40ecf9e7f4072ef53192133",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-check-circle.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/check-circle.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:check-circle",
+      "bytes": 354,
+      "sha1": "c6f5cda799d9de225217fed1cd6c1e2baede68b5",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-check-circle-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/check-circle-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:check-circle-bold",
+      "bytes": 350,
+      "sha1": "cbc685caf3f8c40792ca0d04ff687f4f871c5521",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-x-circle.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/x-circle.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:x-circle",
+      "bytes": 424,
+      "sha1": "0b8dd78002f42ea529065c6e03ef3255a3e2e1bd",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-x-circle-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/x-circle-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:x-circle-bold",
+      "bytes": 399,
+      "sha1": "d332e70216ff4912777e4c986d39700a06e1b138",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-plus.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/plus.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:plus",
+      "bytes": 232,
+      "sha1": "289e9e90610d6f06a39043b173c34c910d615738",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-plus-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/plus-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:plus-bold",
+      "bytes": 246,
+      "sha1": "a9ce70fc1990b529f6e4ab4ff7941e393e052c64",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-trash.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/trash.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:trash",
+      "bytes": 413,
+      "sha1": "4a8ba53089ab420e3d8b2755f79cc542b662b341",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-trash-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/trash-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:trash-bold",
+      "bytes": 429,
+      "sha1": "e0faa882e073cb84599c75e14735122dc934d9e3",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-share-network.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/share-network.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:share-network",
+      "bytes": 422,
+      "sha1": "d73ca61c548b481e8a32ff4ee2343cc85e9994f4",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-share-network-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/share-network-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:share-network-bold",
+      "bytes": 423,
+      "sha1": "4c940d636c80df17268f75f85da707cc969ec417",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-eye.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/eye.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:eye",
+      "bytes": 703,
+      "sha1": "0cde3ae28239d04ea2b80ee9c4403ed6d288135a",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-eye-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/eye-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:eye-bold",
+      "bytes": 750,
+      "sha1": "e557158a195afce3df142543d688a6c78b50bbc4",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-spinner.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/spinner.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:spinner",
+      "bytes": 643,
+      "sha1": "03f4f4cae208185f8df165fc8c8af22aee807eec",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/操作与状态/ph-spinner-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/spinner-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "操作与状态 · ph:spinner-bold",
+      "bytes": 648,
+      "sha1": "44084047ce23db347679d9731de7effc65ba2017",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1780910254_xqQHBY66.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/06/08/image_1780910254_xqQHBY66.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1780910254_xqQHBY66",
+      "bytes": 326489,
+      "sha1": "c4f8d3139c670131f4f267db484c3ffc82e5de52",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1789551126_rLjcClUz.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/09/16/image_1789551126_rLjcClUz.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1789551126_rLjcClUz",
+      "bytes": 76618,
+      "sha1": "5b9251627c98d2b8c2fbbf172b687c0678384d75",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1789550850_z3LInVFB.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/09/16/image_1789550850_z3LInVFB.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1789550850_z3LInVFB",
+      "bytes": 62037,
+      "sha1": "bbded302df9e53c2906235686c971dcdd2840c83",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1786357663_a6Tqqrb4.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/08/10/image_1786357663_a6Tqqrb4.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1786357663_a6Tqqrb4",
+      "bytes": 55030,
+      "sha1": "18594531d1e25ef78aac5fb9605afa692959b8c9",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1786357385_lBKY2YBJ.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/08/10/image_1786357385_lBKY2YBJ.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1786357385_lBKY2YBJ",
+      "bytes": 88921,
+      "sha1": "183a3e907c72ac02c4a95b026d7ad33b520012f0",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1786357068_NIe7yIq3.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/08/10/image_1786357068_NIe7yIq3.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1786357068_NIe7yIq3",
+      "bytes": 65356,
+      "sha1": "0838a79eb40fee8c1c6917a6911e7152f821acb6",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1783068098_zQO3ROBj.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/07/03/image_1783068098_zQO3ROBj.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1783068098_zQO3ROBj",
+      "bytes": 229233,
+      "sha1": "1bbb777731fc676214e68a8cfc19bfab1f34ab1a",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1783067908_ntHg8T6Y.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/07/03/image_1783067908_ntHg8T6Y.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1783067908_ntHg8T6Y",
+      "bytes": 203670,
+      "sha1": "889fd7db9bb5e5d0ad7b2e47a8f987ab909c9930",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1783067631_OBR38Pib.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/07/03/image_1783067631_OBR38Pib.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1783067631_OBR38Pib",
+      "bytes": 224049,
+      "sha1": "057719ca6a836461942afc4589e0fc8382147e27",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1780910882_mEptZkga.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/06/08/image_1780910882_mEptZkga.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1780910882_mEptZkga",
+      "bytes": 260536,
+      "sha1": "a3573a8e9bcfed9ecdce966d6daf5c3c33e4e7cd",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1780910494_tWCAcVW7.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/06/08/image_1780910494_tWCAcVW7.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1780910494_tWCAcVW7",
+      "bytes": 248820,
+      "sha1": "3c265b5284b728a7d3932c37f831cf21a3c5aa4b",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1777969253_W9b3FJlj.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/05/05/image_1777969253_W9b3FJlj.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1777969253_W9b3FJlj",
+      "bytes": 241552,
+      "sha1": "c6269ec414a5478d946075cdf20134fe707d0eea",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1777969139_w29Dr6kA.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/05/05/image_1777969139_w29Dr6kA.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1777969139_w29Dr6kA",
+      "bytes": 281743,
+      "sha1": "98f62a063b0850e4cd63d826e8d413662ab2b5f9",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1777968912_Pu777BZ4.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/05/05/image_1777968912_Pu777BZ4.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1777968912_Pu777BZ4",
+      "bytes": 336530,
+      "sha1": "cafb8b48556f792c1a0b97f390aa0b9850a04c40",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1774945816_tNc0CX05.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/03/31/image_1774945816_tNc0CX05.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1774945816_tNc0CX05",
+      "bytes": 294564,
+      "sha1": "a8bec30b8da9e941876c148efe690e98049f709c",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1774945525_O959Sete.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/03/31/image_1774945525_O959Sete.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1774945525_O959Sete",
+      "bytes": 344217,
+      "sha1": "6069e6b26ca60b9c7d2006ed6ea4d88bf3df505f",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1774945212_zi6JaHTm.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/03/31/image_1774945212_zi6JaHTm.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1774945212_zi6JaHTm",
+      "bytes": 285974,
+      "sha1": "29bead9175acb06dce13ed6f569a8e9418a4f2b8",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1769684371_q6zg1Hiz.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/01/29/image_1769684371_q6zg1Hiz.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1769684371_q6zg1Hiz",
+      "bytes": 243214,
+      "sha1": "bf77068853219f4d8245c1172e627cc0a66aac77",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-热销/image_1753687680_S7JX7erL.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/28/image_1753687680_S7JX7erL.jpg",
+      "source_page": "https://www.quanyou.com.cn/hot.html",
+      "title": "产品-热销 · image_1753687680_S7JX7erL",
+      "bytes": 938074,
+      "sha1": "f33542f9ab9f89f820475ddde37720e7e79a2bee",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-热销/image_1752660816_CByAaAT2.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752660816_CByAaAT2.jpg",
+      "source_page": "https://www.quanyou.com.cn/hot.html",
+      "title": "产品-热销 · image_1752660816_CByAaAT2",
+      "bytes": 196946,
+      "sha1": "d0cfd6e1b5daee9ded7d0371db81ec060ed55795",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-热销/image_1753177217_tTL44m4Z.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/22/image_1753177217_tTL44m4Z.jpg",
+      "source_page": "https://www.quanyou.com.cn/hot.html",
+      "title": "产品-热销 · image_1753177217_tTL44m4Z",
+      "bytes": 174073,
+      "sha1": "6b2251b21863fcb56340736022cfe8647e38427d",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-热销/image_1752660821_pLrydMtZ.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752660821_pLrydMtZ.jpg",
+      "source_page": "https://www.quanyou.com.cn/hot.html",
+      "title": "产品-热销 · image_1752660821_pLrydMtZ",
+      "bytes": 163349,
+      "sha1": "a31442e7b61de644835e0e31b8851e5e80cb9f6c",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-热销/image_1752660821_xoQyXxOG.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752660821_xoQyXxOG.jpg",
+      "source_page": "https://www.quanyou.com.cn/hot.html",
+      "title": "产品-热销 · image_1752660821_xoQyXxOG",
+      "bytes": 137340,
+      "sha1": "a0002d402c05f61e11dab5d6a7376ffcfce6af55",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-热销/image_1752660821_qB8EB35b.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752660821_qB8EB35b.jpg",
+      "source_page": "https://www.quanyou.com.cn/hot.html",
+      "title": "产品-热销 · image_1752660821_qB8EB35b",
+      "bytes": 190950,
+      "sha1": "b834c2fe2ffee104ffc7b46257312bef594e73ab",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-热销/image_1753949473_Joe3JrMS.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/31/image_1753949473_Joe3JrMS.jpg",
+      "source_page": "https://www.quanyou.com.cn/hot.html",
+      "title": "产品-热销 · image_1753949473_Joe3JrMS",
+      "bytes": 701680,
+      "sha1": "3f5d4d61f607af1086a195b92699e6c1f8c396b8",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-热销/image_1752660821_zCS3aE1c.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752660821_zCS3aE1c.jpg",
+      "source_page": "https://www.quanyou.com.cn/hot.html",
+      "title": "产品-热销 · image_1752660821_zCS3aE1c",
+      "bytes": 164024,
+      "sha1": "345839907c66d0b6899d2067bced3ebbdd456762",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-热销/image_1752660821_mrpmMP3y.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752660821_mrpmMP3y.jpg",
+      "source_page": "https://www.quanyou.com.cn/hot.html",
+      "title": "产品-热销 · image_1752660821_mrpmMP3y",
+      "bytes": 155867,
+      "sha1": "3e9f6a0cecd6a8ca3245529b2744a399b77d53cb",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-热销/image_1752660822_LVQFPiPd.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752660822_LVQFPiPd.jpg",
+      "source_page": "https://www.quanyou.com.cn/hot.html",
+      "title": "产品-热销 · image_1752660822_LVQFPiPd",
+      "bytes": 221793,
+      "sha1": "15f2ed567c13a99b3cc67aa942ba7cb37afc08ae",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-热销/image_1752660822_KcVUx7FH.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752660822_KcVUx7FH.jpg",
+      "source_page": "https://www.quanyou.com.cn/hot.html",
+      "title": "产品-热销 · image_1752660822_KcVUx7FH",
+      "bytes": 64212,
+      "sha1": "bc2b8347afc3319db759397e99e72f77d773d552",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-定制橱柜/image_1753675168_bRy9roMZ.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/28/image_1753675168_bRy9roMZ.jpg",
+      "source_page": "https://www.quanyou.com.cn/cupboard.html",
+      "title": "产品-定制橱柜 · image_1753675168_bRy9roMZ",
+      "bytes": 274031,
+      "sha1": "07d463ae5d02dc4da203341f4f392b3087d17efe",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-定制橱柜/image_1730789390_u5T6Q0H5.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/11/05/image_1730789390_u5T6Q0H5.jpg",
+      "source_page": "https://www.quanyou.com.cn/cupboard.html",
+      "title": "产品-定制橱柜 · image_1730789390_u5T6Q0H5",
+      "bytes": 160328,
+      "sha1": "fa1cdc602b0cb9121fe560e14a2cd05cd7d2041d",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-定制橱柜/image_1691474103_DtALiJtS.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2023/08/08/image_1691474103_DtALiJtS.jpg",
+      "source_page": "https://www.quanyou.com.cn/cupboard.html",
+      "title": "产品-定制橱柜 · image_1691474103_DtALiJtS",
+      "bytes": 192406,
+      "sha1": "9abf77d1c8e2d658168c73965da034e0727a2dd1",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1783674306_Myei5AHg.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/07/10/image_1783674306_Myei5AHg.jpg",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1783674306_Myei5AHg",
+      "bytes": 186930,
+      "sha1": "02db8715ae22c75a8b4e0ba950e7d66c0f923515",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1783674498_L0etdTfN.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/07/10/image_1783674498_L0etdTfN.jpg",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1783674498_L0etdTfN",
+      "bytes": 179821,
+      "sha1": "d9b4551dc827f8ed5fab461217860a8e08dffcb0",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1638857510_a5cCfyyb.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2021/12/07/image_1638857510_a5cCfyyb.jpg",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1638857510_a5cCfyyb",
+      "bytes": 623752,
+      "sha1": "a8ee5ded12560feadcdafbf547085ce100ad2fba",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/bathroom-img2.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/2022/images/bathroom-img2.jpg",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · bathroom-img2",
+      "bytes": 78280,
+      "sha1": "9fc04ed73da93303d25d3758761e78c42963c7d8",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1732073352_d2a32Z33.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/11/20/image_1732073352_d2a32Z33.jpg",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1732073352_d2a32Z33",
+      "bytes": 169432,
+      "sha1": "a7f2b3cbedac52d56796c6451f1a1996b9b7eee1",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1732073340_ecCcAYu0.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/11/20/image_1732073340_ecCcAYu0.jpg",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1732073340_ecCcAYu0",
+      "bytes": 149355,
+      "sha1": "0c91bac49d21697394ad64265afc71531b9db607",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1732073327_p22rOo24.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/11/20/image_1732073327_p22rOo24.jpg",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1732073327_p22rOo24",
+      "bytes": 221251,
+      "sha1": "4c10d37a458b367144b313353444ac36a4d3e2b1",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1732073317_H0Iye5yp.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/11/20/image_1732073317_H0Iye5yp.jpg",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1732073317_H0Iye5yp",
+      "bytes": 142019,
+      "sha1": "e10d0b96dad002bee102ae1b5058b80330562004",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1732073310_Tmh1hQqx.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/11/20/image_1732073310_Tmh1hQqx.jpg",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1732073310_Tmh1hQqx",
+      "bytes": 189525,
+      "sha1": "b8772e7e02a4fd7f56ced596ccdc39868bc8c594",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1732073301_E1TC6v66.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/11/20/image_1732073301_E1TC6v66.jpg",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1732073301_E1TC6v66",
+      "bytes": 222978,
+      "sha1": "4cc79de08b741b4aad00bb6e9b0e3725ae3a2328",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1732073289_f26C184g.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/11/20/image_1732073289_f26C184g.jpg",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1732073289_f26C184g",
+      "bytes": 162066,
+      "sha1": "fb7f57bf82ba69dea94a3335317133441ca17d2b",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1732694928_k81mauka.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/11/27/image_1732694928_k81mauka.png",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1732694928_k81mauka",
+      "bytes": 147185,
+      "sha1": "cbb675ca18b1faadd3ad565c4f489040f637fdaa",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1732694154_zUf60kZq.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/11/27/image_1732694154_zUf60kZq.png",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1732694154_zUf60kZq",
+      "bytes": 232438,
+      "sha1": "10dde8b019e349a75095bb8ea896e31fb1f5ab8c",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1732694163_PzpsLEeE.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/11/27/image_1732694163_PzpsLEeE.png",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1732694163_PzpsLEeE",
+      "bytes": 113872,
+      "sha1": "0bf50c4e437901daf77979bdd19666bfb3518474",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/image_1732694171_UgOZm8ba.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/11/27/image_1732694171_UgOZm8ba.png",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · image_1732694171_UgOZm8ba",
+      "bytes": 99905,
+      "sha1": "2cf1892cf6b348a9265c07ad23f12e818f4a5fd8",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-卫浴/bathroom-img6.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/2022/images/bathroom-img6.jpg",
+      "source_page": "https://www.quanyou.com.cn/bathroom.html",
+      "title": "产品-卫浴 · bathroom-img6",
+      "bytes": 596528,
+      "sha1": "d414240021de257c6c9707e8bbf641e3ed572256",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1753675222_SV3tvjJT.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/28/image_1753675222_SV3tvjJT.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1753675222_SV3tvjJT",
+      "bytes": 584475,
+      "sha1": "51b2de9984d84cb6aa63ae2854d6203c9c62f6da",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653776_i5OMM5X2.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653776_i5OMM5X2.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653776_i5OMM5X2",
+      "bytes": 344475,
+      "sha1": "2127d88f646c57df41f85e1dccd472129e7de6d7",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653777_NsdoWhcl.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653777_NsdoWhcl.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653777_NsdoWhcl",
+      "bytes": 483497,
+      "sha1": "7d8407cc6a2dfbe30eb8705a8ba72025297b39ec",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653777_eJVFeXeJ.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653777_eJVFeXeJ.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653777_eJVFeXeJ",
+      "bytes": 270531,
+      "sha1": "b733bd99128a82ce66f08cc3859c37813dfb9a6d",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653777_G67Pp107.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653777_G67Pp107.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653777_G67Pp107",
+      "bytes": 834114,
+      "sha1": "e3642fbd385f5c0e79f66d250abeb635274b5ada",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653778_OCWTz74l.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653778_OCWTz74l.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653778_OCWTz74l",
+      "bytes": 435294,
+      "sha1": "66822a20404863d90ea13fd809581bdafae28ed2",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653779_juffmsU0.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653779_juffmsU0.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653779_juffmsU0",
+      "bytes": 775489,
+      "sha1": "1e2ce7a408a2b473dd29442e64d5d4390b256d35",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653790_Ng8kKPk4.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653790_Ng8kKPk4.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653790_Ng8kKPk4",
+      "bytes": 381159,
+      "sha1": "b9798e360ddb997434f8c43874c6a3c551ecb99c",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653791_ALD891gX.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653791_ALD891gX.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653791_ALD891gX",
+      "bytes": 655908,
+      "sha1": "4de73562ee6d539992b8409f2496ce0479b3c8c8",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/客厅起居/37676360-客厅-空间全景.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/37676360/pexels-photo-37676360.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/37676360/",
+      "title": "客厅起居 · 客厅 · 空间全景",
+      "bytes": 314201,
+      "sha1": "c6a5d54fbe230c5c5cc13e72ef74accc10dd6998",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/客厅起居/34377944-客厅-灯光氛围.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/34377944/pexels-photo-34377944.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/34377944/",
+      "title": "客厅起居 · 客厅 · 灯光氛围",
+      "bytes": 223427,
+      "sha1": "7bcdbaf9d01746ccc5996b5ec6ca580f524cfca8",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/客厅起居/20547058-客厅-极简起居.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/20547058/pexels-photo-20547058.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/20547058/",
+      "title": "客厅起居 · 客厅 · 极简起居",
+      "bytes": 130331,
+      "sha1": "b225d284b9c4abb9ab74583add678939e2f94a5e",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/卧室/1454806-卧室-原木床架.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/1454806/pexels-photo-1454806.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/1454806/",
+      "title": "卧室 · 卧室 · 原木床架",
+      "bytes": 148300,
+      "sha1": "5dcf373fe9e38c739909cd90e1a322aad4292e35",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/卧室/164595-卧室-简约白.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/164595/pexels-photo-164595.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/164595/",
+      "title": "卧室 · 卧室 · 简约白",
+      "bytes": 201700,
+      "sha1": "13e00258a02abaa15dc45228850ac2ef13d05c7d",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/卧室/35527007-卧室-木质家具.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/35527007/pexels-photo-35527007.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/35527007/",
+      "title": "卧室 · 卧室 · 木质家具",
+      "bytes": 182158,
+      "sha1": "f08c3593115fdf782fb6a9302c173f91cdb1e244",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/卧室/36816994-卧室-自然采光.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/36816994/pexels-photo-36816994.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/36816994/",
+      "title": "卧室 · 卧室 · 自然采光",
+      "bytes": 283754,
+      "sha1": "0ef78ae45dad3dc5c5e743c90f1a95234746cf53",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/厨房餐厅/2724748-厨房-白色橱柜.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/2724748/pexels-photo-2724748.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/2724748/",
+      "title": "厨房餐厅 · 厨房 · 白色橱柜",
+      "bytes": 179784,
+      "sha1": "519379e635bd1d28cce446907322c79ab2dbce37",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/厨房餐厅/1080721-厨房-木色台面.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/1080721/pexels-photo-1080721.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/1080721/",
+      "title": "厨房餐厅 · 厨房 · 木色台面",
+      "bytes": 189950,
+      "sha1": "a5b4da29306bf654e72544d0edcd64fd1d67d2b6",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/厨房餐厅/36511371-厨房-白柜木地板.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/36511371/pexels-photo-36511371.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/36511371/",
+      "title": "厨房餐厅 · 厨房 · 白柜木地板",
+      "bytes": 159130,
+      "sha1": "ea224bf20fc147783b308491b034d0cef96755d2",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/厨房餐厅/36906951-厨房-中岛与吊灯.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/36906951/pexels-photo-36906951.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/36906951/",
+      "title": "厨房餐厅 · 厨房 · 中岛与吊灯",
+      "bytes": 138221,
+      "sha1": "63e5ce29c4c7607a29e841018017ff524851e11b",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/厨房餐厅/36777864-厨房-灯光设计.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/36777864/pexels-photo-36777864.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/36777864/",
+      "title": "厨房餐厅 · 厨房 · 灯光设计",
+      "bytes": 188184,
+      "sha1": "912dbdffb5b96edb9aac13f1fb28520429cc3bcf",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/厨房餐厅/36777500-厨房-不锈钢电器.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/36777500/pexels-photo-36777500.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/36777500/",
+      "title": "厨房餐厅 · 厨房 · 不锈钢电器",
+      "bytes": 155803,
+      "sha1": "68e406bb70b3e3a1c016c2e63877121798aba636",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/厨房餐厅/34794673-厨房-大理石台面.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/34794673/pexels-photo-34794673.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/34794673/",
+      "title": "厨房餐厅 · 厨房 · 大理石台面",
+      "bytes": 286659,
+      "sha1": "f9a589e51a934a2c637f7c3d4d45b65d84f92432",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/书房工作区/36098979-书房-阳光办公区.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/36098979/pexels-photo-36098979.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/36098979/",
+      "title": "书房工作区 · 书房 · 阳光办公区",
+      "bytes": 357850,
+      "sha1": "a56e68323212f475137dabd598f4a05e09c50922",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/书房工作区/28461041-书房-中性色调.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/28461041/pexels-photo-28461041.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/28461041/",
+      "title": "书房工作区 · 书房 · 中性色调",
+      "bytes": 229140,
+      "sha1": "14dd9ebb92c93703e9d04a2d4cea9a3d69c98a98",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/书房工作区/30539351-书房-笔记本与咖啡.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/30539351/pexels-photo-30539351.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/30539351/",
+      "title": "书房工作区 · 书房 · 笔记本与咖啡",
+      "bytes": 490560,
+      "sha1": "67093c0d8966f92e5b44b6002d984236a6e6291d",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/书房工作区/36123568-书房-极简桌面.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/36123568/pexels-photo-36123568.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/36123568/",
+      "title": "书房工作区 · 书房 · 极简桌面",
+      "bytes": 150761,
+      "sha1": "9ef5f5554bf77a80093d939f76af7b63365818bc",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/书房工作区/30196536-书房-深色墙面.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/30196536/pexels-photo-30196536.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/30196536/",
+      "title": "书房工作区 · 书房 · 深色墙面",
+      "bytes": 194879,
+      "sha1": "ef1212f2326bc275e18b2029c3bb6ea88b76f88d",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/书房工作区/31938716-书房-书籍与收纳.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/31938716/pexels-photo-31938716.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/31938716/",
+      "title": "书房工作区 · 书房 · 书籍与收纳",
+      "bytes": 304158,
+      "sha1": "cf15933d89e7cbdc3db97f42729daa622363646f",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/书房工作区/32048649-书房-创意桌面.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/32048649/pexels-photo-32048649.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/32048649/",
+      "title": "书房工作区 · 书房 · 创意桌面",
+      "bytes": 413676,
+      "sha1": "6bc4ddfbee625b8051ea61494c4b00ad02096ee7",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/书房工作区/32553379-书房-木质书桌.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/32553379/pexels-photo-32553379.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/32553379/",
+      "title": "书房工作区 · 书房 · 木质书桌",
+      "bytes": 232840,
+      "sha1": "6fae3f59ffe69562200a77e5ef5a6a5cb4835d92",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/书房工作区/34688835-书房-家居工作位.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/34688835/pexels-photo-34688835.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/34688835/",
+      "title": "书房工作区 · 书房 · 家居工作位",
+      "bytes": 136992,
+      "sha1": "2fddf982552f14a2511a8878ac65ba03574c9f46",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/卫浴/1454804-卫浴-干湿分离.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/1454804/pexels-photo-1454804.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/1454804/",
+      "title": "卫浴 · 卫浴 · 干湿分离",
+      "bytes": 106821,
+      "sha1": "ec987f00320332bcc4a8bd96b6565214b9e868f5",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/卫浴/1909796-卫浴-台盆区.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/1909796/pexels-photo-1909796.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/1909796/",
+      "title": "卫浴 · 卫浴 · 台盆区",
+      "bytes": 342319,
+      "sha1": "31cc42e948986273853d5f44be2377fff5756bc4",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/空间与细节/1571459-空间-阳台与采光.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/1571459/pexels-photo-1571459.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/1571459/",
+      "title": "空间与细节 · 空间 · 阳台与采光",
+      "bytes": 164126,
+      "sha1": "f10455201c8fc10e569dbffdb4e696f1391a23cf",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/空间与细节/2062426-细节-软装陈设.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/2062426/pexels-photo-2062426.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/2062426/",
+      "title": "空间与细节 · 细节 · 软装陈设",
+      "bytes": 268954,
+      "sha1": "946f7d0b6b03c89da463b51dfd2628718dd88497",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/空间与细节/276583-细节-墙面与挂画.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/276583/pexels-photo-276583.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/276583/",
+      "title": "空间与细节 · 细节 · 墙面与挂画",
+      "bytes": 197926,
+      "sha1": "8e91d9989fb1568aa335a3cd4dbdbaec7f647509",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/空间与细节/1866149-细节-户型过道.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/1866149/pexels-photo-1866149.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/1866149/",
+      "title": "空间与细节 · 细节 · 户型过道",
+      "bytes": 217755,
+      "sha1": "3cf30c7e25706e42ff376ac79494169f01161f50",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/空间与细节/3935350-细节-收纳柜体.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/3935350/pexels-photo-3935350.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/3935350/",
+      "title": "空间与细节 · 细节 · 收纳柜体",
+      "bytes": 249789,
+      "sha1": "bebbdd9f199302795f3da52decbb9d1aa65a2ca3",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/卡片缩略图/quanyou-living-card-640x480.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-living-card/640/480",
+      "source_page": "https://picsum.photos/",
+      "title": "卡片缩略图占位 · quanyou-living",
+      "bytes": 64364,
+      "sha1": "6f82acdd8a6e45945b01697fc9d07590b7af0ef1",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/卡片缩略图/quanyou-bedroom-card-640x480.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-bedroom-card/640/480",
+      "source_page": "https://picsum.photos/",
+      "title": "卡片缩略图占位 · quanyou-bedroom",
+      "bytes": 16089,
+      "sha1": "2a33f1d02ba536c7a8a1c3c189d27bde99487779",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/卡片缩略图/quanyou-kitchen-card-640x480.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-kitchen-card/640/480",
+      "source_page": "https://picsum.photos/",
+      "title": "卡片缩略图占位 · quanyou-kitchen",
+      "bytes": 29669,
+      "sha1": "c31eb05608961e5c3e642c085bce0bc63114c727",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/卡片缩略图/quanyou-bath-card-640x480.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-bath-card/640/480",
+      "source_page": "https://picsum.photos/",
+      "title": "卡片缩略图占位 · quanyou-bath",
+      "bytes": 40624,
+      "sha1": "69c0010759f281ae0db3ea2400c4ed3e39c3ad07",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/卡片缩略图/quanyou-balcony-card-640x480.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-balcony-card/640/480",
+      "source_page": "https://picsum.photos/",
+      "title": "卡片缩略图占位 · quanyou-balcony",
+      "bytes": 51215,
+      "sha1": "ce9472c8b875c8f1a42c3f725a8f3f76be46d2c7",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/卡片缩略图/quanyou-study-card-640x480.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-study-card/640/480",
+      "source_page": "https://picsum.photos/",
+      "title": "卡片缩略图占位 · quanyou-study",
+      "bytes": 32864,
+      "sha1": "7b2b7d8d7fa33f9d11a78743468415142812bd4e",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/卡片缩略图/quanyou-dining-card-640x480.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-dining-card/640/480",
+      "source_page": "https://picsum.photos/",
+      "title": "卡片缩略图占位 · quanyou-dining",
+      "bytes": 56043,
+      "sha1": "5691ed3231846c1843874899d6e455c9322fd1b7",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/卡片缩略图/quanyou-kids-card-640x480.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-kids-card/640/480",
+      "source_page": "https://picsum.photos/",
+      "title": "卡片缩略图占位 · quanyou-kids",
+      "bytes": 43278,
+      "sha1": "e84bf18752871aca55a25db0f190076bafc3b912",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/宽幅Banner/quanyou-living-banner-1920x800.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-living-banner/1920/800",
+      "source_page": "https://picsum.photos/",
+      "title": "宽幅Banner占位 · quanyou-living",
+      "bytes": 283329,
+      "sha1": "3fc8b4fe481078e263b090327c01b9918f99b4f9",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/宽幅Banner/quanyou-bedroom-banner-1920x800.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-bedroom-banner/1920/800",
+      "source_page": "https://picsum.photos/",
+      "title": "宽幅Banner占位 · quanyou-bedroom",
+      "bytes": 104521,
+      "sha1": "d7944268aec17545a19bc6563ef0787c3180b90e",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/宽幅Banner/quanyou-kitchen-banner-1920x800.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-kitchen-banner/1920/800",
+      "source_page": "https://picsum.photos/",
+      "title": "宽幅Banner占位 · quanyou-kitchen",
+      "bytes": 218191,
+      "sha1": "35263622d397b1df087b00a5780efa0fe8abdf69",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/宽幅Banner/quanyou-bath-banner-1920x800.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-bath-banner/1920/800",
+      "source_page": "https://picsum.photos/",
+      "title": "宽幅Banner占位 · quanyou-bath",
+      "bytes": 99778,
+      "sha1": "f1fd36a10a246e7ddd73d637b05a6bad76abf75b",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/宽幅Banner/quanyou-balcony-banner-1920x800.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-balcony-banner/1920/800",
+      "source_page": "https://picsum.photos/",
+      "title": "宽幅Banner占位 · quanyou-balcony",
+      "bytes": 337336,
+      "sha1": "144c54b33f8347aee8f71ffe0a17351a2a9c1832",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/宽幅Banner/quanyou-study-banner-1920x800.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-study-banner/1920/800",
+      "source_page": "https://picsum.photos/",
+      "title": "宽幅Banner占位 · quanyou-study",
+      "bytes": 224713,
+      "sha1": "6eed47999a941fa6a782efa9bf0542c5b3340a38",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/头像/quanyou-kitchen-avatar-128x128.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-kitchen-avatar/128/128",
+      "source_page": "https://picsum.photos/",
+      "title": "头像占位 · quanyou-kitchen",
+      "bytes": 3355,
+      "sha1": "6e9b71e8d2ec3142c2e49262372ffd793bf3e5ea",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/头像/quanyou-bath-avatar-128x128.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-bath-avatar/128/128",
+      "source_page": "https://picsum.photos/",
+      "title": "头像占位 · quanyou-bath",
+      "bytes": 4236,
+      "sha1": "cbc70d372a71002bc355fff02f42115f657faa8c",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/头像/quanyou-balcony-avatar-128x128.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-balcony-avatar/128/128",
+      "source_page": "https://picsum.photos/",
+      "title": "头像占位 · quanyou-balcony",
+      "bytes": 3678,
+      "sha1": "adccded59c85455a3fea6959a37300822052d28f",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/头像/quanyou-study-avatar-128x128.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-study-avatar/128/128",
+      "source_page": "https://picsum.photos/",
+      "title": "头像占位 · quanyou-study",
+      "bytes": 4238,
+      "sha1": "30202216fadb15cf20f2e841f97895610341042a",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/头像/quanyou-dining-avatar-128x128.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-dining-avatar/128/128",
+      "source_page": "https://picsum.photos/",
+      "title": "头像占位 · quanyou-dining",
+      "bytes": 4389,
+      "sha1": "ea8af61e38189d0185aaa05fd782f94b4577fbfc",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/头像/quanyou-kids-avatar-128x128.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-kids-avatar/128/128",
+      "source_page": "https://picsum.photos/",
+      "title": "头像占位 · quanyou-kids",
+      "bytes": 4504,
+      "sha1": "bd9e338d0c3aed6f7b25aeddf592514d89b27dc6",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/方案对比图/quanyou-living-compare-960x720.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-living-compare/960/720",
+      "source_page": "https://picsum.photos/",
+      "title": "方案对比图占位 · quanyou-living",
+      "bytes": 65481,
+      "sha1": "ee9cbaa0f82310fefdc7857ef7e9cb2686f6f7cc",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/方案对比图/quanyou-bedroom-compare-960x720.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-bedroom-compare/960/720",
+      "source_page": "https://picsum.photos/",
+      "title": "方案对比图占位 · quanyou-bedroom",
+      "bytes": 25996,
+      "sha1": "5d5995736730566d5bc8538f7d5bc0849f26b3c1",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/方案对比图/quanyou-kitchen-compare-960x720.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-kitchen-compare/960/720",
+      "source_page": "https://picsum.photos/",
+      "title": "方案对比图占位 · quanyou-kitchen",
+      "bytes": 173889,
+      "sha1": "e822e0c098f63a322f14050e88a1a7fdeb5e1d89",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/方案对比图/quanyou-bath-compare-960x720.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-bath-compare/960/720",
+      "source_page": "https://picsum.photos/",
+      "title": "方案对比图占位 · quanyou-bath",
+      "bytes": 71361,
+      "sha1": "5985dad2a67c8aacef1f267a4c5d938ffdf7db2d",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/方案对比图/quanyou-balcony-compare-960x720.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-balcony-compare/960/720",
+      "source_page": "https://picsum.photos/",
+      "title": "方案对比图占位 · quanyou-balcony",
+      "bytes": 167477,
+      "sha1": "48ae8d7dc7ed7306cd6b4575a41e8cc19f969a72",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/方案对比图/quanyou-study-compare-960x720.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-study-compare/960/720",
+      "source_page": "https://picsum.photos/",
+      "title": "方案对比图占位 · quanyou-study",
+      "bytes": 105942,
+      "sha1": "4bc581ea97631f3eac8733e3ccb55caafd4b645d",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/方案对比图/quanyou-dining-compare-960x720.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-dining-compare/960/720",
+      "source_page": "https://picsum.photos/",
+      "title": "方案对比图占位 · quanyou-dining",
+      "bytes": 28658,
+      "sha1": "c67b0e844849ee522a6aa5a88374d8c79ba0d121",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/方案对比图/quanyou-kids-compare-960x720.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-kids-compare/960/720",
+      "source_page": "https://picsum.photos/",
+      "title": "方案对比图占位 · quanyou-kids",
+      "bytes": 63435,
+      "sha1": "0ef2e24b6f1b5c106e1e7e3a92a44cc5f119ce7c",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/户型图占位/quanyou-living-floorplan-1200x900.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-living-floorplan/1200/900",
+      "source_page": "https://picsum.photos/",
+      "title": "户型图占位占位 · quanyou-living",
+      "bytes": 152612,
+      "sha1": "816080228e8d04a39704d4ca2d4ba97226c435e8",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/户型图占位/quanyou-bedroom-floorplan-1200x900.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-bedroom-floorplan/1200/900",
+      "source_page": "https://picsum.photos/",
+      "title": "户型图占位占位 · quanyou-bedroom",
+      "bytes": 137543,
+      "sha1": "ad3ade5a5372cd78ec4f06c15b1b7ed72f44b010",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/户型图占位/quanyou-kitchen-floorplan-1200x900.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-kitchen-floorplan/1200/900",
+      "source_page": "https://picsum.photos/",
+      "title": "户型图占位占位 · quanyou-kitchen",
+      "bytes": 151989,
+      "sha1": "9cccfdb44afb6b9ff6ec59c8c34e28d36d03c944",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/户型图占位/quanyou-bath-floorplan-1200x900.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-bath-floorplan/1200/900",
+      "source_page": "https://picsum.photos/",
+      "title": "户型图占位占位 · quanyou-bath",
+      "bytes": 73927,
+      "sha1": "a1afa5123adff626eae0729fa0a12f57150bf293",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/户型图占位/quanyou-balcony-floorplan-1200x900.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-balcony-floorplan/1200/900",
+      "source_page": "https://picsum.photos/",
+      "title": "户型图占位占位 · quanyou-balcony",
+      "bytes": 74660,
+      "sha1": "bbef0a538f3ee84f66191614ab8308588440fb1f",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/户型图占位/quanyou-study-floorplan-1200x900.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-study-floorplan/1200/900",
+      "source_page": "https://picsum.photos/",
+      "title": "户型图占位占位 · quanyou-study",
+      "bytes": 176699,
+      "sha1": "accaf0e9a610c4c6305c1e8bf65e5ec68003a3bf",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/户型图占位/quanyou-dining-floorplan-1200x900.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-dining-floorplan/1200/900",
+      "source_page": "https://picsum.photos/",
+      "title": "户型图占位占位 · quanyou-dining",
+      "bytes": 65866,
+      "sha1": "2a2d1b78ba14c1f2e537374b8c55632950d8ee1c",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/户型图占位/quanyou-kids-floorplan-1200x900.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-kids-floorplan/1200/900",
+      "source_page": "https://picsum.photos/",
+      "title": "户型图占位占位 · quanyou-kids",
+      "bytes": 139436,
+      "sha1": "02816c0bcd2baaa93075d86246030ae543746a25",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1769684269_j1BDqcEq.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/01/29/image_1769684269_j1BDqcEq.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1769684269_j1BDqcEq",
+      "bytes": 255730,
+      "sha1": "343a889ab823430035b9cadbcf70fb5d15742f30",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1769683892_n5x3vv2v.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/01/29/image_1769683892_n5x3vv2v.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1769683892_n5x3vv2v",
+      "bytes": 269065,
+      "sha1": "b682bbfeb680e8a49c4f014e1bc199a2e86a3285",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1766743426_k1OEoS33.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/12/26/image_1766743426_k1OEoS33.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1766743426_k1OEoS33",
+      "bytes": 243228,
+      "sha1": "bb66d6385e9a3a90ea4be58cc59ecadea34392c6",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1766743288_h28o99Ss.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/12/26/image_1766743288_h28o99Ss.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1766743288_h28o99Ss",
+      "bytes": 264754,
+      "sha1": "4cb8d1f533b6fdb25a340d5a0114ab75b87826e3",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1766743030_hfMp4UCj.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/12/26/image_1766743030_hfMp4UCj.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1766743030_hfMp4UCj",
+      "bytes": 274709,
+      "sha1": "f0b8dbcaab94c9b7f23d4caf8fb2f950ee67e090",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1764324648_myu3UIJJ.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/11/28/image_1764324648_myu3UIJJ.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1764324648_myu3UIJJ",
+      "bytes": 252481,
+      "sha1": "fe56fe330b1cd33d8331fd6b042c066a702fc06d",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1764324274_WCZa14u5.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/11/28/image_1764324274_WCZa14u5.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1764324274_WCZa14u5",
+      "bytes": 230266,
+      "sha1": "c9313e0ffbf25c2e4c2c00eae40746c275a206c2",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1764324084_TvK7uTDr.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/11/28/image_1764324084_TvK7uTDr.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1764324084_TvK7uTDr",
+      "bytes": 139096,
+      "sha1": "afc99c32057643ab79e32cd3335ca67cda09efef",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1761299842_mMOy4nYN.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/10/24/image_1761299842_mMOy4nYN.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1761299842_mMOy4nYN",
+      "bytes": 206062,
+      "sha1": "54794fa57167f30be987bc2dce979db8e8fa76ff",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1761299638_ElaMz54u.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/10/24/image_1761299638_ElaMz54u.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1761299638_ElaMz54u",
+      "bytes": 338711,
+      "sha1": "e23e653202a99a906d9a85f9b56a3853f8b17b7a",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1747980388_ZU6eivH5.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/05/23/image_1747980388_ZU6eivH5.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1747980388_ZU6eivH5",
+      "bytes": 224350,
+      "sha1": "31304dc69f081be60cd6da07936436405504b900",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1747378289_zYc81c1h.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/05/16/image_1747378289_zYc81c1h.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1747378289_zYc81c1h",
+      "bytes": 239997,
+      "sha1": "575d6da85ff5c19497a67f329ec18578980e8e80",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1739156204_rTXmULMu.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/02/10/image_1739156204_rTXmULMu.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1739156204_rTXmULMu",
+      "bytes": 301685,
+      "sha1": "93160599d17037e8d146d039ea85f63b211f5ca5",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1712125856_p7SAw500.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/04/03/image_1712125856_p7SAw500.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1712125856_p7SAw500",
+      "bytes": 275327,
+      "sha1": "ea6285d3e4c83a27c9a922d05a1877a7b5038b4d",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1699931584_kd4BdZGZ.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2023/11/14/image_1699931584_kd4BdZGZ.png",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1699931584_kd4BdZGZ",
+      "bytes": 934585,
+      "sha1": "f3c9884a2be203ef8426d09071883694dd6ae3d5",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1684484892_spP8zbBO.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2023/05/19/image_1684484892_spP8zbBO.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1684484892_spP8zbBO",
+      "bytes": 142746,
+      "sha1": "8f23541ba9684f2c4e0317a7abc90b3cda72bdc5",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1747981313_SsG24VVB.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/05/23/image_1747981313_SsG24VVB.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1747981313_SsG24VVB",
+      "bytes": 193202,
+      "sha1": "ec33ec3f13c2c287fbb3f743131a13c0a855d097",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1747981165_NN22a6aK.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/05/23/image_1747981165_NN22a6aK.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1747981165_NN22a6aK",
+      "bytes": 332950,
+      "sha1": "079f9598eb14661ce4c168f0e656a829f2221982",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1743154693_uFohlm0R.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/03/28/image_1743154693_uFohlm0R.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1743154693_uFohlm0R",
+      "bytes": 202254,
+      "sha1": "914c0c3b6a438c380cc12fd4cf93995a83602d7c",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1740034444_RXzmxmm0.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/02/20/image_1740034444_RXzmxmm0.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1740034444_RXzmxmm0",
+      "bytes": 269991,
+      "sha1": "2361e6a51caad6f75dcc16c37405f40f41d21b0f",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1740034292_bZZG24cc.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/02/20/image_1740034292_bZZG24cc.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1740034292_bZZG24cc",
+      "bytes": 265527,
+      "sha1": "b4b67a2c820d4dde8d327d9cc4bc2e1731b83bfc",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1740034115_U2Ilu36y.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/02/20/image_1740034115_U2Ilu36y.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1740034115_U2Ilu36y",
+      "bytes": 264968,
+      "sha1": "5c8f7cfe9ac816da2458de8995aa35df4cb1603a",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1733293739_WXeciezV.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/12/04/image_1733293739_WXeciezV.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1733293739_WXeciezV",
+      "bytes": 400194,
+      "sha1": "217b5fcef2bec442c23fe2e13d14e5484cee1c8a",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1723707766_OLit9km8.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/08/15/image_1723707766_OLit9km8.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1723707766_OLit9km8",
+      "bytes": 184350,
+      "sha1": "7dda0edad08612780c3e3c8accdd80cfb6c75439",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1722230994_d819Iaat.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/07/29/image_1722230994_d819Iaat.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1722230994_d819Iaat",
+      "bytes": 135691,
+      "sha1": "5a520af31fdedecbc713f9f931fdf507b193cd78",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1722230890_w77rR8fR.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/07/29/image_1722230890_w77rR8fR.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1722230890_w77rR8fR",
+      "bytes": 146407,
+      "sha1": "9d40c63613cfcb65c9b77d88a8ac74cea24045d5",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1715852159_r0kbBxlG.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/05/16/image_1715852159_r0kbBxlG.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1715852159_r0kbBxlG",
+      "bytes": 291367,
+      "sha1": "25a95a588f3fcac9829ed892540a266461a188f6",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1715851704_FD3k8668.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/05/16/image_1715851704_FD3k8668.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1715851704_FD3k8668",
+      "bytes": 247603,
+      "sha1": "966d2cdd46a1e61af4afe3d01cc7ae69d5d1f785",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1712566398_Lze1w261.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/04/08/image_1712566398_Lze1w261.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1712566398_Lze1w261",
+      "bytes": 272606,
+      "sha1": "5a923287a955a84ed731748028b05ea24bbe7d3f",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1704777504_abH7wqZc.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/01/09/image_1704777504_abH7wqZc.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1704777504_abH7wqZc",
+      "bytes": 271819,
+      "sha1": "f74665260f87694a8693cd5f5c09acbf9509ff8c",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1699931967_kidbftfM.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2023/11/14/image_1699931967_kidbftfM.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1699931967_kidbftfM",
+      "bytes": 246137,
+      "sha1": "5e79754209c21c8daf4b924f49664ae0b1307062",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1684485683_FNQn3m3h.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2023/05/19/image_1684485683_FNQn3m3h.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1684485683_FNQn3m3h",
+      "bytes": 91283,
+      "sha1": "5b1f6fb8512a4770c5a8f3db71f0b23a10864b0d",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1745573913_t9uU00Op.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/04/25/image_1745573913_t9uU00Op.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1745573913_t9uU00Op",
+      "bytes": 262421,
+      "sha1": "54b70bb08d220f5cf91dae4c162b3067b82484cf",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1745573892_pV183m86.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/04/25/image_1745573892_pV183m86.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1745573892_pV183m86",
+      "bytes": 223323,
+      "sha1": "1c5beeced8f10e2da86c9b4341616fc9e28b28f1",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1723707305_xhnyI8nf.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/08/15/image_1723707305_xhnyI8nf.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1723707305_xhnyI8nf",
+      "bytes": 171325,
+      "sha1": "4ecbcdd215d5be521f6367b03b7697ca4a5ae978",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1699932180_ZnnCa4lU.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2023/11/14/image_1699932180_ZnnCa4lU.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1699932180_ZnnCa4lU",
+      "bytes": 242089,
+      "sha1": "ae91abfc32ac25c30aec785e0b33413e25920b0d",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1684486274_iGYzw2lw.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2023/05/19/image_1684486274_iGYzw2lw.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1684486274_iGYzw2lw",
+      "bytes": 79320,
+      "sha1": "8a1592179de84e4fba1d2d1a23e86254981f077f",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1789550343_IMBp6hpG.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2026/09/16/image_1789550343_IMBp6hpG.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1789550343_IMBp6hpG",
+      "bytes": 92805,
+      "sha1": "479c830581a4de8b9d6d22d270f0ac1a040b00de",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1743155030_AC24ece4.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/03/28/image_1743155030_AC24ece4.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1743155030_AC24ece4",
+      "bytes": 215566,
+      "sha1": "73f773592d489db8b2a56d9a0e99e110aa8f29d4",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1743154448_CctqPf67.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/03/28/image_1743154448_CctqPf67.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1743154448_CctqPf67",
+      "bytes": 217025,
+      "sha1": "3b2ea559de8aee1567411b36069dda37a0605db3",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1739156380_Sxarw2wN.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/02/10/image_1739156380_Sxarw2wN.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1739156380_Sxarw2wN",
+      "bytes": 234836,
+      "sha1": "752fdfbd2a76018dae8d2fa7dd083d9c3d13c3a2",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1739156043_koNqO05B.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/02/10/image_1739156043_koNqO05B.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1739156043_koNqO05B",
+      "bytes": 320337,
+      "sha1": "e6a48538c450f3eb3286db8a4f24880efc021886",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1735196216_Hssuo83I.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/12/26/image_1735196216_Hssuo83I.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1735196216_Hssuo83I",
+      "bytes": 217676,
+      "sha1": "d546433736b7003fa80ee84c06ec0ab9faa6bf7c",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1735195218_PYDk5dKo.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/12/26/image_1735195218_PYDk5dKo.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1735195218_PYDk5dKo",
+      "bytes": 243932,
+      "sha1": "4563f060dde8d46586533cb5421079fae9237879",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/装修案例/image_1733294225_YcGs29MX.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/12/04/image_1733294225_YcGs29MX.jpg",
+      "source_page": "https://www.quanyou.com.cn/cases.html",
+      "title": "装修案例 · image_1733294225_YcGs29MX",
+      "bytes": 280433,
+      "sha1": "2863e4c90186955691caedbecae69b8600aaa7c1",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653792_Cs1h4S8g.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653792_Cs1h4S8g.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653792_Cs1h4S8g",
+      "bytes": 575182,
+      "sha1": "65745c1b9e065e3f230729e14616d785fa61a5c5",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653809_J7eBCd77.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653809_J7eBCd77.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653809_J7eBCd77",
+      "bytes": 314072,
+      "sha1": "f6baef7c7e092319e05c50f8120660e291d1c357",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653810_VkwksJKf.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653810_VkwksJKf.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653810_VkwksJKf",
+      "bytes": 535837,
+      "sha1": "02d1d4c0fe4a63547000627e4dc87bd3c3acb076",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653810_IOISMSZM.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653810_IOISMSZM.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653810_IOISMSZM",
+      "bytes": 293574,
+      "sha1": "e386c6b37f4c97b6d1a39f131227a2fac5582fa5",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653811_OdnkkEdS.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653811_OdnkkEdS.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653811_OdnkkEdS",
+      "bytes": 369968,
+      "sha1": "d22f66a5d43e22223d1d739db21c7812a39b83ca",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653818_d4P740Pl.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653818_d4P740Pl.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653818_d4P740Pl",
+      "bytes": 300242,
+      "sha1": "735378ebb21f972c52928be95a39563f68c0fbdd",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/产品-窗帘软装/image_1752653818_m1qV81Ub.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2025/07/16/image_1752653818_m1qV81Ub.jpg",
+      "source_page": "https://www.quanyou.com.cn/curtain.html",
+      "title": "产品-窗帘软装 · image_1752653818_m1qV81Ub",
+      "bytes": 323141,
+      "sha1": "23e5769a126f11e275b1108830f106782521e8ee",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/品牌视觉/image_1715064093_Q6yzFsRQ.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/attachment/images/2024/05/07/image_1715064093_Q6yzFsRQ.jpg",
+      "source_page": "https://www.quanyou.com.cn/culture2024.html",
+      "title": "品牌视觉 · image_1715064093_Q6yzFsRQ",
+      "bytes": 147914,
+      "sha1": "7da12b4377776bdb4750796f6fab51145c1a08b7",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/design_icon.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/design_icon.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · design_icon",
+      "bytes": 3095,
+      "sha1": "33eca9db1fdc482c948a51ff2493962244e7d35b",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/logo.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/logo.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · logo",
+      "bytes": 3163,
+      "sha1": "e9a7d645a89729a67c81c665dc83816683fe741b",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/iconN1.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/iconN1.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · iconN1",
+      "bytes": 12613,
+      "sha1": "a6d9d01fb974ed73e04094308d2ed08a67001615",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/iconN2.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/iconN2.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · iconN2",
+      "bytes": 13223,
+      "sha1": "c0c08488bfc6f9d7cf9b9cb4d531d4a64e9994fd",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/iconN3.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/iconN3.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · iconN3",
+      "bytes": 6823,
+      "sha1": "64df01751b70393babf9ea4c3652b9cda0a973a8",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/phoneIcon.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/phoneIcon.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · phoneIcon",
+      "bytes": 8630,
+      "sha1": "5bb1dbda977e7781a9e133dd27ed79d2b90f724d",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/qy_icon_more2.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/qy_icon_more2.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · qy_icon_more2",
+      "bytes": 1518,
+      "sha1": "b905848eea0d4327c0a19c0e9aac18aa4e7de952",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/round1_icon.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/round1_icon.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · round1_icon",
+      "bytes": 14276,
+      "sha1": "b0f091d7ea829192069c174ce68d0ece8fca14e5",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/round2_icon.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/round2_icon.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · round2_icon",
+      "bytes": 13057,
+      "sha1": "998f54cb09f83ac9747aed174981f0f4cfeec62c",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/round3_icon.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/round3_icon.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · round3_icon",
+      "bytes": 12749,
+      "sha1": "46eedc4680933dc71868e2d5aa3de47f1c0d2171",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/qy_icon_more.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/qy_icon_more.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · qy_icon_more",
+      "bytes": 1459,
+      "sha1": "9d696bcb10fa495ade1c7e547d3d9358f5db7dcc",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/quanyou_intro_img.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/quanyou_intro_img.jpg",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · quanyou_intro_img",
+      "bytes": 769396,
+      "sha1": "44f3a683752863fdd4e690587d51a8cb5c53dbce",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/qy_slogan.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/qy_slogan.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · qy_slogan",
+      "bytes": 14480,
+      "sha1": "4aeecdfa799a0a955d76a59f97636d444f2be901",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/intro_icon1.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/intro_icon1.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · intro_icon1",
+      "bytes": 3429,
+      "sha1": "600b76832b036f88b930086efb8fb8559cb4e15f",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/intro_icon2.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/intro_icon2.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · intro_icon2",
+      "bytes": 2631,
+      "sha1": "6b1824c0e1c4aa4097f29c87901bc909db3d7447",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/intro_icon3.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/intro_icon3.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · intro_icon3",
+      "bytes": 4420,
+      "sha1": "5a43096b89fb15a8ed2ad3741fc4c89ab79e962a",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/tj_pic3.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/tj_pic3.jpg",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · tj_pic3",
+      "bytes": 238417,
+      "sha1": "ea7c8a44b1955bd2ae1d5605cae9ed97323e8878",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/qw_icon1.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/qw_icon1.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · qw_icon1",
+      "bytes": 2309,
+      "sha1": "3ef8249e5a2d257f79a09c75310017def195a4a5",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/qw_icon1_2.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/qw_icon1_2.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · qw_icon1_2",
+      "bytes": 4930,
+      "sha1": "62668a5137557ce5dbf4bf26e0a08d726392089c",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/qw_icon1_3.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/qw_icon1_3.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · qw_icon1_3",
+      "bytes": 6015,
+      "sha1": "6bc2c8b8d518361c68b76feedfe3c376e21bea50",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/qw_icon1_4.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/qw_icon1_4.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · qw_icon1_4",
+      "bytes": 4763,
+      "sha1": "d0c5728e2ec56290ed4da9c863eccebc0070c93e",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/qw_icon1_5.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/qw_icon1_5.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · qw_icon1_5",
+      "bytes": 4866,
+      "sha1": "fc373ff61dc58ef99cbd57034e92d9af736c2556",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/qw_icon1_6.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/qw_icon1_6.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · qw_icon1_6",
+      "bytes": 4051,
+      "sha1": "0b72a9d31be5dc64bcbb9156411089ff1261ec30",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/qw_icon1_7.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/qw_icon1_7.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · qw_icon1_7",
+      "bytes": 5147,
+      "sha1": "6fb1296d0f996be947faf702873886ed1e93e76d",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/365_bg.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/365_bg.jpg",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · 365_bg",
+      "bytes": 282312,
+      "sha1": "79a5708ad9aa62162db95ecc6e61ff62401523ff",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/01.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/01.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · 01",
+      "bytes": 1956,
+      "sha1": "1d4a18d5d17eb8fbaa0aa46ba4f4f0987f93b8ed",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/fw_icon1.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/fw_icon1.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · fw_icon1",
+      "bytes": 7301,
+      "sha1": "23f379ec84a026aa587c721e7d9137195fb950a3",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/02.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/02.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · 02",
+      "bytes": 2312,
+      "sha1": "9b352b862e68c309a45502deda015170608359e9",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/fw_icon2.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/fw_icon2.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · fw_icon2",
+      "bytes": 6055,
+      "sha1": "9ea2f01b4611f06cc6b302c94ab3855954684a3e",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/03.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/03.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · 03",
+      "bytes": 2254,
+      "sha1": "e62c70031d1ea6a46f6a1f704cbaa1167f16f78b",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/fw_icon3.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/fw_icon3.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · fw_icon3",
+      "bytes": 2515,
+      "sha1": "82f7a36d6be189d0b26af90961306dc5825f2b81",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/honor1.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/honor1.jpg",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · honor1",
+      "bytes": 644091,
+      "sha1": "df5e6e01e5dc17d7fedecbb1d483c5b3a2d9b741",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/honor2.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/honor2.jpg",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · honor2",
+      "bytes": 391777,
+      "sha1": "5847f6804c10706f41d95a83607b42314653c328",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/honor3.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/honor3.jpg",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · honor3",
+      "bytes": 496165,
+      "sha1": "a87c9878b0ad8babc742af7103cc3c9b75a3f475",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/honor4.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/honor4.jpg",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · honor4",
+      "bytes": 347224,
+      "sha1": "dd674990ee04d1f874e85e503448d499972704ca",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/honor5.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/honor5.jpg",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · honor5",
+      "bytes": 421104,
+      "sha1": "311113f9e140e6123b873d0407e1c645118d1b33",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/honor6.jpg",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/honor6.jpg",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · honor6",
+      "bytes": 375609,
+      "sha1": "f02c74cd0bf8f80b4d3c2b1a1de92a5dccb61509",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/xcx.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/xcx.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · xcx",
+      "bytes": 57902,
+      "sha1": "b501459229de39588e3e11c83736f32e3ffb7eb7",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/ewm_hy.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/ewm_hy.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · ewm_hy",
+      "bytes": 40418,
+      "sha1": "21a2733a0a151e1f334878e2419798aecc44b2b7",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/icon01.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/icon01.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · icon01",
+      "bytes": 5782,
+      "sha1": "518417dead359f5b22dc9b7a1be372dabf10622c",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/iconTm.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/iconTm.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · iconTm",
+      "bytes": 4043,
+      "sha1": "a519411c7b296eaf4d7435ac59b8e122fd15cbd8",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/iconjd.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/iconjd.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · iconjd",
+      "bytes": 5950,
+      "sha1": "a4d117491ec09d712475a064af9660e6e9791dae",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/iconDy.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/iconDy.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · iconDy",
+      "bytes": 4722,
+      "sha1": "5c857f5638fce43f25268c105b390c7d51a6caa4",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/dy.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/dy.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · dy",
+      "bytes": 2094,
+      "sha1": "764f83681c956a2ebc78f0fff0c76e6acb0a6d58",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/iconPdd.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/iconPdd.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · iconPdd",
+      "bytes": 4473,
+      "sha1": "c4ef1ae6b73080cbe6ea63f9b0699c43ca3f4521",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/iconWph.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/iconWph.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · iconWph",
+      "bytes": 3775,
+      "sha1": "fcf452458ddd2276a1a85c5f20c2843002a79654",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/iconKs.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/iconKs.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · iconKs",
+      "bytes": 4183,
+      "sha1": "39078dc1ddb4fac283d1d199cceb37a67f371dbd",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/ks.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/ks.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · ks",
+      "bytes": 81838,
+      "sha1": "6f9daf7a67f9343decc375d2e6779b371894dfeb",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/call.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/call.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · call",
+      "bytes": 6922,
+      "sha1": "ba63486da8123e9e1f68128e086626ec895086c5",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/mfx5.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/mfx5.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · mfx5",
+      "bytes": 2515,
+      "sha1": "0a569420ceab8323cbaa3da90490f98387a8abba",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/wxm.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/wxm.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · wxm",
+      "bytes": 39295,
+      "sha1": "7b8d3f358827e789e3754e304133c7cebe7d4cda",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/navIcon1.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/navIcon1.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · navIcon1",
+      "bytes": 4682,
+      "sha1": "6de351cbbb397af24851943a824f238c674eaf67",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/navIcon1_1.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/navIcon1_1.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · navIcon1_1",
+      "bytes": 6879,
+      "sha1": "bf8f21f5e960e4988fbca96af75a0315e409d5bb",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/navIcon2.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/navIcon2.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · navIcon2",
+      "bytes": 5701,
+      "sha1": "8611779c49a84b8ad10f500214a08a987eab61b8",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/navIcon2_1.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/navIcon2_1.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · navIcon2_1",
+      "bytes": 8566,
+      "sha1": "f92e8cf28480777d04d9ae0badf22ba9e3f90e70",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/navIcon3.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/navIcon3.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · navIcon3",
+      "bytes": 5869,
+      "sha1": "3929a367cc52b77ec7ca55a8d0bb1f4b04539349",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/navIcon3_1.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/navIcon3_1.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · navIcon3_1",
+      "bytes": 9579,
+      "sha1": "44451dd3e12c13815b9fc2d90784a4d02caa1a23",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/navIcon4.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/navIcon4.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · navIcon4",
+      "bytes": 6760,
+      "sha1": "553ae709cffe7879e774756e713d77710941020e",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/navIcon4_1.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/navIcon4_1.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · navIcon4_1",
+      "bytes": 12402,
+      "sha1": "6d9800c3b8c16aa1a7aa6513ae4a94e0f9f9475e",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/navIcon5.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/resources/mobile/assets/images/navIcon5.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · navIcon5",
+      "bytes": 10105,
+      "sha1": "363de3a6e558a16bbc6d9fd088a1ee1496b17802",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/01-官网实拍/站内Logo与图标/box.png",
+      "source": "quanyou",
+      "source_url": "https://www.quanyou.com.cn/static/new/images/box.png",
+      "source_page": "https://www.quanyou.com.cn/",
+      "title": "站内素材 · box",
+      "bytes": 60680,
+      "sha1": "ff76ef29095817caa24e5340c2467165665d37da",
+      "license": "全友家居官网素材，版权归全友家居所有；仅作本项目演示与设计参考，不得商用"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-house.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/house.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:house",
+      "bytes": 377,
+      "sha1": "ecb25a73656b7fe42704fd8c20d26979bee034d2",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/03-图标-Iconify/户型与空间/ph-house-bold.svg",
+      "source": "iconify",
+      "source_url": "https://api.iconify.design/ph/house-bold.svg",
+      "source_page": "https://iconify.design/",
+      "title": "户型与空间 · ph:house-bold",
+      "bytes": 404,
+      "sha1": "d50e31605e90e40db929780912dbb58d13f90442",
+      "license": "各图标集合许可不同（Phosphor: MIT / Tabler: MIT）；使用前见 iconify.design 对应集合"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/客厅起居/1571460-客厅-木地板沙发区.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/1571460/",
+      "title": "客厅起居 · 客厅 · 木地板沙发区",
+      "bytes": 222543,
+      "sha1": "30db9e68aaefcbb605f6f44f3e1ab208343a284a",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/客厅起居/1643383-客厅-现代简约.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/1643383/pexels-photo-1643383.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/1643383/",
+      "title": "客厅起居 · 客厅 · 现代简约",
+      "bytes": 214887,
+      "sha1": "fe73f2f45b9fb6286b024c86bbe52878fbeac5f3",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/客厅起居/2724749-客厅-北欧风.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/2724749/pexels-photo-2724749.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/2724749/",
+      "title": "客厅起居 · 客厅 · 北欧风",
+      "bytes": 179787,
+      "sha1": "18bec712365c348857cd72980cad56f640e31332",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/客厅起居/1457842-客厅-灰调布艺沙发.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/1457842/pexels-photo-1457842.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/1457842/",
+      "title": "客厅起居 · 客厅 · 灰调布艺沙发",
+      "bytes": 167541,
+      "sha1": "f7b7332f72a4f4febfd4c6cdb0e59dbd0237bdc7",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/04-照片-Pexels/客厅起居/1918291-客厅-采光通透.jpg",
+      "source": "pexels",
+      "source_url": "https://images.pexels.com/photos/1918291/pexels-photo-1918291.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_page": "https://www.pexels.com/photo/1918291/",
+      "title": "客厅起居 · 客厅 · 采光通透",
+      "bytes": 212797,
+      "sha1": "de2acef8c1c24d3076474abffff09eae4a434d9e",
+      "license": "Pexels 许可（免费商用、无需署名）；署名作者信息见 MANIFEST 的 title"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/宽幅Banner/quanyou-dining-banner-1920x800.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-dining-banner/1920/800",
+      "source_page": "https://picsum.photos/",
+      "title": "宽幅Banner占位 · quanyou-dining",
+      "bytes": 65432,
+      "sha1": "1bd4f7339f6a7526e3a05c1a4c2af0941adba4aa",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/宽幅Banner/quanyou-kids-banner-1920x800.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-kids-banner/1920/800",
+      "source_page": "https://picsum.photos/",
+      "title": "宽幅Banner占位 · quanyou-kids",
+      "bytes": 168901,
+      "sha1": "27e2472b08247db3c99452f253002866cf02ca9d",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/头像/quanyou-living-avatar-128x128.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-living-avatar/128/128",
+      "source_page": "https://picsum.photos/",
+      "title": "头像占位 · quanyou-living",
+      "bytes": 3416,
+      "sha1": "0b9fc05be6ef9b94a3df84735cd8ddc05837569c",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/05-占位图-Picsum/头像/quanyou-bedroom-avatar-128x128.jpg",
+      "source": "picsum",
+      "source_url": "https://picsum.photos/seed/quanyou-bedroom-avatar/128/128",
+      "source_page": "https://picsum.photos/",
+      "title": "头像占位 · quanyou-bedroom",
+      "bytes": 2289,
+      "sha1": "8d43be001f0711e28b1e6006996334696650fda9",
+      "license": "Picsum Photos（取自 Unsplash，占位用；**上线前必须替换为真实素材**）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/家居空间/working-at-home_usrj.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/working-at-home_usrj.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Working at Home",
+      "bytes": 15843,
+      "sha1": "f5fb852cfbdfeed5a1a9dda326f3092a0b6a83ba",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/家居空间/sweet-home_b054.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/sweet-home_b054.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Sweet Home",
+      "bytes": 8363,
+      "sha1": "3cca311a56543c9f7fcf34af94c4cec21f3613c7",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/家居空间/indoor-bike_h658.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/indoor-bike_h658.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Indoor Bike",
+      "bytes": 10113,
+      "sha1": "676f5d010cd24d364c23e1c4ac9f10cb05b5de07",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/家居空间/knocking-on-the-door_vgly.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/knocking-on-the-door_vgly.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Knocking on the Door",
+      "bytes": 4973,
+      "sha1": "819f162f6c7bf274142e91a34d9fe233a0493a90",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/家居空间/painting-the-room_xuf4.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/painting-the-room_xuf4.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Painting the Room",
+      "bytes": 26720,
+      "sha1": "9ee2d508b31de383dbe52214991c4e0f606434ff",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/家居空间/starry-window_yiga.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/starry-window_yiga.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Starry Window",
+      "bytes": 9912,
+      "sha1": "8ad39d2ad8d7cec820f7a97ca1ca7cf263d1dfac",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/家居空间/home-cameras_hbw3.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/home-cameras_hbw3.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Home Cameras",
+      "bytes": 16424,
+      "sha1": "eaf7dad874f4e8b3dccecde3e3ff7990bd4c9ff6",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/家居空间/relaxing-outdoors_s653.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/relaxing-outdoors_s653.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Relaxing Outdoors",
+      "bytes": 10915,
+      "sha1": "c3bd5963722ea9729456d99a7c1a3459b8aad8b2",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/设计与户型/design-critique_anz2.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/design-critique_anz2.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Design Critique",
+      "bytes": 9006,
+      "sha1": "85804012462a14b47d7a7cc8e3a93dd98049ea00",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/设计与户型/idea-to-plan_jnei.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/idea-to-plan_jnei.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Idea to Plan",
+      "bytes": 16583,
+      "sha1": "16da81f163f80725e835a14d7357c3ffcecbc388",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/设计与户型/plants_md5c.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/plants_md5c.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Plants",
+      "bytes": 16314,
+      "sha1": "49f3477ebdf87ef701aaebaf89ac89735aad4ffe",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/设计与户型/design-components_c2hs.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/design-components_c2hs.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Design Components",
+      "bytes": 11245,
+      "sha1": "810e4329204736bf101d7512b5bf685710c87c29",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/设计与户型/airplane_do9t.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/airplane_do9t.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Airplane",
+      "bytes": 5915,
+      "sha1": "99fa21aaf6771ae691ec6cfda6454b4349339224",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/设计与户型/business-plan_zrf7.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/business-plan_zrf7.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Business Plan",
+      "bytes": 6545,
+      "sha1": "71455cb9f3b491c2f22630d7ed57ff258eacf729",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/设计与户型/design-tools_wgpz.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/design-tools_wgpz.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Design Tools",
+      "bytes": 22371,
+      "sha1": "6370410444b2fd891182d8169849dd89aaf1c3d3",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/设计与户型/reviewing-design_payz.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/reviewing-design_payz.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Reviewing Design",
+      "bytes": 6681,
+      "sha1": "46fc05c3e6fe6bb48da4ef7c186fd17bb98ad2f4",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/预算与报价/transfer-money_5wd8.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/transfer-money_5wd8.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Transfer Money",
+      "bytes": 8366,
+      "sha1": "ecd203e4d0283f31a85051b28f2501d021e3c9ea",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/预算与报价/receipt_oemh.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/receipt_oemh.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Receipt",
+      "bytes": 5839,
+      "sha1": "8c70cc10f3af4df1f52a83746d0db9ef1f9e4861",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/预算与报价/data-transfer_hz9g.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/data-transfer_hz9g.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Data Transfer",
+      "bytes": 4340,
+      "sha1": "1b509a18e4216be472a5f70708e40e73566ebc5d",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/预算与报价/enter-payment-info_k1yw.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/enter-payment-info_k1yw.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Enter Payment Info",
+      "bytes": 9422,
+      "sha1": "5f44990812421ba486e06cbcf408ef96fbece33b",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/预算与报价/budgeting_klon.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/budgeting_klon.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Budgeting",
+      "bytes": 12650,
+      "sha1": "56fbd74d37783400555c11339b9576ddedde0d69",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/预算与报价/budget-adjustments_7fj9.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/budget-adjustments_7fj9.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Budget Adjustments",
+      "bytes": 8971,
+      "sha1": "c061d59ec4f980d18676e2829f4d00a0eb4aa3e4",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/预算与报价/empty-wallet_j0kn.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/empty-wallet_j0kn.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Empty Wallet",
+      "bytes": 7070,
+      "sha1": "45fcf251066fa47f4f075cea85f3432628b37eb4",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/预算与报价/printing-invoices_g6c9.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/printing-invoices_g6c9.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Printing invoices",
+      "bytes": 22595,
+      "sha1": "ad30bd8f903686176b46e3ee6ce3f0c463c291f1",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/审查与风控/blocked_ldel.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/blocked_ldel.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Blocked",
+      "bytes": 10105,
+      "sha1": "1fc5d9d65e31f21b0c29bcaf53f1ac81f775df60",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/审查与风控/ai-document-analysis_1sq9.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/ai-document-analysis_1sq9.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "AI Document Analysis",
+      "bytes": 7626,
+      "sha1": "36a90c21594a26ff40710d7028fa06252cfed48a",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/审查与风控/document-review_lfir.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/document-review_lfir.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Document Review",
+      "bytes": 5622,
+      "sha1": "de8740c1e09c8023af795c6554fd3e04f33120de",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/审查与风控/online-security_1o24.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/online-security_1o24.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Online Security",
+      "bytes": 9632,
+      "sha1": "d7f0072eb3ca68f0b0571a36811222b71b3a54e2",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/审查与风控/person-search_wuzp.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/person-search_wuzp.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Person Search",
+      "bytes": 18635,
+      "sha1": "8639ee5704c8b317d8bed6e0766b2906e3738877",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/审查与风控/negative-review_6l58.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/negative-review_6l58.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Negative Review",
+      "bytes": 8948,
+      "sha1": "2ce664e94448f5fe9a4a589456e0211b3a73e0d9",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/审查与风控/search-results_reis.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/search-results_reis.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Search Results",
+      "bytes": 2579,
+      "sha1": "34c4a67b8bdec4ba70490f6d5e7501b8c200ed43",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/审查与风控/searching_pqji.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/searching_pqji.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Searching",
+      "bytes": 7877,
+      "sha1": "9902db68b14185eb055e7b6b6e5538e300053d6b",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/AI与数据/data-segmentation_3n3n.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/data-segmentation_3n3n.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Data Segmentation",
+      "bytes": 9479,
+      "sha1": "637053ae635cc8baaa601ff59b0bc6c2e352c8c8",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/AI与数据/generating-response_y0h5.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/generating-response_y0h5.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Generating Response",
+      "bytes": 11228,
+      "sha1": "1b9586c2089df0661f6e3366f3e412d78722ed7f",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/AI与数据/work-emails_3qkc.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/work-emails_3qkc.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Work Emails",
+      "bytes": 23265,
+      "sha1": "e9e76370695f0f37d344d393039ef804c91e7885",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/AI与数据/the-data_hbaz.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/the-data_hbaz.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "The Data",
+      "bytes": 5723,
+      "sha1": "58e84ca78c4d55b48d70e0aa600b497e117a3f3f",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/AI与数据/mail-sent_dagx.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/mail-sent_dagx.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Mail Sent",
+      "bytes": 2589,
+      "sha1": "16ab3232116bb260d2ec8a9a94ecb5dfb436fe10",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/AI与数据/ai-context_mc3s.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/ai-context_mc3s.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "AI Context",
+      "bytes": 14271,
+      "sha1": "9457cd428c2b9fa2e006bdbd6c339c4d83ebba95",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/AI与数据/monitoring-data_twub.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/monitoring-data_twub.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Monitoring Data",
+      "bytes": 34222,
+      "sha1": "841526e046e4e73e34f0b8ffe5307009f88cf1f6",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/AI与数据/private-data_934y.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/private-data_934y.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Private Data",
+      "bytes": 8987,
+      "sha1": "d13b0f839169f884dcc606fdeb673e8ad0b46fcb",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/拍摄与上传/image-dropzone_zdre.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/image-dropzone_zdre.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Image Dropzone",
+      "bytes": 3200,
+      "sha1": "50f7ada3a9ed8ed61dd11f295345a68279c5ae4c",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/拍摄与上传/vacation-photos_070r.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/vacation-photos_070r.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Vacation Photos",
+      "bytes": 15216,
+      "sha1": "04bfed333371f646bcfd6d32a6d5e3e2b7ecef7b",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/拍摄与上传/photo-crop_3zsg.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/photo-crop_3zsg.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Photo Crop",
+      "bytes": 7108,
+      "sha1": "29f420fbd5457843880709434be7ff2bba850e75",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/拍摄与上传/photo_1cl2.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/photo_1cl2.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Photo",
+      "bytes": 2967,
+      "sha1": "11fa94481d46fd4f62cc32fe3542bc14d82f09e1",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/拍摄与上传/profile_9xdn.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/profile_9xdn.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Profile",
+      "bytes": 11714,
+      "sha1": "37c943f74199b8ab6c31d1cf2336bb52f503e651",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/拍摄与上传/file-manager_ivlr.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/file-manager_ivlr.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "File Manager",
+      "bytes": 4021,
+      "sha1": "eda83e988df54a5357c6a422bda65035fab213f6",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/拍摄与上传/image-files_exha.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/image-files_exha.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Image Files",
+      "bytes": 4346,
+      "sha1": "0b606949054837ef36842417a963cb8cb03a608f",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/拍摄与上传/markdown-file_io4x.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/markdown-file_io4x.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Markdown File",
+      "bytes": 5362,
+      "sha1": "d00472f374ca3d231eb490e9b6894bc700ef5cb5",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/人与沟通/team-permissions_1lrk.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/team-permissions_1lrk.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Team Permissions",
+      "bytes": 15911,
+      "sha1": "0730d0b42813a0f3570d12ee8c66406def96d5de",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/人与沟通/live-support_9y6n.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/live-support_9y6n.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Live Support",
+      "bytes": 10014,
+      "sha1": "55ad4637d1cf85b2c7a4fe5af6d46cd42e1192aa",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/人与沟通/team_mmq0.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/team_mmq0.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Team",
+      "bytes": 9874,
+      "sha1": "77251c453283795a5e6d5a44d9249a482b1b49e7",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/人与沟通/content-team_1p7b.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/content-team_1p7b.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Content Team",
+      "bytes": 11559,
+      "sha1": "7edf46b416fbfcd8dd0f369d671d958707836cf7",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/人与沟通/conference-call_jgi5.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/conference-call_jgi5.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Conference Call",
+      "bytes": 10865,
+      "sha1": "65aaa5d1d21478e020df5f3303974063117d132a",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/人与沟通/meet-the-team_fau8.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/meet-the-team_fau8.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Meet the Team",
+      "bytes": 13270,
+      "sha1": "9f1c10f51d7117ea4be63cd0c05c6cc1e9a2ae6a",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/人与沟通/text-messages_p6bk.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/text-messages_p6bk.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Text Messages",
+      "bytes": 16706,
+      "sha1": "af4d9ef5c078534c704b69386183d8ca906a77d3",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    },
+    {
+      "path": "ui参考/02-插画-unDraw/人与沟通/team-assignment_lzot.svg",
+      "source": "undraw",
+      "source_url": "https://cdn.undraw.co/illustration/team-assignment_lzot.svg",
+      "source_page": "https://undraw.co/illustrations",
+      "title": "Team Assignment",
+      "bytes": 11778,
+      "sha1": "a90d5226a080e244ed6474cccfad7da60f252117",
+      "license": "unDraw 开放许可（可商用、可修改、无需署名）"
+    }
+  ],
+  "skipped": [],
+  "summary": {
+    "total": 396,
+    "by_source": {
+      "iconify": 94,
+      "quanyou": 171,
+      "pexels": 35,
+      "picsum": 40,
+      "undraw": 56
+    },
+    "total_mb": 44.4,
+    "skipped": 0
+  }
+}

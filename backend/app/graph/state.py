@@ -101,6 +101,12 @@ class HomeDecoState(TypedDict, total=False):
     budget_grades: list[str]
     quanyou_priority: bool
 
+    # ══ 图片质量预检（AC-27）═══════════════════════════════
+    # 由 `precheck_image` 节点写入（解析链路的第一跳）。
+    # 不合格时该节点直接抛错，本字段不会落地 —— 它只在通过时用于
+    # 向接口层/前端回传"这张图多清晰、有没有提醒"。
+    precheck: dict[str, Any] | None
+
     # ══ A-01 户型解析 ═════════════════════════════════════
     layout: dict[str, Any] | None
     layout_id: str
@@ -163,6 +169,7 @@ def initial_state(**overrides: Any) -> HomeDecoState:
         "styles": ["modern", "nordic", "chinese"],
         "budget_grades": ["economy", "medium", "high"],
         "quanyou_priority": True,
+        "precheck": None,
         "layout": None,
         "layout_id": "",
         "diagnosis": None,

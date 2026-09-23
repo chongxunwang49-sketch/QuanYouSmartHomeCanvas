@@ -250,6 +250,59 @@ def _build_checkpointer():
 
 
 # ══════════════════════════════════════════════════════════════════
+# 图片质量预检节点（AC-27）
+# ══════════════════════════════════════════════════════════════════
+
+
+class PrecheckError(RuntimeError):
+    """
+    图片未通过质量预检。
+
+    单独一个类型是为了让上层能把 `advice`（给人看的那句话）**原样**交给用户，
+    而不是套上 `PrecheckError: ` 这种类名前缀 —— 用户要读的是
+    「图片分辨率过低，请换一张更清晰的」，不是异常类名。
+    """
+
+    def __init__(self, advice: str, result: Any) -> None:
+        self.advice = advice
+        self.result = result
+        super().__init__(advice)
+
+
+def precheck_image(state: HomeDecoState) -> dict[str, Any]:
+    """
+    解析链路的第一跳：**本地**图片质量预检。
+
+    ══════════════════════════════════════════════════════════════════
+    这个节点不是装饰 —— 它兑现两件事
+    ══════════════════════════════════════════════════════════════════
+    1. **AC-27**：不合格图片在进入 LLM 前被拒，Token 消耗为 0。
+       不合格时直接抛错，`parse_layout` 一次都不会被调用。
+
+    2. 让 `prechecking` 这个阶段**变成真的**。在此之前，任务启动时会
+       无条件写一个 `prechecking`（"正在检查图片质量…"），而代码里
+       根本没有检查动作 —— 界面在撒谎。现在它是一次真实的节点执行，
+       阶段由 `_NODE_PHASE` 从节点名推导（见 api/tasks.py），
+       和其它阶段一样是数据驱动的。
+
+    纯计算，无 IO、无网络、无模型。失败也不该拖垮整条链 ——
+    预检自身的异常在 `precheck_ref` 里已被兜成"放行 + 提醒"。
+    """
+    from ..services.image.precheck import precheck_ref
+
+    result = precheck_ref(str(state.get("image_ref") or ""))
+
+    if not result.ok:
+        logger.warning(f"[precheck] 图片未通过预检：{result.rejections}")
+        raise PrecheckError(result.advice, result)
+
+    if result.warnings:
+        logger.info(f"[precheck] 通过，但有提醒：{result.warnings}")
+
+    return {"precheck": result.to_dict()}
+
+
+# ══════════════════════════════════════════════════════════════════
 # 条件路由
 # ══════════════════════════════════════════════════════════════════
 
@@ -607,8 +660,9 @@ def build_graph(
             timeout=agent.timeout,
         )
 
-    # 汇总节点是纯函数，不走 BaseAgent —— 它没有超时熔断的必要（无 IO），
-    # 内部的 try/except 已覆盖异常隔离。
+    # 这两个是纯函数节点，不走 BaseAgent —— 它们没有超时熔断的必要
+    # （预检是本地计算，汇总是内存操作），内部的 try/except 已覆盖异常隔离。
+    builder.add_node("precheck_image", precheck_image)
     builder.add_node("aggregate_plans", aggregate_plans)
 
     # ── 连边 ──────────────────────────────────────────────
@@ -626,7 +680,12 @@ def build_graph(
         # 已持有 layout，跳过视觉解析这一步（见 build_graph 的 stages 说明）
         builder.add_edge(START, "diagnose_layout")
     else:
-        builder.add_edge(START, "parse_layout")
+        # 解析链路的第一跳是**本地**图片预检（AC-27）。
+        # 不合格的图在这里就断了，`parse_layout` 一次都不会被调用 ——
+        # Token 消耗为 0。这也让 `prechecking` 阶段从"写死的假进度"
+        # 变成一次真实的节点执行，见 precheck_image 的说明。
+        builder.add_edge(START, "precheck_image")
+        builder.add_edge("precheck_image", "parse_layout")
 
         # 解析失败就没有可诊断的数据，直接结束而不是让 A-02 抛错。
         builder.add_conditional_edges(
@@ -697,7 +756,7 @@ def reset_compiled_graphs() -> None:
 
 __all__ = [
     "build_graph", "get_compiled_graph", "reset_compiled_graphs", "get_agent", "NODES",
-    "build_branch_specs", "aggregate_plans",
+    "build_branch_specs", "aggregate_plans", "precheck_image", "PrecheckError",
     "DEFAULT_BRANCH_PAIRS", "MAX_PLAN_BRANCHES", "MIN_PLANS_FOR_COMPARISON",
     "BRANCH_ARTIFACTS",
 ]

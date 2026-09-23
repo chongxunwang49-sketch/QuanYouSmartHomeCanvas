@@ -25,6 +25,7 @@ from backend.app.agents.space_planner import SpacePlannerAgent
 from backend.app.core.llm_client import LLMResult
 from backend.app.graph import workflow
 from backend.app.graph.state import initial_state
+from tests.helpers import floorplan_data_uri
 from backend.app.schemas.budget import BudgetNarrative
 from backend.app.schemas.layout import LayoutDiagnosis, LayoutSchema
 from backend.app.schemas.material import MaterialPlan
@@ -209,7 +210,7 @@ class _DispatchLLM:
 def _state(**over) -> dict[str, Any]:
     return initial_state(
         task_id="t-wf",
-        image_ref="data:image/png;base64,AAAA",
+        image_ref=floorplan_data_uri(),
         **over,
     )
 

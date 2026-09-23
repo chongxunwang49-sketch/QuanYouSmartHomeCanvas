@@ -1,0 +1,201 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ══════════════════════════════════════════════════════════════════
+   全局基调
+   ══════════════════════════════════════════════════════════════════ */
+@layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    @apply bg-warm-bg text-wood-dark font-sans antialiased;
+    /* 设计稿全站禁用纯黑：文字是 #2C2418 暖深咖，选中高亮也是叶绿的 20% */
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* 数字统一用等宽 —— 报价、面积、工期这些对齐了才看得下去。
+     设计稿里所有数值都是 font-mono，这里给个兜底的默认。 */
+  .num {
+    @apply font-mono tabular-nums;
+  }
+
+  ::selection {
+    @apply bg-botanical/20 text-botanical;
+  }
+}
+
+@layer components {
+  /* ── 卡片：设计稿的统一容器语言 ── */
+  .card {
+    @apply rounded-2xl bg-white border border-warm-border shadow-sm;
+  }
+  .card-hover {
+    @apply transition-all duration-200 hover:shadow-md;
+  }
+  /* 推荐方案卡：加粗叶绿边 + 绿色调投影，把它从兄弟卡里"抬"起来 */
+  .card-featured {
+    @apply rounded-2xl bg-white border-2 border-botanical shadow-botanical;
+  }
+
+  /* ── 按钮 ── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl text-[13px] font-semibold
+           transition-all duration-150 active:scale-[0.98] disabled:opacity-45
+           disabled:cursor-not-allowed disabled:active:scale-100;
+  }
+  .btn-primary {
+    @apply btn bg-botanical text-white shadow-sm hover:bg-botanical-hover;
+  }
+  .btn-wood {
+    @apply btn bg-wood text-white shadow-sm hover:bg-wood/90;
+  }
+  .btn-ghost {
+    @apply btn bg-white text-wood-dark border border-warm-border shadow-xs
+           hover:border-wood/30 hover:bg-warm-sidebar;
+  }
+  .btn-soft {
+    @apply btn bg-botanical-light text-botanical border border-botanical/30
+           hover:bg-botanical hover:text-white;
+  }
+
+  /* ── 标签 ── */
+  .tag {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px]
+           border border-warm-border bg-warm-sidebar text-wood font-medium;
+  }
+  .tag-botanical {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px]
+           border border-botanical/20 bg-botanical-light text-botanical font-semibold;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px]
+           border border-botanical/20 bg-botanical-light text-botanical font-semibold;
+  }
+
+  /* ── 表单 ── */
+  .field {
+    @apply w-full rounded-xl border border-warm-border bg-white text-[13px] text-wood-dark
+           placeholder:text-wood-muted/60 focus:outline-none focus:ring-2
+           focus:ring-botanical/20 focus:border-botanical transition-all;
+  }
+
+  /* ── 侧栏导航项 ── */
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium
+           text-wood-muted transition-all duration-150 hover:bg-white/60 hover:text-wood-dark;
+  }
+  .nav-item-active {
+    @apply flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-semibold
+           bg-botanical-light text-wood border border-botanical/20 shadow-xs;
+  }
+
+  /* ── 细滚动条：4px，颜色取自设计稿 ── */
+  .scroll-thin::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  .scroll-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: #d3c4ba;
+    border-radius: 9999px;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb:hover {
+    background: #81756d;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Element Plus 主题覆盖
+
+   需求文档指定用 Element Plus（企业级组件生态），但它的默认皮肤是
+   蓝紫科技风 —— 直接放进来会和整套 Botanical Warmth 打架。
+   所以这里把它的 CSS 变量整体挪到我们的色板上，而不是逐个组件去覆盖：
+   改变量是一处生效，改组件样式是十处，且升级 Element 时会全崩。
+   ══════════════════════════════════════════════════════════════════ */
+:root {
+  --el-color-primary: #4a7c59;
+  --el-color-primary-light-3: #6f9a7c;
+  --el-color-primary-light-5: #94b8a0;
+  --el-color-primary-light-7: #b9d5c3;
+  --el-color-primary-light-8: #cce0d3;
+  --el-color-primary-light-9: #e8f0e5;
+  --el-color-primary-dark-2: #3f6d4d;
+
+  --el-color-success: #4a7c59;
+  --el-color-warning: #c9a961;
+  --el-color-danger: #c85a48;
+  --el-color-error: #c85a48;
+  --el-color-info: #7a6e5e;
+
+  --el-text-color-primary: #2c2418;
+  --el-text-color-regular: #4f453e;
+  --el-text-color-secondary: #7a6e5e;
+  --el-text-color-placeholder: #a89e91;
+
+  --el-border-color: #ede8e0;
+  --el-border-color-light: #efeae2;
+  --el-border-color-lighter: #f2ede6;
+  --el-border-color-extra-light: #f5f2ec;
+  --el-fill-color-blank: #ffffff;
+  --el-fill-color-light: #f5f2ec;
+  --el-fill-color-lighter: #faf8f3;
+  --el-bg-color: #ffffff;
+  --el-bg-color-page: #faf8f3;
+  --el-bg-color-overlay: #ffffff;
+
+  --el-border-radius-base: 12px;
+  --el-border-radius-small: 8px;
+  --el-font-family: 'Manrope', 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+
+  /* 阴影同样带暖色调，不用 Element 默认的中性黑 */
+  --el-box-shadow-light: 0 1px 3px rgba(44, 36, 24, 0.06);
+  --el-box-shadow: 0 4px 12px rgba(44, 36, 24, 0.08);
+}
+
+/* 表格 / 抽屉 / 弹窗跟随色板 */
+.el-table {
+  --el-table-border-color: #efeae2;
+  --el-table-header-bg-color: #f5f2ec;
+  --el-table-header-text-color: #7a6e5e;
+  --el-table-row-hover-bg-color: rgba(245, 242, 236, 0.6);
+}
+.el-drawer__header {
+  margin-bottom: 0;
+  padding: 20px;
+  border-bottom: 1px solid #ede8e0;
+  background: rgba(245, 242, 236, 0.8);
+  color: #2c2418;
+}
+.el-dialog {
+  border-radius: 16px;
+  border: 1px solid #ede8e0;
+}
+.el-upload-dragger {
+  background: #ffffff;
+  border: 1px dashed #d3c4ba;
+  border-radius: 16px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.el-upload-dragger:hover {
+  border-color: #4a7c59;
+  background: #f3f8f1;
+}
+
+/* 过渡 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}

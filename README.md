@@ -48,14 +48,16 @@
 - ✅ MCP Server —— `parse_house_layout` 可被外部 MCP 客户端调用
 - ✅ **AI 出图基准跑通** —— SD1.5 + ControlNet @512，连续 10/10 张不 OOM
 - ✅ **FastAPI 接口层** —— 6 个接口，异步任务 + 语义化进度轮询（`/docs` 可交互）
-- ✅ **481 个自动化测试全绿**（37s，全程不联网）
+- ✅ **Vue3 前端** —— 8 个页面，严格按用户提供的设计系统实现（见下）
+- ✅ **图片质量预检**（AC-27）—— 本地零 Token 拦下不合格图片，`prechecking` 阶段是真的
+- ✅ **505 个自动化测试全绿**（31s，全程不联网）
 
 **未开始**
 
-- ⬜ 前端（Vue3 + Element Plus）—— 后端接口已就绪，可直接对接
-- ⬜ 矢量图渲染与热区（M5）
+- ⬜ 矢量图渲染与热区（M5）—— 图片上的材质热点要等真实热区坐标
 - ⬜ 国标语料（GB 50327 / GB 18580 / GB-T 39600 摘要）—— 让合规类结论有法条可引
 - ⬜ 数据库落库（目前户型暂存在内存 + Redis，进程重启即丢）
+- ⬜ M1 认证 —— **主动跳过**，单机演示系统不对外暴露（前端"用户管理"页如实标注未实现）
 
 ### 真实链路一次完整跑通（`scripts/e2e_smoke.py`）
 
@@ -180,7 +182,7 @@ $PY -m mcp_servers.parse_house_layout
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ 接入层  Vue3 + TypeScript + Element Plus（规划中）          │
+│ 接入层  Vue3 + TypeScript + Tailwind + Element Plus         │
 └─────────────────────────┬──────────────────────────────────┘
 ┌─────────────────────────▼──────────────────────────────────┐
 │ 服务层  FastAPI（异步） + LangGraph 状态机                  │
@@ -204,7 +206,9 @@ $PY -m mcp_servers.parse_house_layout
 ```
 START
   │
-parse_layout        A-01 多模态解析（质量预检 + 能力匹配降级）
+precheck_image      本地图片质量预检（零 Token，AC-27）
+  │  不合格 => 直接失败，A-01 一次都不会被调用
+parse_layout        A-01 多模态解析（含能力匹配降级）
   │  条件路由：无数据 / 降级 => 短路 END
 diagnose_layout     A-02 五维诊断
   │  条件路由：不支撑方案生成 => 短路 END
@@ -316,13 +320,35 @@ scripts/       e2e_smoke.py        真实链路端到端（会花钱，慎跑）
                bench_image.py     M0 出图基准（放行门槛）
                warmup.py          演示前预热（必须，避免 40s 冷启动）
                download_models.py / fetch_sd15_files.py
+frontend/src/
+  api/         client.ts（拆信封 / 错误分流 / trace_id）· types.ts
+  composables/ useTaskPolling.ts                  ← 轮询节奏（需求文档 2.2.4）
+  stores/      task.ts（任务台账）· health.ts（依赖状态）
+  utils/       toast.ts                           ← 全项目唯一的 Element Plus 接触点
+  components/  AppSidebar · AppHeader · AppIcon · PlanCard · PlanDrawer
+               DiffMatrix · PhaseProgress · DegradedNotice · EmptyState
+  views/       工作台 · 户型解析 · 方案生成 · 避坑审查
+               材料价格 · 知识库 · 数据分析 · 用户管理
+  assets/      精选素材（图标 / 案例图 / 照片 / 插画）
+  tailwind.config.js                              ← 设计令牌的唯一落点
 skills/        Skill 文档（Agent 的 System Prompt + 边界定义）
-tests/         481 个测试（conftest.py 有网络绊线，禁止测试打真实 API）
+tests/         505 个测试（conftest.py 有网络绊线，禁止测试打真实 API）
+ui参考/        设计稿与素材库（**素材不入库**，见 .gitignore；采集脚本可重建）
 docs/          非代码文档（与功能文件分开存放）
   需求/         需求文档.md          2400+ 行需求与决策记录（含 4 轮修订说明）
   参考/         开源项目链接.md       开源项目逐条核实清单
   面试/         面试亮点.md          可讲事件与追问预案
 ```
+
+### 前端怎么跑
+
+```bash
+cd frontend && npm install && npm run dev     # http://localhost:5173
+# 另开一个终端，在仓库根目录：
+python -m uvicorn backend.app.main:app --port 8000
+```
+
+设计与工程说明见 [`frontend/README.md`](frontend/README.md)。
 
 ---
 

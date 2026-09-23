@@ -534,3 +534,60 @@ class TestGraphStages:
 
         assert out["risk_review"] is not None
         assert [t["agent"] for t in out["trace"]] == ["A-06"]
+
+
+class TestPhaseWording:
+    """
+    阶段措辞要跟**用户正在等的那件事**对上。
+
+    需求文档 2.2.4 的核心不是"显示进度"，是「用户看到的是正在做什么」。
+    同一个 `review_risks` 节点在两种语境下含义完全不同：
+      · 独立跑报价单审查 —— 用户在看一份合同
+      · 方案生成链内部审查 —— 用户在等方案
+
+    实测踩过：走报价单审查时，界面全程显示「正在生成装修方案…」。
+    用户看的是合同，却被告知系统在生成方案。
+    """
+
+    def test_审查任务的措辞不是生成方案(self):
+        from backend.app.api.tasks import _phase_for
+        from backend.app.core.redis_client import PHASE_TEXT
+
+        phase = _phase_for("review_risks", "review")
+        assert phase == "reviewing", f"报价单审查拿到了 {phase!r}"
+        assert PHASE_TEXT[phase] == "正在审查报价单…"
+        # 最关键的一条：不能说"在生成方案"
+        assert "方案" not in PHASE_TEXT[phase]
+
+    def test_方案链内的审查仍然说生成方案(self):
+        """同一个节点在 generate 语境下不该被改成"审查报价单"。"""
+        from backend.app.api.tasks import _phase_for
+        from backend.app.core.redis_client import PHASE_TEXT
+
+        phase = _phase_for("review_risks", "generate")
+        assert phase == "planning"
+        assert PHASE_TEXT[phase] == "正在生成装修方案…"
+
+    def test_每个节点的每个任务类型都有文案(self):
+        """
+        穷举一遍，防止将来加了节点却忘了给文案 ——
+        那种情况下 `PHASE_TEXT.get(phase, phase)` 会把英文 key 原样吐给前端，
+        而需求文档明确告诉前端"不必自己维护映射表"，前端没有任何机会发现。
+        """
+        from backend.app.api.tasks import _NODE_PHASE, _phase_for
+        from backend.app.core.redis_client import PHASE_TEXT
+
+        for node in _NODE_PHASE:
+            for kind in ("parse", "generate", "review"):
+                phase = _phase_for(node, kind)  # type: ignore[arg-type]
+                if phase is None:
+                    continue
+                assert phase in PHASE_TEXT, f"{node}/{kind} -> 未登记阶段 {phase!r}"
+                assert PHASE_TEXT[phase].strip(), f"{phase} 文案为空"
+
+    def test_阶段都有进度参考值(self):
+        """`PHASE_PROGRESS` 缺项时前端进度条会跳回 0，比不动更让人困惑。"""
+        from backend.app.core.redis_client import PHASE_PROGRESS, PHASE_TEXT
+
+        missing = [p for p in PHASE_TEXT if p not in PHASE_PROGRESS]
+        assert not missing, f"以下阶段没有 progress 参考值：{missing}"

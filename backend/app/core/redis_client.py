@@ -58,7 +58,7 @@ TaskType = Literal["parse", "generate"]
 
 Phase = Literal[
     "queued", "prechecking", "analyzing", "detecting_rooms",
-    "extracting_dimensions", "diagnosing", "planning",
+    "extracting_dimensions", "diagnosing", "planning", "reviewing",
     "finalizing", "done", "degraded",
 ]
 
@@ -71,6 +71,16 @@ PHASE_TEXT: dict[str, str] = {
     "extracting_dimensions": "正在提取尺寸与朝向…",
     "diagnosing": "正在生成户型诊断…",
     "planning": "正在生成装修方案…",
+    # ⚠️ `reviewing` 与 `planning` 是**分开的两个阶段**，不能合并。
+    #
+    # 两者对应的是同一个节点 `review_risks`，但语境不同：
+    #   · 独立跑报价单审查时 —— 用户在看一份合同，该说"正在审查报价单"
+    #   · 方案生成链内部审查时 —— 用户在等方案，说"正在生成装修方案"才对
+    #
+    # 实测踩过：报价单审查全程显示"正在生成装修方案…"。用户看的是一份合同，
+    # 界面却说在生成方案 —— 这恰恰是 2.2.4 最在意的那件事
+    # （「用户看到的是正在做什么」）。
+    "reviewing": "正在审查报价单…",
     "finalizing": "即将完成…",
     "done": "完成",
     "degraded": "已完成（降级模式）",
@@ -80,6 +90,7 @@ PHASE_TEXT: dict[str, str] = {
 PHASE_PROGRESS: dict[str, int] = {
     "queued": 0, "prechecking": 5, "analyzing": 15, "detecting_rooms": 40,
     "extracting_dimensions": 65, "diagnosing": 85, "planning": 60,
+    "reviewing": 45,
     "finalizing": 95, "done": 100, "degraded": 100,
 }
 

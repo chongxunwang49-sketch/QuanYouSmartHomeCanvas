@@ -1,4 +1,32 @@
-"""pytest 根配置：确保 `backend` / `mcp_servers` 可作为顶层包导入。"""
+"""
+pytest 根配置：确保 `backend` / `mcp_servers` 可作为顶层包导入。
+
+═══════════════════════════════════════════════════════════════════
+为什么 pytest.ini 里不能有中文
+═══════════════════════════════════════════════════════════════════
+`pytest.ini` 是 **iniconfig 按 locale 编码**读的，不是按 UTF-8 读的。
+中文 Windows 的 locale 是 cp936，于是只要那个文件里出现一个中文字符，
+`pytest` 就在**解析配置阶段**崩掉：
+
+    UnicodeDecodeError: 'gbk' codec can't decode byte 0x80 in position 175
+
+这个报错栈全在 iniconfig 内部，跟被测代码毫无关系，非常难往"配置文件编码"
+上想。而且它是**环境相关**的：UTF-8 locale 的机器上完全正常，换一台中文
+Windows 就复现 —— 属于最难查的那类 bug。
+
+所以约定：**`pytest.ini` 保持纯 ASCII，中文说明一律放这里。**
+
+对应的两条配置为什么长那样，记在这儿：
+
+· `addopts` 里的 `-m "not integration"` **必须留着**。在 `[markers]` 里声明
+  只等于"登记了这个标记"，并不等于"默认不跑"。少了这一条，日常跑一次
+  `pytest` 会**静默地**打真实 DeepSeek API —— 慢、花钱，而且测试结果从此
+  依赖网络。
+
+· `asyncio_mode = auto` 让 `async def test_xxx` 直接可跑，不必每个都挂
+  `@pytest.mark.asyncio`。接口层测试要轮询后台任务，同步写法只能靠 sleep
+  硬等，很难写对。
+"""
 
 from __future__ import annotations
 
@@ -162,3 +190,33 @@ def stub_knowledge(monkeypatch):
 
     monkeypatch.setattr(retriever, "search_many", _stub)
     return _stub
+
+
+# ══════════════════════════════════════════════════════════════════
+# 测试用户型图
+# ══════════════════════════════════════════════════════════════════
+
+
+@pytest.fixture(scope="session")
+def floorplan_bytes() -> bytes:
+    """
+    一张**能通过图片预检**的合成户型图（AC-27）。
+
+    为什么不能再用 `image_ref="data:image/png;base64,AAAA"` 这种占位值：
+    解析链路的第一跳现在是真实的图片预检，占位值会被它正确地拦下来 ——
+    于是用例挂在预检上，而不是挂在它真正想测的那件事上。
+
+    实现在 `tests/helpers.py`：那里的函数是普通函数，**模块级的 `_state()`
+    之类的辅助函数也能用**，而 fixture 不行。
+    """
+    from tests.helpers import floorplan_png
+
+    return floorplan_png()
+
+
+@pytest.fixture(scope="session")
+def floorplan_data_uri() -> str:
+    """上面那张图的 data URI 形式 —— 可直接塞进 `image_ref`。"""
+    from tests.helpers import floorplan_data_uri as _uri
+
+    return _uri()

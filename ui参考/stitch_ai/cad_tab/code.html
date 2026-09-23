@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&amp;display=swap" rel="stylesheet"/>
+<style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        "nature-bg": "#FAF8F3",
+        "sidebar-bg": "#F5F2EC",
+        "wood-brown": "#6B4F3A",
+        "wood-dark": "#2C2418",
+        "wood-muted": "#7A6E5E",
+        "leaf-green": "#4A7C59",
+        "leaf-green-light": "#E8F0E5",
+        "warm-gold": "#C9A961",
+        "card-border": "#EDE8E0",
+        "line-border": "#EFEAE2",
+        "outline-warm": "#D8D0C5"
+      },
+      fontFamily: {
+        body: ["Manrope", "system-ui", "sans-serif"],
+        mono: ["JetBrains Mono", "monospace"],
+        serif: ["Newsreader", "serif"]
+      },
+      boxShadow: {
+        "warm-sm": "0 2px 8px -2px rgba(107, 79, 58, 0.05), 0 1px 3px 0 rgba(107, 79, 58, 0.03)",
+        "warm-md": "0 8px 20px -4px rgba(107, 79, 58, 0.06), 0 3px 6px -2px rgba(107, 79, 58, 0.03)",
+        "warm-lg": "0 16px 32px -6px rgba(107, 79, 58, 0.08), 0 4px 12px -2px rgba(107, 79, 58, 0.04)"
+      }
+    }
+  }
+}</script></head><body class="bg-[#FAF8F3] font-body text-wood-dark antialiased selection:bg-leaf-green/20 selection:text-wood-dark relative">
+<!-- 顶部极细绿色装饰线 (2px, 颜色 #4A7C59, 透明度 40%) -->
+<div class="fixed top-0 left-0 right-0 h-[2px] bg-[#4A7C59]/40 z-50 pointer-events-none"></div>
+<!-- 侧边栏 -->
+<aside class="fixed left-0 top-0 h-full w-60 bg-[#F5F2EC] border-r border-[#EDE8E0] z-50 flex flex-col justify-between shadow-warm-sm"><div class="flex flex-col"><div class="h-16 px-4 flex items-center gap-3 border-b border-[#EDE8E0]/70"><img alt="全友·智绘家 自然生机品牌标识" class="h-8 w-8 object-contain rounded-lg" src="https://lh3.googleusercontent.com/aida/AEtjO1UtVt0ZuSxq1SH-RafTsNwXIOpwUetN0o1HYjqQjfcrFYwkq35xWcIBrP9NrXbcguJ4nJTbzTby53ENr4Y8IabG8bXY99mRM39HNf4dkEiNLrFnOUI9Z7SKI-hvvxVRJdhrMeLrVr55gOrWCrUx5YENTwRM5PrmyUwTVmQzk2XV-XKoJpfA9uMg4rQLoTBVQYqVPOH0xGPUZxHqHuL4HUhZR75LB_e-ZKiXuI7cdgruyg"/><div class="flex flex-col min-w-0"><div class="flex items-center gap-1"><span class="text-sm font-semibold tracking-tight text-wood-brown truncate">全友·智绘家</span></div><div class="flex items-center gap-1.5"><span class="font-mono text-[10px] text-leaf-green font-semibold tracking-wider uppercase">Natural Life</span><span class="font-mono text-[10px] text-wood-muted/70">v2.4</span></div></div></div><div class="px-4 pt-5 pb-2"><span class="font-mono text-[11px] uppercase tracking-widest text-wood-muted/70 font-medium">核心工作台</span></div><nav class="flex flex-col gap-1.5 px-3" data-active-classes="bg-leaf-green-light text-wood-brown font-medium"><a class="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-wood-muted hover:bg-white hover:text-wood-dark transition-all duration-150 group" data-path="dashboard" href="#"><span class="text-sm font-medium">工作台</span></a><a class="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-[#E8F0E5] text-wood-brown font-medium shadow-warm-sm transition-all duration-150 group" data-path="floor-plan-ai" href="#"><span class="text-sm">户型解析</span><span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-leaf-green"></span><span class="w-1.5 h-1.5 rounded-full bg-warm-gold"></span></span></a><a class="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-wood-muted hover:bg-white hover:text-wood-dark transition-all duration-150 group" data-path="design-gen" href="#"><span class="text-sm font-medium">方案生成</span></a><a class="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-wood-muted hover:bg-white hover:text-wood-dark transition-all duration-150 group" data-path="knowledge-base" href="#"><span class="text-sm font-medium">知识库管理</span></a><a class="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-wood-muted hover:bg-white hover:text-wood-dark transition-all duration-150 group" data-path="analytics" href="#"><span class="text-sm font-medium">数据分析</span></a><a class="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-wood-muted hover:bg-white hover:text-wood-dark transition-all duration-150 group" data-path="user-management" href="#"><span class="text-sm font-medium">用户管理</span></a></nav></div><div class="p-3"><div class="p-3 rounded-2xl bg-white border border-[#EDE8E0] shadow-warm-sm hover:border-[#D8D0C5] transition-all flex items-center justify-between"><div class="flex items-center gap-3 min-w-0"><div class="relative flex-shrink-0"><div class="w-8 h-8 rounded-full bg-[#E8F0E5] flex items-center justify-center text-xs text-leaf-green font-bold">SA</div><span class="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-leaf-green ring-2 ring-white"></span></div><div class="flex flex-col min-w-0"><span class="text-xs font-semibold text-wood-dark truncate">超级管理员</span><span class="font-mono text-[10px] text-wood-muted truncate">Natural Admin</span></div></div><a class="text-wood-muted hover:text-wood-dark p-1 rounded-lg hover:bg-[#FAF8F3] transition-colors" data-path="settings" href="#"><span class="material-symbols-outlined text-[18px]">tune</span></a></div></div></aside>
+<!-- 主工作区容器 -->
+<div class="pl-60">
+<!-- 顶栏 -->
+<header class="fixed top-0 left-60 right-0 h-16 bg-[#FAF8F3]/90 backdrop-blur-md z-40 flex items-center justify-between px-12 border-b border-[#EDE8E0] shadow-warm-sm"><div class="flex items-center flex-1 max-w-md"><div class="relative w-full flex items-center"><span class="material-symbols-outlined absolute left-3.5 text-wood-muted pointer-events-none text-[18px]">search</span><input class="w-full bg-white text-wood-dark placeholder:text-wood-muted/60 pl-10 pr-20 py-2 rounded-xl text-xs border border-[#EDE8E0] shadow-inner focus:outline-none focus:border-leaf-green focus:ring-1 focus:ring-leaf-green transition-all" placeholder="搜索户型、方案编号、用户或提示词..." type="text"/><div class="absolute right-3 flex items-center gap-1 pointer-events-none"><kbd class="px-1.5 py-0.5 font-mono text-[10px] text-wood-muted bg-[#FAF8F3] border border-[#EDE8E0] rounded">⌘</kbd><kbd class="px-1.5 py-0.5 font-mono text-[10px] text-wood-muted bg-[#FAF8F3] border border-[#EDE8E0] rounded">K</kbd></div></div></div><div class="flex items-center gap-4"><button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-leaf-green hover:bg-[#3E6A4B] text-white text-xs font-semibold shadow-warm-sm hover:-translate-y-0.5 transition-all duration-150" type="button"><span class="material-symbols-outlined text-[16px]">add_circle</span><span>新建户型</span></button><div class="relative"><button class="relative p-2 rounded-xl text-wood-muted hover:text-wood-dark hover:bg-white border border-transparent hover:border-[#EDE8E0] transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-1.5 right-1.5 flex h-4 min-w-[1rem] px-1 items-center justify-center rounded-full bg-warm-gold font-mono text-[9px] font-bold text-white">3</span></button></div><div class="flex items-center gap-2 pl-1 border-l border-[#EDE8E0]"><div class="relative cursor-pointer"><img alt="Profile" class="w-8 h-8 rounded-full object-cover ring-1 ring-[#EDE8E0] shadow-warm-sm" src="https://lh3.googleusercontent.com/aida-public/AB6AXuArYtNR9SDqXElF8Xzssi8P8awmnsIUyQGJl47rw8zqiGL3mUqW7sGCUOXoq5MRFSt8rSg0S2PPOguQq2W9QjUzKaf5aaM32zGTJ75kiJ-zkSdICb-a9xxbOhxx0iLit_Q-VIxMzPiAjDHBvVJz2L-4825J5wuuAFUl78G9oKachGwJgZTtfC1dPV9VhRIfQyKaQ8JLOsOjq3UtRIbmrnW41FxHNIQgW6IYspf270IF"/><span class="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-leaf-green ring-1 ring-white"></span></div><span class="material-symbols-outlined text-[18px] text-wood-muted cursor-pointer hover:text-wood-dark transition-colors">keyboard_arrow_down</span></div></div></header>
+<!-- 主体内容 -->
+<main class="relative pt-20 min-h-screen bg-[#FAF8F3] pb-4"><div class="flex flex-col w-full px-8 pt-2 pb-6 space-y-3.5 max-w-[1600px] mx-auto">
+<!-- 面包屑与顶部操作栏 -->
+<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+<div class="space-y-1">
+<div class="flex items-center gap-2 font-mono text-xs text-wood-muted">
+<span class="text-leaf-green hover:underline cursor-pointer font-medium">自然人居空间引擎</span>
+<span>/</span>
+<span class="text-wood-dark font-medium">户型图多模态解析 (Floorplan AI v4.2)</span>
+<span class="ml-1 px-2 py-0.5 rounded-full bg-[#E8F0E5] text-leaf-green text-[10px] font-semibold border border-[#EDE8E0]">NATURAL-PRO</span>
+</div>
+<h1 class="text-xl font-semibold text-wood-dark tracking-tight flex items-center gap-2.5">
+<span>户型智能识别与空间拓扑重构</span>
+<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white border border-[#EDE8E0] text-leaf-green text-[11px] font-mono shadow-warm-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-leaf-green animate-pulse"></span>
+<span>CV-BIM SYNC</span>
+</span>
+</h1>
+</div>
+<!-- 顶栏快捷操作 -->
+<div class="flex items-center gap-2">
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-[#FAF8F3] text-wood-dark border border-[#EDE8E0] text-xs font-medium shadow-warm-sm transition-all duration-150" type="button">
+<span class="material-symbols-outlined text-[16px] text-wood-muted">download</span>
+<span>下载 CAD/DWG</span>
+</button>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-[#FAF8F3] text-wood-dark border border-[#EDE8E0] text-xs font-medium shadow-warm-sm transition-all duration-150" type="button">
+<span class="material-symbols-outlined text-[16px] text-wood-muted">data_object</span>
+<span>导出拓扑 JSON</span>
+</button>
+<button class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-wood-brown hover:bg-[#583E2C] text-white text-xs font-semibold shadow-warm-sm hover:-translate-y-0.5 active:scale-95 transition-all duration-150" id="btn-generate-3d" type="button">
+<span class="material-symbols-outlined text-[16px]">auto_awesome</span>
+<span>一键生成 3D 方案</span>
+<span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- 降级态预警横幅 (Degraded Banner) -->
+<div class="rounded-xl px-3.5 py-2 bg-[#FEF3C7] border border-[#FDE68A] text-[#92400E] flex items-center justify-between shadow-warm-sm text-xs transition-all" id="degraded-banner">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-[#B45309]">warning</span>
+<span class="font-medium">当前为降级解析模式：仅房间名称与基础结构可用，建议重新上传高清图纸或人工校核</span>
+<span class="font-mono text-[10px] px-1.5 py-0.2 bg-[#FDE68A]/60 rounded text-[#B45309]">DEGRADED ACCURACY 64%</span>
+</div>
+<div class="flex items-center gap-2">
+<button class="px-2 py-0.5 rounded-md bg-white/80 hover:bg-white text-[#92400E] font-medium border border-[#FDE68A] text-[11px] transition-colors">重新上传图纸</button>
+<button class="p-1 text-[#92400E]/70 hover:text-[#92400E] rounded transition-colors" onclick="document.getElementById('degraded-banner').classList.add('hidden')" title="关闭提示">
+<span class="material-symbols-outlined text-[16px]">close</span>
+</button>
+</div>
+</div>
+<!-- Tab 切换导航条 -->
+<div class="flex items-center justify-between border-b border-[#EDE8E0] pb-1">
+<div class="flex items-center gap-6">
+<button class="relative pb-2 text-xs font-semibold text-wood-brown flex items-center gap-1.5 transition-colors" id="tab-btn-topo" onclick="switchTab('topo')">
+<span class="material-symbols-outlined text-[16px] text-leaf-green">grid_view</span>
+<span>空间拓扑分析</span>
+<span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#E8F0E5] text-leaf-green">7 区域</span>
+<div class="absolute bottom-0 left-0 right-0 h-[2px] bg-leaf-green rounded-full" id="tab-line-topo"></div>
+</button>
+<button class="relative pb-2 text-xs font-medium text-wood-muted hover:text-wood-dark flex items-center gap-1.5 transition-colors" id="tab-btn-diag" onclick="switchTab('diag')">
+<span class="material-symbols-outlined text-[16px]">analytics</span>
+<span>全维度户型诊断</span>
+<span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#FAF8F3] text-wood-muted border border-[#EDE8E0]">4 项能效</span>
+<div class="hidden absolute bottom-0 left-0 right-0 h-[2px] bg-leaf-green rounded-full" id="tab-line-diag"></div>
+</button>
+</div>
+<div class="flex items-center gap-2 font-mono text-xs">
+<span class="text-wood-muted text-[11px]">降级模式模拟:</span>
+<button class="px-2.5 py-1 rounded-lg bg-white border border-[#EDE8E0] hover:border-warm-gold text-wood-dark text-[11px] font-medium shadow-warm-sm flex items-center gap-1.5 transition-colors" id="toggle-degraded-btn" onclick="toggleDegraded()">
+<span class="w-2 h-2 rounded-full bg-warm-gold" id="toggle-dot"></span>
+<span id="toggle-text">Degraded ON</span>
+</button>
+</div>
+</div>
+<!-- Tab 1 内容容器: 空间拓扑 (60% 左图 : 40% 右清单) -->
+<div class="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start" id="tab-content-topo">
+<!-- 左侧 60% 预览与图纸 -->
+<div class="xl:col-span-7 flex flex-col space-y-3">
+<!-- 紧凑上传触发条 -->
+<div class="rounded-xl p-2.5 px-4 bg-white border border-[#EDE8E0] hover:border-leaf-green transition-all shadow-warm-sm flex items-center justify-between text-xs">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-7 h-7 rounded-lg bg-[#E8F0E5] text-leaf-green flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">cloud_upload</span>
+</div>
+<div class="flex items-center gap-2 truncate">
+<span class="font-semibold text-wood-dark">当前图纸: 平面施工图_v4_A2.dwg</span>
+<span class="font-mono text-[10px] text-leaf-green bg-leaf-green-light px-1.5 py-0.5 rounded border border-[#EDE8E0]">CAD/DWG</span>
+</div>
+</div>
+<div class="flex items-center gap-3 font-mono text-[11px] flex-shrink-0">
+<span class="text-wood-muted hidden md:inline">已完成自动透视与轴线纠偏</span>
+<button class="text-wood-brown hover:text-leaf-green font-medium underline">点击更换/重新上传</button>
+</div>
+</div>
+<!-- CAD/DXF 2D 互动预览画布 (限高约 370px, 适配一屏) -->
+<div class="relative rounded-2xl bg-white border border-[#EDE8E0] overflow-hidden shadow-warm-sm flex flex-col">
+<!-- 画布顶栏控制条 -->
+<div class="px-3.5 py-2 bg-[#FAF8F3] border-b border-[#EDE8E0] flex items-center justify-between gap-2">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-leaf-green"></span>
+<span class="font-mono text-xs text-wood-dark font-medium">BIM-DXF 交互视图</span>
+<span class="font-mono text-[11px] text-wood-muted">UTM-84 (1:50)</span>
+</div>
+<!-- 图层切换器 -->
+<div class="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-[#EDE8E0]">
+<button class="px-2 py-0.5 rounded bg-[#E8F0E5] text-wood-brown text-xs font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-leaf-green">layers</span>全部图层
+            </button>
+<button class="px-2 py-0.5 rounded hover:bg-[#FAF8F3] text-wood-muted text-xs transition-colors">承重结构</button>
+<button class="px-2 py-0.5 rounded hover:bg-[#FAF8F3] text-wood-muted text-xs transition-colors">门窗开合</button>
+<button class="px-2 py-0.5 rounded hover:bg-[#FAF8F3] text-wood-muted text-xs transition-colors">家具动线</button>
+</div>
+<!-- 右上角缩放操作 -->
+<div class="flex items-center bg-white border border-[#EDE8E0] rounded-lg p-0.5">
+<button class="p-1 text-wood-muted hover:text-wood-dark" title="放大"><span class="material-symbols-outlined text-[15px]">zoom_in</span></button>
+<button class="p-1 text-wood-muted hover:text-wood-dark" title="缩小"><span class="material-symbols-outlined text-[15px]">zoom_out</span></button>
+<button class="p-1 text-wood-muted hover:text-wood-dark" title="居中"><span class="material-symbols-outlined text-[15px]">fit_screen</span></button>
+</div>
+</div>
+<!-- 矢量渲染画布舞台 (限高 360px，带半透明降级印章) -->
+<div class="relative w-full h-[360px] bg-[#F7F4EE] flex items-center justify-center overflow-hidden select-none">
+<!-- 暖纸点阵网格 -->
+<div class="absolute inset-0 bg-[radial-gradient(#D5CDC3_1px,transparent_1px)] [background-size:20px_20px] opacity-60"></div>
+<!-- 降级态斜角水印印章 (可通过 toggle 切换显隐) -->
+<div class="absolute top-6 right-8 pointer-events-none rotate-[-12deg] z-20 border-2 border-dashed border-[#C2410C] bg-[#FEF3C7]/85 px-3 py-1.5 rounded-lg shadow-warm-sm flex flex-col items-center justify-center backdrop-blur-sm" id="degraded-stamp">
+<div class="flex items-center gap-1 text-[#C2410C] font-bold text-xs tracking-wider">
+<span class="material-symbols-outlined text-[16px]">verified_user</span>
+<span>需人工复核</span>
+</div>
+<span class="font-mono text-[9px] text-[#C2410C]/80 uppercase tracking-widest">MANUAL CHECK REQUIRED</span>
+</div>
+<!-- 罗盘与朝向南 S 180° -->
+<div class="absolute bottom-3 right-3 flex flex-col items-center bg-white/90 backdrop-blur-sm px-2.5 py-1.5 rounded-xl border border-[#EDE8E0] shadow-warm-sm pointer-events-none z-10">
+<span class="material-symbols-outlined text-leaf-green text-base">navigation</span>
+<span class="font-mono text-[9px] text-leaf-green font-bold tracking-widest">南 S 180°</span>
+</div>
+<!-- 缩放标尺 -->
+<div class="absolute bottom-3 left-3 flex items-center gap-2 bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-lg border border-[#EDE8E0] shadow-warm-sm font-mono text-[11px] text-wood-muted pointer-events-none z-10">
+<span class="w-6 h-1 rounded-full bg-wood-brown"></span>
+<span class="text-wood-dark font-medium">2.0 m</span>
+<span class="text-wood-muted/40">|</span>
+<span class="text-leaf-green text-[10px]">网格吸附 50mm</span>
+</div>
+<!-- 精准 CAD 架构 SVG -->
+<svg class="relative w-[92%] h-[92%] max-w-[580px] max-h-[330px]" fill="none" viewbox="0 0 600 420" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<lineargradient id="glow-balcony-warm-compact" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#4A7C59" stop-opacity="0.18"></stop>
+<stop offset="100%" stop-color="#4A7C59" stop-opacity="0.06"></stop>
+</lineargradient>
+<lineargradient id="glow-living-warm-compact" x1="0" x2="1" y1="0" y2="1">
+<stop offset="0%" stop-color="#C9A961" stop-opacity="0.22"></stop>
+<stop offset="100%" stop-color="#C9A961" stop-opacity="0.08"></stop>
+</lineargradient>
+<lineargradient id="glow-master-warm-compact" x1="0" x2="1" y1="0" y2="1">
+<stop offset="0%" stop-color="#6B4F3A" stop-opacity="0.15"></stop>
+<stop offset="100%" stop-color="#6B4F3A" stop-opacity="0.04"></stop>
+</lineargradient>
+</defs>
+<!-- 空间区域高亮 -->
+<rect class="cursor-pointer hover:opacity-90 transition-opacity" fill="url(#glow-living-warm-compact)" height="170" rx="6" width="220" x="180" y="140"></rect>
+<rect class="cursor-pointer hover:opacity-90 transition-opacity" fill="url(#glow-balcony-warm-compact)" height="60" rx="6" width="220" x="180" y="320"></rect>
+<rect class="cursor-pointer hover:opacity-90 transition-opacity" fill="url(#glow-master-warm-compact)" height="160" rx="6" width="150" x="410" y="140"></rect>
+<rect fill="#4A7C59" fill-opacity="0.1" height="90" rx="6" width="150" x="410" y="40"></rect>
+<rect fill="#C9A961" fill-opacity="0.12" height="130" rx="6" width="110" x="60" y="40"></rect>
+<rect fill="#7A6E5E" fill-opacity="0.12" height="110" rx="6" width="110" x="60" y="180"></rect>
+<rect fill="#4A7C59" fill-opacity="0.09" height="90" rx="6" width="130" x="180" y="40"></rect>
+<!-- 外框边界虚线 -->
+<path d="M 50 30 L 570 30 L 570 390 L 170 390 L 170 320 L 50 320 Z" stroke="#7A6E5E" stroke-dasharray="4 4" stroke-opacity="0.4" stroke-width="1.5"></path>
+<!-- 承重墙 (深灰褐 #2C2418) -->
+<rect fill="#2C2418" height="10" rx="2" width="520" x="50" y="30"></rect>
+<rect fill="#2C2418" height="290" rx="2" width="10" x="50" y="30"></rect>
+<rect fill="#2C2418" height="360" rx="2" width="10" x="560" y="30"></rect>
+<rect fill="#2C2418" height="10" rx="2" width="240" x="170" y="380"></rect>
+<rect fill="#6B4F3A" height="180" rx="2" width="10" x="170" y="130"></rect>
+<rect fill="#6B4F3A" height="170" rx="2" width="10" x="400" y="130"></rect>
+<rect fill="#2C2418" height="100" rx="2" width="10" x="170" y="30"></rect>
+<rect fill="#2C2418" height="100" rx="2" width="10" x="310" y="30"></rect>
+<rect fill="#2C2418" height="100" rx="2" width="10" x="400" y="30"></rect>
+<!-- 动线门窗 -->
+<path d="M 120 40 A 40 40 0 0 1 160 80" fill="none" stroke="#4A7C59" stroke-dasharray="3 3" stroke-width="1.5"></path>
+<line stroke="#4A7C59" stroke-width="2" x1="120" x2="120" y1="40" y2="80"></line>
+<line stroke="#C9A961" stroke-linecap="round" stroke-width="3" x1="200" x2="380" y1="315" y2="315"></line>
+<!-- 标签标注 -->
+<g transform="translate(250, 205)">
+<circle cx="40" cy="0" fill="#FFFFFF" r="13" stroke="#EDE8E0" stroke-width="1"></circle>
+<text fill="#6B4F3A" font-family="Manrope" font-size="12" font-weight="700" text-anchor="middle" x="40" y="4">客 厅</text>
+<text fill="#2C2418" font-family="JetBrains Mono" font-size="10" font-weight="600" text-anchor="middle" x="40" y="22">28.5 ㎡</text>
+<text fill="#7A6E5E" font-family="JetBrains Mono" font-size="8" text-anchor="middle" x="40" y="34">W:4.2m · D:6.8m</text>
+</g>
+<g transform="translate(250, 345)">
+<text fill="#4A7C59" font-family="Manrope" font-size="11" font-weight="700" text-anchor="middle" x="40" y="2">观景南阳台</text>
+<text fill="#2C2418" font-family="JetBrains Mono" font-size="9" text-anchor="middle" x="40" y="16">6.2 ㎡</text>
+</g>
+<g transform="translate(450, 200)">
+<text fill="#2C2418" font-family="Manrope" font-size="11" font-weight="700" text-anchor="middle" x="35" y="0">主卧套间</text>
+<text fill="#6B4F3A" font-family="JetBrains Mono" font-size="10" font-weight="600" text-anchor="middle" x="35" y="16">16.2 ㎡</text>
+</g>
+<g transform="translate(455, 75)">
+<text fill="#2C2418" font-family="Manrope" font-size="11" font-weight="600" text-anchor="middle" x="30" y="0">次卧</text>
+<text fill="#4A7C59" font-family="JetBrains Mono" font-size="9" font-weight="600" text-anchor="middle" x="30" y="14">11.8 ㎡</text>
+</g>
+<g transform="translate(85, 95)">
+<text fill="#2C2418" font-family="Manrope" font-size="11" font-weight="600" text-anchor="middle" x="30" y="0">厨房</text>
+<text fill="#C9A961" font-family="JetBrains Mono" font-size="9" font-weight="600" text-anchor="middle" x="30" y="14">8.1 ㎡</text>
+</g>
+<g transform="translate(85, 230)">
+<text fill="#2C2418" font-family="Manrope" font-size="11" font-weight="600" text-anchor="middle" x="30" y="0">卫生间</text>
+<text fill="#7A6E5E" font-family="JetBrains Mono" font-size="9" font-weight="600" text-anchor="middle" x="30" y="14">5.6 ㎡</text>
+</g>
+<g transform="translate(215, 75)">
+<text fill="#2C2418" font-family="Manrope" font-size="11" font-weight="600" text-anchor="middle" x="30" y="0">多功能书房</text>
+<text fill="#4A7C59" font-family="JetBrains Mono" font-size="9" font-weight="600" text-anchor="middle" x="30" y="14">9.4 ㎡</text>
+</g>
+<!-- 标注线 -->
+<line stroke="#7A6E5E" stroke-width="1" x1="50" x2="570" y1="18" y2="18"></line>
+<text fill="#6B4F3A" font-family="JetBrains Mono" font-size="9" font-weight="500" text-anchor="middle" x="310" y="14">11,200 mm</text>
+<line stroke="#7A6E5E" stroke-width="1" x1="36" x2="36" y1="30" y2="320"></line>
+<text fill="#6B4F3A" font-family="JetBrains Mono" font-size="9" font-weight="500" text-anchor="middle" transform="rotate(-90 24 175)" x="24" y="175">8,400 mm</text>
+</svg>
+</div>
+<!-- 画布底边微调栏 -->
+<div class="px-3.5 py-1.5 bg-[#FAF8F3] border-t border-[#EDE8E0] flex items-center justify-between font-mono text-xs text-wood-muted">
+<span>分辨率: 3840×2160 · 语义模型 SegmentAny-Home</span>
+<div class="flex items-center gap-1 text-wood-brown font-medium cursor-pointer hover:underline">
+<span class="material-symbols-outlined text-[14px]">tune</span>
+<span>微调闭合轮廓线</span>
+</div>
+</div>
+</div>
+</div>
+<!-- 右侧 40% 属性与拓扑清单 (高度与左侧齐平，避免长滚动) -->
+<div class="xl:col-span-5 flex flex-col space-y-3">
+<!-- 置信度精简卡 -->
+<div class="rounded-xl p-3 bg-white border border-[#EDE8E0] shadow-warm-sm flex items-center justify-between gap-4">
+<!-- 环形置信 -->
+<div class="flex items-center gap-3">
+<div class="relative flex items-center justify-center flex-shrink-0">
+<svg class="w-14 h-14 -rotate-90 transform" viewbox="0 0 80 80">
+<circle cx="40" cy="40" fill="none" r="34" stroke="#EFEAE2" stroke-width="6"></circle>
+<circle cx="40" cy="40" fill="none" r="34" stroke="#4A7C59" stroke-dasharray="213.63" stroke-dashoffset="27.77" stroke-linecap="round" stroke-width="6"></circle>
+</svg>
+<div class="absolute flex flex-col items-center justify-center text-center">
+<span class="text-base font-bold text-wood-dark leading-tight">87<span class="text-[10px] font-normal text-wood-brown">%</span></span>
+<span class="font-mono text-[8px] uppercase tracking-wider text-wood-muted">置信度</span>
+</div>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<span class="text-xs font-semibold text-wood-dark">解析完成</span>
+<span class="px-1.5 py-0.2 rounded bg-[#E8F0E5] text-leaf-green font-mono text-[10px] font-semibold border border-[#EDE8E0]">v4.2</span>
+</div>
+<p class="font-mono text-[11px] text-wood-muted mt-0.5">耗时 1.84s · 特征点 142 个</p>
+</div>
+</div>
+<!-- 细分条 -->
+<div class="flex-1 space-y-1 text-[11px] border-l border-[#EDE8E0] pl-3.5">
+<div>
+<div class="flex justify-between font-medium">
+<span class="text-wood-dark">墙体闭合度</span>
+<span class="font-mono text-leaf-green font-semibold">98.4%</span>
+</div>
+<div class="h-1 w-full bg-[#EFEAE2] rounded-full overflow-hidden mt-0.5">
+<div class="h-full bg-leaf-green rounded-full" style="width: 98.4%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between font-medium">
+<span class="text-wood-dark">门窗准确率</span>
+<span class="font-mono text-warm-gold font-semibold">94.2%</span>
+</div>
+<div class="h-1 w-full bg-[#EFEAE2] rounded-full overflow-hidden mt-0.5">
+<div class="h-full bg-warm-gold rounded-full" style="width: 94.2%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between font-medium">
+<span class="text-wood-dark">管道井推演</span>
+<span class="font-mono text-wood-muted font-semibold">82.0%</span>
+</div>
+<div class="h-1 w-full bg-[#EFEAE2] rounded-full overflow-hidden mt-0.5">
+<div class="h-full bg-wood-muted rounded-full" style="width: 82%"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- 空间拓扑清单卡 (严格展示前 4 条 + 分页控制) -->
+<div class="rounded-2xl bg-white border border-[#EDE8E0] p-3.5 shadow-warm-sm flex flex-col flex-1">
+<div class="flex items-center justify-between pb-2 border-b border-[#EFEAE2]">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-wood-brown text-[18px]">meeting_room</span>
+<h2 class="text-xs font-semibold text-wood-dark">空间拓扑房间清单</h2>
+<span class="font-mono text-[11px] text-wood-muted">(共 7 处)</span>
+</div>
+<span class="font-mono text-[11px] text-wood-muted">计租面积: <strong class="text-wood-dark font-semibold">85.8㎡</strong></span>
+</div>
+<!-- 房间前 4 条展示列表 (高度受控，内部滚动不溢出) -->
+<div class="space-y-2 pt-2.5 overflow-y-auto max-h-[225px] pr-1" id="room-list-p1">
+<!-- 1. 客厅 -->
+<div class="rounded-xl p-2.5 bg-white border border-[#EDE8E0] hover:border-[#D8D0C5] hover:bg-[#FAF8F3] transition-all flex items-center justify-between text-xs">
+<div class="flex items-center gap-2.5 min-w-0">
+<span class="w-2 h-2 rounded-full bg-warm-gold flex-shrink-0"></span>
+<div class="min-w-0">
+<div class="flex items-center gap-1.5">
+<span class="font-semibold text-wood-dark truncate">客 厅</span>
+<span class="px-1.5 py-0.2 rounded text-[10px] font-mono bg-[#E8F0E5] text-leaf-green font-medium">活动核心区</span>
+</div>
+<div class="font-mono text-[11px] text-wood-muted truncate">开间 4.2m · 进深 6.8m · 层高 2.85m</div>
+</div>
+</div>
+<div class="flex items-center gap-2.5 flex-shrink-0">
+<div class="text-right font-mono">
+<div class="font-bold text-wood-dark">28.5 <span class="text-[10px] font-normal text-wood-muted">㎡</span></div>
+<div class="text-[10px] text-leaf-green font-medium">96% 置信</div>
+</div>
+<button class="p-1 text-wood-muted hover:text-wood-brown transition-colors" title="编辑"><span class="material-symbols-outlined text-[16px]">edit</span></button>
+</div>
+</div>
+<!-- 2. 主卧 -->
+<div class="rounded-xl p-2.5 bg-white border border-[#EDE8E0] hover:border-[#D8D0C5] hover:bg-[#FAF8F3] transition-all flex items-center justify-between text-xs">
+<div class="flex items-center gap-2.5 min-w-0">
+<span class="w-2 h-2 rounded-full bg-wood-brown flex-shrink-0"></span>
+<div class="min-w-0">
+<div class="flex items-center gap-1.5">
+<span class="font-semibold text-wood-dark truncate">主 卧</span>
+<span class="px-1.5 py-0.2 rounded text-[10px] font-mono bg-[#FAF8F3] text-wood-brown border border-[#EDE8E0] font-medium">套间动线</span>
+</div>
+<div class="font-mono text-[11px] text-wood-muted truncate">含独立衣帽间及卫浴通道</div>
+</div>
+</div>
+<div class="flex items-center gap-2.5 flex-shrink-0">
+<div class="text-right font-mono">
+<div class="font-bold text-wood-dark">16.2 <span class="text-[10px] font-normal text-wood-muted">㎡</span></div>
+<div class="text-[10px] text-leaf-green font-medium">92% 置信</div>
+</div>
+<button class="p-1 text-wood-muted hover:text-wood-brown transition-colors" title="编辑"><span class="material-symbols-outlined text-[16px]">edit</span></button>
+</div>
+</div>
+<!-- 3. 次卧 -->
+<div class="rounded-xl p-2.5 bg-white border border-[#EDE8E0] hover:border-[#D8D0C5] hover:bg-[#FAF8F3] transition-all flex items-center justify-between text-xs">
+<div class="flex items-center gap-2.5 min-w-0">
+<span class="w-2 h-2 rounded-full bg-leaf-green flex-shrink-0"></span>
+<div class="min-w-0">
+<div class="flex items-center gap-1.5">
+<span class="font-semibold text-wood-dark truncate">次 卧</span>
+<span class="px-1.5 py-0.2 rounded text-[10px] font-mono bg-[#E8F0E5] text-leaf-green font-medium">标准卧室</span>
+</div>
+<div class="font-mono text-[11px] text-wood-muted truncate">北向采光窗 · 净深 3.4m</div>
+</div>
+</div>
+<div class="flex items-center gap-2.5 flex-shrink-0">
+<div class="text-right font-mono">
+<div class="font-bold text-wood-dark">11.8 <span class="text-[10px] font-normal text-wood-muted">㎡</span></div>
+<div class="text-[10px] text-leaf-green font-medium">89% 置信</div>
+</div>
+<button class="p-1 text-wood-muted hover:text-wood-brown transition-colors" title="编辑"><span class="material-symbols-outlined text-[16px]">edit</span></button>
+</div>
+</div>
+<!-- 4. 多功能书房 -->
+<div class="rounded-xl p-2.5 bg-white border border-[#EDE8E0] hover:border-[#D8D0C5] hover:bg-[#FAF8F3] transition-all flex items-center justify-between text-xs">
+<div class="flex items-center gap-2.5 min-w-0">
+<span class="w-2 h-2 rounded-full bg-warm-gold flex-shrink-0"></span>
+<div class="min-w-0">
+<div class="flex items-center gap-1.5">
+<span class="font-semibold text-wood-dark truncate">多功能书房</span>
+<span class="px-1.5 py-0.2 rounded text-[10px] font-mono bg-[#FAF8F3] text-wood-dark border border-[#EDE8E0] font-medium">灵动空间</span>
+</div>
+<div class="font-mono text-[11px] text-wood-muted truncate">可改造榻榻米或客房</div>
+</div>
+</div>
+<div class="flex items-center gap-2.5 flex-shrink-0">
+<div class="text-right font-mono">
+<div class="font-bold text-wood-dark">9.4 <span class="text-[10px] font-normal text-wood-muted">㎡</span></div>
+<div class="text-[10px] text-warm-gold font-medium">84% 置信</div>
+</div>
+<button class="p-1 text-wood-muted hover:text-wood-brown transition-colors" title="编辑"><span class="material-symbols-outlined text-[16px]">edit</span></button>
+</div>
+</div>
+</div>
+<!-- 规范分页栏与区域补充 -->
+<div class="pt-2 mt-1.5 border-t border-[#EFEAE2] flex items-center justify-between text-xs font-mono text-wood-muted">
+<div class="flex items-center gap-2">
+<span>共 7 处 · 第 1/2 页</span>
+<div class="flex items-center gap-1">
+<button class="px-1.5 py-0.5 rounded bg-[#FAF8F3] border border-[#EDE8E0] text-wood-muted hover:text-wood-dark disabled:opacity-40" disabled=""><span class="material-symbols-outlined text-[14px]">chevron_left</span></button>
+<button class="px-1.5 py-0.5 rounded bg-[#FAF8F3] border border-[#EDE8E0] text-wood-dark hover:bg-white"><span class="material-symbols-outlined text-[14px]">chevron_right</span></button>
+</div>
+</div>
+<button class="text-wood-brown hover:text-leaf-green font-medium transition-colors text-[11px]">+ 添加自定义分区</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Tab 2 内容容器: 全维度户型诊断 (4 项能效卡，初始隐藏) -->
+<div class="hidden flex flex-col space-y-3" id="tab-content-diag">
+<div class="flex items-center justify-between bg-white px-4 py-2.5 rounded-xl border border-[#EDE8E0] shadow-warm-sm">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-leaf-green text-lg">analytics</span>
+<span class="text-xs font-semibold text-wood-dark">全维度户型综合智能诊断矩阵</span>
+<span class="font-mono text-[11px] text-wood-muted">基于微气候与人居动线仿真算法</span>
+</div>
+<span class="font-mono text-xs font-semibold text-leaf-green bg-[#E8F0E5] px-3 py-1 rounded-full border border-[#EDE8E0]">
+        全友人居健康指数: 8.2 / 10.0
+      </span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+<!-- 诊断卡 1: 采光 -->
+<div class="rounded-2xl p-4 bg-white border border-[#EDE8E0] shadow-warm-sm flex flex-col justify-between space-y-2.5">
+<div>
+<div class="flex items-center justify-between mb-1">
+<span class="text-xs font-medium text-wood-muted flex items-center gap-1">
+<span class="material-symbols-outlined text-leaf-green text-[15px]">wb_sunny</span>采光能效诊断
+            </span>
+<span class="font-mono text-[10px] text-leaf-green bg-[#E8F0E5] px-1.5 py-0.5 rounded font-semibold">良 好</span>
+</div>
+<div class="flex items-baseline gap-1 my-0.5">
+<span class="text-2xl font-bold text-wood-dark tracking-tight">7.5</span>
+<span class="font-mono text-[11px] text-wood-muted">/ 10.0 分</span>
+</div>
+<p class="text-[11px] text-wood-muted leading-relaxed line-clamp-2">
+            南向采光面占比达 68%，主卧与客厅日照时长超 4.5h。北侧次卧有轻微遮挡。
+          </p>
+</div>
+<div class="space-y-1 pt-2 border-t border-[#EFEAE2]">
+<div class="flex justify-between font-mono text-[10px] text-wood-muted">
+<span>冬至日照日均</span>
+<span class="text-leaf-green font-semibold">4.8 小时</span>
+</div>
+<div class="w-full h-1 bg-[#EFEAE2] rounded-full overflow-hidden flex">
+<div class="h-full bg-leaf-green" style="width: 75%"></div>
+</div>
+</div>
+</div>
+<!-- 诊断卡 2: 通风 -->
+<div class="rounded-2xl p-4 bg-white border border-[#EDE8E0] shadow-warm-sm flex flex-col justify-between space-y-2.5">
+<div>
+<div class="flex items-center justify-between mb-1">
+<span class="text-xs font-medium text-wood-muted flex items-center gap-1">
+<span class="material-symbols-outlined text-leaf-green text-[15px]">air</span>空气通风流场
+            </span>
+<span class="font-mono text-[10px] text-leaf-green bg-[#E8F0E5] px-1.5 py-0.5 rounded font-semibold">优 秀</span>
+</div>
+<div class="flex items-baseline gap-1 my-0.5">
+<span class="text-2xl font-bold text-wood-dark tracking-tight">8.0</span>
+<span class="font-mono text-[11px] text-wood-muted">/ 10.0 分</span>
+</div>
+<p class="text-[11px] text-wood-muted leading-relaxed line-clamp-2">
+            南北通透对流回路完整，风阻系数处于同面积段前 10%，穿堂风通畅。
+          </p>
+</div>
+<div class="space-y-1 pt-2 border-t border-[#EFEAE2]">
+<div class="flex justify-between font-mono text-[10px] text-wood-muted">
+<span>自然对流通量</span>
+<span class="text-leaf-green font-semibold">0.82 m³/s</span>
+</div>
+<div class="w-full h-1 bg-[#EFEAE2] rounded-full overflow-hidden flex">
+<div class="h-full bg-leaf-green" style="width: 80%"></div>
+</div>
+</div>
+</div>
+<!-- 诊断卡 3: 动线 -->
+<div class="rounded-2xl p-4 bg-white border border-[#EDE8E0] shadow-warm-sm flex flex-col justify-between space-y-2.5">
+<div>
+<div class="flex items-center justify-between mb-1">
+<span class="text-xs font-medium text-wood-muted flex items-center gap-1">
+<span class="material-symbols-outlined text-warm-gold text-[15px]">alt_route</span>动静动线分布
+            </span>
+<span class="font-mono text-[10px] text-warm-gold bg-[#FAF8F3] border border-[#EDE8E0] px-1.5 py-0.5 rounded font-semibold">一 般</span>
+</div>
+<div class="flex items-baseline gap-1 my-0.5">
+<span class="text-2xl font-bold text-wood-dark tracking-tight">6.5</span>
+<span class="font-mono text-[11px] text-wood-muted">/ 10.0 分</span>
+</div>
+<p class="text-[11px] text-wood-muted leading-relaxed line-clamp-2">
+            次卧入室动线与公卫有轻微视线交叉。建议通过玄关柜调整门洞视距。
+          </p>
+</div>
+<div class="space-y-1 pt-2 border-t border-[#EFEAE2]">
+<div class="flex justify-between font-mono text-[10px] text-wood-muted">
+<span>动线交叉度</span>
+<span class="text-warm-gold font-semibold">12% 轻微冲突</span>
+</div>
+<div class="w-full h-1 bg-[#EFEAE2] rounded-full overflow-hidden flex">
+<div class="h-full bg-warm-gold" style="width: 65%"></div>
+</div>
+</div>
+</div>
+<!-- 诊断卡 4: 得房率 -->
+<div class="rounded-2xl p-4 bg-white border border-[#EDE8E0] shadow-warm-sm flex flex-col justify-between space-y-2.5">
+<div>
+<div class="flex items-center justify-between mb-1">
+<span class="text-xs font-medium text-wood-muted flex items-center gap-1">
+<span class="material-symbols-outlined text-leaf-green text-[15px]">aspect_ratio</span>得房率与利用率
+            </span>
+<span class="font-mono text-[10px] text-leaf-green bg-[#E8F0E5] px-1.5 py-0.5 rounded font-semibold">极 高</span>
+</div>
+<div class="flex items-baseline gap-1 my-0.5">
+<span class="text-2xl font-bold text-wood-dark tracking-tight">82.4<span class="text-sm font-semibold text-wood-brown">%</span></span>
+<span class="font-mono text-[11px] text-wood-muted">/ 8.8 分</span>
+</div>
+<p class="text-[11px] text-wood-muted leading-relaxed line-clamp-2">
+            公共公摊仅 17.6%，室内承重墙布局规整无暗室冗余角，套内使用率高达 94.1%。
+          </p>
+</div>
+<div class="space-y-1 pt-2 border-t border-[#EFEAE2]">
+<div class="flex justify-between font-mono text-[10px] text-wood-muted">
+<span>无死角利用率</span>
+<span class="text-leaf-green font-semibold">94.1%</span>
+</div>
+<div class="w-full h-1 bg-[#EFEAE2] rounded-full overflow-hidden flex">
+<div class="h-full bg-leaf-green" style="width: 88%"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<script>
+  function switchTab(tab) {
+    const topoContent = document.getElementById('tab-content-topo');
+    const diagContent = document.getElementById('tab-content-diag');
+    const btnTopo = document.getElementById('tab-btn-topo');
+    const btnDiag = document.getElementById('tab-btn-diag');
+    const lineTopo = document.getElementById('tab-line-topo');
+    const lineDiag = document.getElementById('tab-line-diag');
+
+    if (tab === 'topo') {
+      topoContent.classList.remove('hidden');
+      diagContent.classList.add('hidden');
+      btnTopo.classList.add('text-wood-brown', 'font-semibold');
+      btnTopo.classList.remove('text-wood-muted');
+      lineTopo.classList.remove('hidden');
+      btnDiag.classList.remove('text-wood-brown', 'font-semibold');
+      btnDiag.classList.add('text-wood-muted');
+      lineDiag.classList.add('hidden');
+    } else {
+      topoContent.classList.add('hidden');
+      diagContent.classList.remove('hidden');
+      btnDiag.classList.add('text-wood-brown', 'font-semibold');
+      btnDiag.classList.remove('text-wood-muted');
+      lineDiag.classList.remove('hidden');
+      btnTopo.classList.remove('text-wood-brown', 'font-semibold');
+      btnTopo.classList.add('text-wood-muted');
+      lineTopo.classList.add('hidden');
+    }
+  }
+
+  let isDegraded = true;
+  function toggleDegraded() {
+    isDegraded = !isDegraded;
+    const banner = document.getElementById('degraded-banner');
+    const stamp = document.getElementById('degraded-stamp');
+    const dot = document.getElementById('toggle-dot');
+    const text = document.getElementById('toggle-text');
+    const btnGen = document.getElementById('btn-generate-3d');
+
+    if (isDegraded) {
+      banner.classList.remove('hidden');
+      stamp.classList.remove('hidden');
+      dot.className = 'w-2 h-2 rounded-full bg-warm-gold';
+      text.innerText = 'Degraded ON';
+      btnGen.classList.add('opacity-60');
+      btnGen.title = '降级解析模式下部分高级 3D 转换需确认';
+    } else {
+      banner.classList.add('hidden');
+      stamp.classList.add('hidden');
+      dot.className = 'w-2 h-2 rounded-full bg-leaf-green';
+      text.innerText = 'Degraded OFF';
+      btnGen.classList.remove('opacity-60');
+      btnGen.title = '';
+    }
+  }
+</script></main>
+</div>
+</body></html>

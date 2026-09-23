@@ -59,6 +59,30 @@ frontend/dist/
 frontend/node_modules/
 .vite/
 
+# ── UI 素材（版权 + 体积双重原因，不入库）──────────────────────
+# 44 MB 里 34 MB 是全友官网的版权摄影作品，而本仓库两个远程都是公开的。
+# 素材本身留在本地即可（前端开发要用），采集脚本 + 台账 + 说明进库 ——
+# 别人 clone 下来跑一次 `scripts/collect_ui_assets.py` 就能重建。
+# 想改主意：删掉下面三行，然后注意公开仓库的版权后果。
+ui参考/*
+!ui参考/README.md
+!ui参考/MANIFEST.json
+# stitch_ai 是本项目自己的设计稿（139 KB，非第三方素材），要进库 ——
+# 前端的配色、字体、布局都照着它做，它属于项目文档而不是参考图。
+# ⚠️ 末尾**不能带斜杠**：带斜杠时 git 视其为"目录内容"规则，而被排除的
+# 目录 git 根本不会进去看，这条否定就永远不生效。不带斜杠才是"重新包含
+# 这个目录本身"，git 才会往下走。
+!ui参考/stitch_ai
+
+# ── 前端里的全友版权图（同上，不入库）────────────────────────
+# 精选进前端的 14 张全友官网实景案例图。图标（MIT）、Pexels、unDraw、
+# 字体（OFL）都是自由许可，**只有这一批不行**。
+# 缺图时前端会自动回落到 Pexels 照片，不会裂图 —— 见
+# frontend/src/assets/images/pool.ts。想恢复：
+#   python scripts/collect_ui_assets.py --only quanyou
+#   然后按 frontend/README.md 的说明精选复制。
+frontend/src/assets/images/cases/
+
 # ── IDE / 编辑器 ──────────────────────────────────────────────
 .vscode/
 .idea/

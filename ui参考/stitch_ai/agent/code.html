@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="web_dashboard" name="shell-type"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&amp;family=Manrope:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<style>
+    @layer base {
+      html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+      body { overscroll-behavior: none; }
+    }
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #d3c4ba; border-radius: 9999px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #81756d; }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          "botanical": "#4A7C59",
+          "botanical-light": "#E8F0E5",
+          "botanical-surface": "#F3F8F1",
+          "wood": "#6B4F3A",
+          "wood-dark": "#2C2418",
+          "wood-muted": "#7A6E5E",
+          "wood-light": "#FAF3E1",
+          "warm-bg": "#FAF8F3",
+          "warm-sidebar": "#F5F2EC",
+          "warm-border": "#EDE8E0",
+          "warm-grid": "#EFEAE2",
+          "accent-gold": "#C9A961",
+          "accent-red": "#C85A48"
+        },
+        borderRadius: {
+          "DEFAULT": "0.25rem",
+          "lg": "0.5rem",
+          "xl": "0.75rem",
+          "2xl": "1rem",
+          "full": "9999px"
+        },
+        fontFamily: {
+          sans: ["Manrope", "Inter", "sans-serif"],
+          serif: ["Newsreader", "serif"]
+        }
+      }
+    }
+  }
+  </script>
+</head>
+<body class="bg-warm-bg font-sans text-wood-dark antialiased h-full flex flex-col relative selection:bg-botanical/20 selection:text-botanical">
+<!-- Top Botanical Delicate Decorative Line (2px, 40% opacity #4A7C59) -->
+<div class="fixed top-0 left-0 right-0 h-[2px] bg-[#4A7C59]/40 z-50 pointer-events-none"></div>
+<div class="flex h-full w-full overflow-hidden">
+<!-- Left Sidebar (Fixed 60 / 240px) -->
+<aside class="w-60 h-full bg-warm-sidebar flex-shrink-0 flex flex-col justify-between border-r border-warm-border z-40">
+<div class="flex flex-col">
+<!-- Brand / Logo Area -->
+<div class="h-16 px-4 flex items-center gap-3 border-b border-warm-border bg-warm-sidebar">
+<div class="h-9 w-9 rounded-xl bg-botanical-light border border-botanical/20 flex-shrink-0 flex items-center justify-center text-botanical">
+<span class="material-symbols-outlined text-[22px]">nest_eco_leaf</span>
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-1">
+<span class="font-bold text-[15px] tracking-tight text-wood truncate">全友·智绘家</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="text-[10px] font-semibold text-botanical tracking-wider uppercase bg-botanical-light px-1 py-0.2 rounded">Nature Edition</span>
+<span class="text-[10px] text-wood-muted">v2.4</span>
+</div>
+</div>
+</div>
+<div class="px-4 pt-4 pb-2">
+<span class="text-[11px] uppercase tracking-wider text-wood-muted/70 font-semibold">核心工作台</span>
+</div>
+<!-- Navigation List -->
+<nav class="flex flex-col gap-1 px-3">
+<a class="flex items-center gap-3 px-3 py-2 rounded-xl text-wood-muted hover:bg-white/60 hover:text-wood-dark transition-all duration-150 group" data-path="dashboard" href="#">
+<span class="material-symbols-outlined text-[19px] text-wood-muted group-hover:text-wood transition-colors">space_dashboard</span>
+<span class="text-[13px] font-medium">工作台</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-xl text-wood-muted hover:bg-white/60 hover:text-wood-dark transition-all duration-150 group" data-path="floor-plan-ai" href="#">
+<span class="material-symbols-outlined text-[19px] text-wood-muted group-hover:text-botanical transition-colors">architecture</span>
+<span class="text-[13px] font-medium">户型解析</span>
+</a>
+<!-- Active Item: 方案生成 -->
+<a class="flex items-center justify-between px-3 py-2 rounded-xl bg-botanical-light text-wood font-semibold border border-botanical/20 transition-all duration-150 group shadow-xs" data-path="design-gen" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[19px] text-botanical">auto_awesome</span>
+<span class="text-[13px]">方案生成</span>
+</div>
+<span class="w-1.5 h-1.5 rounded-full bg-botanical"></span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-xl text-wood-muted hover:bg-white/60 hover:text-wood-dark transition-all duration-150 group" data-path="knowledge-base" href="#">
+<span class="material-symbols-outlined text-[19px] text-wood-muted group-hover:text-botanical transition-colors">auto_stories</span>
+<span class="text-[13px] font-medium">知识库管理</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-xl text-wood-muted hover:bg-white/60 hover:text-wood-dark transition-all duration-150 group" data-path="analytics" href="#">
+<span class="material-symbols-outlined text-[19px] text-wood-muted group-hover:text-wood transition-colors">insights</span>
+<span class="text-[13px] font-medium">数据分析</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-xl text-wood-muted hover:bg-white/60 hover:text-wood-dark transition-all duration-150 group" data-path="user-management" href="#">
+<span class="material-symbols-outlined text-[19px] text-wood-muted group-hover:text-botanical transition-colors">manage_accounts</span>
+<span class="text-[13px] font-medium">用户管理</span>
+</a>
+</nav>
+</div>
+<!-- User Profile Section -->
+<div class="p-3 border-t border-warm-border/80">
+<div class="p-2.5 rounded-xl bg-white/70 hover:bg-white border border-warm-border transition-colors duration-150 flex items-center justify-between shadow-xs">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="relative flex-shrink-0">
+<div class="w-8 h-8 rounded-full bg-botanical-light border border-botanical/20 flex items-center justify-center text-[12px] text-botanical font-bold">SA</div>
+<span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-botanical ring-2 ring-white"></span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="text-[12px] font-semibold text-wood-dark truncate">超级管理员</span>
+<span class="text-[10px] text-wood-muted truncate">Super Admin</span>
+</div>
+</div>
+<a class="text-wood-muted hover:text-wood p-1 rounded-lg hover:bg-warm-sidebar transition-colors" data-path="settings" href="#">
+<span class="material-symbols-outlined text-[18px]">tune</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main View Area (Header + Single Screen Viewport) -->
+<div class="flex-1 flex flex-col h-full overflow-hidden min-w-0">
+<!-- Top Navigation Header -->
+<header class="h-16 flex-shrink-0 bg-warm-bg/95 backdrop-blur-md z-30 flex items-center justify-between px-8 border-b border-warm-border">
+<div class="flex items-center flex-1 max-w-md">
+<div class="relative w-full flex items-center">
+<span class="material-symbols-outlined absolute left-3 text-wood-muted text-[19px] pointer-events-none">search</span>
+<input class="w-full bg-white text-wood-dark placeholder:text-wood-muted/60 pl-9 pr-16 py-2 rounded-xl text-[13px] border border-warm-border focus:outline-none focus:ring-2 focus:ring-botanical/20 focus:border-botanical shadow-xs transition-all" placeholder="搜索户型、方案编号、用户或提示词..." type="text"/>
+<div class="absolute right-2.5 flex items-center gap-0.5 pointer-events-none">
+<kbd class="px-1.5 py-0.5 text-[10px] font-medium text-wood-muted bg-warm-sidebar border border-warm-border rounded">⌘</kbd>
+<kbd class="px-1.5 py-0.5 text-[10px] font-medium text-wood-muted bg-warm-sidebar border border-warm-border rounded">K</kbd>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<button class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-warm-border text-wood-dark text-[13px] font-semibold hover:border-wood/30 hover:bg-warm-sidebar shadow-xs transition-all active:scale-98" type="button">
+<span class="material-symbols-outlined text-[18px] text-botanical">add_circle</span>
+<span>新建户型</span>
+</button>
+<div class="relative">
+<button class="relative p-2 rounded-xl text-wood-muted hover:text-wood-dark hover:bg-white border border-transparent hover:border-warm-border transition-all" type="button">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+<span class="absolute top-1.5 right-1.5 flex h-4 min-w-[1rem] px-1 items-center justify-center rounded-full bg-botanical text-[9px] font-bold text-white">3</span>
+</button>
+</div>
+<div class="flex items-center gap-2 pl-2 border-l border-warm-border">
+<div class="relative cursor-pointer">
+<img alt="Profile" class="w-8 h-8 rounded-full object-cover ring-1 ring-warm-border" src="https://lh3.googleusercontent.com/aida-public/AB6AXuArYtNR9SDqXElF8Xzssi8P8awmnsIUyQGJl47rw8zqiGL3mUqW7sGCUOXoq5MRFSt8rSg0S2PPOguQq2W9QjUzKaf5aaM32zGTJ75kiJ-zkSdICb-a9xxbOhxx0iLit_Q-VIxMzPiAjDHBvVJz2L-4825J5wuuAFUl78G9oKachGwJgZTtfC1dPV9VhRIfQyKaQ8JLOsOjq3UtRIbmrnW41FxHNIQgW6IYspf270IF"/>
+<span class="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-botanical ring-1 ring-white"></span>
+</div>
+<span class="material-symbols-outlined text-[18px] text-wood-muted cursor-pointer hover:text-wood-dark transition-colors">keyboard_arrow_down</span>
+</div>
+</div>
+</header>
+<!-- Main Content: Strict single-screen flex layout without outer page scrolling -->
+<main class="flex-1 flex flex-col p-6 max-w-[1760px] w-full mx-auto justify-between overflow-hidden">
+<!-- Top Action Bar & Breadcrumb (Compact) -->
+<section class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 pb-2 flex-shrink-0">
+<div class="flex flex-col gap-1 min-w-0">
+<nav class="flex items-center gap-2 text-[12px] text-wood-muted font-medium">
+<span class="hover:text-botanical transition-colors cursor-pointer">方案中心</span>
+<span class="text-warm-border">/</span>
+<span class="text-wood-dark font-semibold truncate">多智能体方案并行演进对比 (Multi-Agent Synthesized Plans)</span>
+<span class="flex h-1.5 w-1.5 rounded-full bg-botanical"></span>
+</nav>
+<div class="flex flex-wrap items-center gap-3">
+<h1 class="font-serif text-[24px] leading-tight text-wood-dark tracking-tight font-medium">多方案智能对比与价值评估</h1>
+<div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-botanical-light border border-botanical/20 text-botanical text-[11px] font-semibold">
+<span class="material-symbols-outlined text-[14px]">psychology</span>
+<span>Multi-Agent v4.2 协同运算完成</span>
+</div>
+<span class="text-[11px] text-wood-muted/80 font-mono">HASH: #MA-9884-X9</span>
+</div>
+</div>
+<!-- Filter & Actions Bar -->
+<div class="flex flex-wrap items-center gap-2">
+<!-- Filter 1 -->
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-warm-border text-wood-muted hover:text-wood-dark hover:border-wood/30 text-[12px] font-medium shadow-xs transition-all" type="button">
+<span class="material-symbols-outlined text-[16px] text-botanical">style</span>
+<span>筛选风格：全风格 (3组)</span>
+<span class="material-symbols-outlined text-[15px]">expand_more</span>
+</button>
+<!-- Filter 2 -->
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-warm-border text-wood-muted hover:text-wood-dark hover:border-wood/30 text-[12px] font-medium shadow-xs transition-all" type="button">
+<span class="material-symbols-outlined text-[16px] text-wood">payments</span>
+<span>预算范围：全区间</span>
+<span class="material-symbols-outlined text-[15px]">expand_more</span>
+</button>
+<!-- Diff Toggle -->
+<label class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-warm-border text-wood-dark cursor-pointer hover:border-wood/30 shadow-xs transition-all select-none">
+<span class="material-symbols-outlined text-[16px] text-botanical">difference</span>
+<span class="text-[12px] font-medium">仅看差异项</span>
+<div class="relative w-7 h-4 rounded-full bg-warm-sidebar border border-warm-border flex items-center px-0.5" onclick="toggleDiffMode(event)">
+<div class="w-3 h-3 rounded-full bg-wood-muted transition-transform duration-200" id="diffToggleKnob"></div>
+</div>
+</label>
+<!-- Export Button -->
+<button class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-wood text-white text-[12px] font-semibold shadow-sm hover:bg-wood/90 transition-all active:scale-98" onclick="openMatrixModal()" type="button">
+<span class="material-symbols-outlined text-[16px]">cloud_download</span>
+<span>导出对比报告</span>
+</button>
+</div>
+</section>
+<!-- 3-Column Plan Comparison Cards (Compact, Balanced, Fits In One Screen) -->
+<section class="grid grid-cols-1 lg:grid-cols-3 gap-5 flex-1 min-h-0 items-stretch my-2">
+<!-- CARD 01: 极简经济型 -->
+<article class="flex flex-col justify-between rounded-2xl bg-white border border-warm-border shadow-sm hover:shadow-md transition-all duration-200 p-4 relative group">
+<div class="flex flex-col gap-2.5">
+<!-- Header -->
+<div class="flex items-center justify-between">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-warm-sidebar text-wood text-[11px] font-medium border border-warm-border">
+<span class="w-1.5 h-1.5 rounded-full bg-wood-muted"></span>
+                经济 · 严控成本
+              </span>
+<span class="text-[11px] font-mono text-wood-muted">PLAN-A101</span>
+</div>
+<div class="flex items-baseline justify-between gap-2">
+<div>
+<h2 class="font-serif text-[18px] font-semibold text-wood-dark leading-tight">方案 01：现代简约 · 极简经济型</h2>
+<p class="text-[11px] text-wood-muted mt-0.5">主打收纳集约化与标准装配，降低现场损耗</p>
+</div>
+</div>
+<!-- Price & Key Metric Banner -->
+<div class="flex items-center justify-between p-2.5 rounded-xl bg-warm-sidebar/80 border border-warm-border">
+<div>
+<span class="text-[10px] text-wood-muted uppercase font-semibold block">预估总造价</span>
+<span class="text-[20px] font-bold text-wood leading-none">¥ 6.8 - 8.5 <span class="text-[12px] font-medium">万</span></span>
+</div>
+<div class="text-right">
+<div class="flex items-center justify-end gap-1 text-[12px] font-medium text-wood-dark">
+<span class="material-symbols-outlined text-[14px] text-wood-muted">schedule</span>
+<span>工期 35 天</span>
+</div>
+<span class="text-[10px] text-wood-muted block mt-0.5">性价比 94/100</span>
+</div>
+</div>
+<!-- 3D Render Stage with Hotspots & Tooltip -->
+<div class="relative rounded-xl overflow-hidden bg-warm-sidebar aspect-[16/9] border border-warm-border group/render">
+<img alt="现代简约户型效果图" class="w-full h-full object-cover transition-transform duration-500 group-hover/render:scale-102" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCLYYlkFfMJzN8YX6sJyOSXWjMnLm_KLrBjmZv422bbCPDqf1nH0zDHqZY5PCPrcq3wr6bYTXwEOJStP-yfCEBOYzJf4VTdipqqLHDvIbp_otCPz3nXbQBMw98Fw331_8GcrB-VZWq-42bVbV9EEXSGMZ7NXSjb6ZycKPFX2C9L3kLY-ZPdzwmBiDKBHddF3L9rnPbCXHDgh7RlOwpRtnZdSFtYZtRnB3wzGU92IOI7"/>
+<div class="absolute inset-0 bg-gradient-to-t from-wood-dark/20 via-transparent to-transparent pointer-events-none"></div>
+<!-- Hotspot Anchor 1 (Floor) -->
+<div class="absolute bottom-4 left-1/3 group/spot cursor-pointer z-10">
+<div class="relative flex items-center justify-center">
+<span class="absolute w-5 h-5 rounded-full bg-botanical/30 animate-ping"></span>
+<span class="w-3.5 h-3.5 rounded-full bg-botanical shadow-sm flex items-center justify-center">
+<span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+</span>
+</div>
+<!-- Tooltip: 暖白底 #FFFFFF + 浅边框 #EDE8E0 + 深棕文字 #6B4F3A + 绿色价格数字 #4A7C59 -->
+<div class="absolute bottom-6 left-1/2 -translate-x-1/2 w-48 p-2 rounded-xl bg-white border border-warm-border shadow-md opacity-0 pointer-events-none group-hover/spot:opacity-100 group-hover/spot:pointer-events-auto transition-all duration-150 z-30">
+<span class="text-[10px] text-wood-muted block">选材热点 · 地面</span>
+<p class="text-[12px] font-bold text-wood truncate">全友环保强化复合地板</p>
+<div class="flex items-center justify-between mt-1 pt-1 border-t border-warm-border">
+<span class="text-[12px] font-bold text-botanical">¥ 129 / ㎡</span>
+<span class="text-[10px] text-wood-muted">E1级环保</span>
+</div>
+</div>
+</div>
+<!-- Hotspot Anchor 2 -->
+<div class="absolute top-1/2 right-1/4 cursor-pointer">
+<span class="w-3 h-3 rounded-full bg-white shadow-sm flex items-center justify-center">
+<span class="w-1 h-1 rounded-full bg-wood"></span>
+</span>
+</div>
+<div class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-white/90 text-wood-muted font-mono text-[9px] border border-warm-border">
+                3D Parametric
+              </div>
+</div>
+<!-- 4 Core Capsule Tags -->
+<div class="flex flex-wrap gap-1.5 pt-1">
+<span class="px-2 py-0.5 rounded-md bg-warm-sidebar text-wood text-[11px] font-medium border border-warm-border">主材标准化</span>
+<span class="px-2 py-0.5 rounded-md bg-warm-sidebar text-wood text-[11px] font-medium border border-warm-border">低损耗施工</span>
+<span class="px-2 py-0.5 rounded-md bg-warm-sidebar text-wood text-[11px] font-medium border border-warm-border">环保E1级</span>
+<span class="px-2 py-0.5 rounded-md bg-warm-sidebar text-wood text-[11px] font-medium border border-warm-border">全友成品直发</span>
+</div>
+</div>
+<!-- Bottom Action Button -->
+<div class="pt-3 border-t border-warm-border/60 mt-2 flex gap-2">
+<button class="flex-1 py-2 px-3 rounded-xl bg-warm-sidebar hover:bg-white text-wood-dark hover:text-wood font-semibold text-[12px] border border-warm-border hover:border-wood/30 shadow-xs transition-all flex items-center justify-center gap-1.5" onclick="openDrawer('plan1')" type="button">
+<span class="material-symbols-outlined text-[16px] text-wood-muted">visibility</span>
+<span>查看方案详情 &amp; 明细</span>
+</button>
+<button class="py-2 px-3 rounded-xl bg-white border border-warm-border hover:border-wood/40 text-wood font-medium text-[12px] shadow-xs transition-all" onclick="selectPlan('方案 01：现代简约')">
+              选定
+            </button>
+</div>
+</article>
+<!-- CARD 02: 北欧自然 · 舒适中档型 (RECOMMENDED - Highlighted Leaf Green Border & Soft Shadow) -->
+<article class="flex flex-col justify-between rounded-2xl bg-white border-2 border-botanical shadow-[0_8px_24px_rgba(74,124,89,0.12)] p-4 relative group">
+<div class="flex flex-col gap-2.5">
+<!-- Header -->
+<div class="flex items-center justify-between">
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-botanical text-white text-[11px] font-semibold shadow-xs">
+<span class="material-symbols-outlined text-[13px]">eco</span>
+                业主首选 · 推荐方案
+              </span>
+<div class="inline-flex items-center gap-1 text-[11px] font-semibold text-botanical bg-botanical-light px-2 py-0.5 rounded-full border border-botanical/20">
+<span class="material-symbols-outlined text-[13px]">auto_awesome</span>
+<span>评分 9.6</span>
+</div>
+</div>
+<div class="flex items-baseline justify-between gap-2">
+<div>
+<h2 class="font-serif text-[18px] font-bold text-wood-dark leading-tight">方案 02：北欧自然 · 舒适中档型</h2>
+<p class="text-[11px] text-wood-muted mt-0.5">生态板材原木风，动线开阔，全家庭友好舒适体验</p>
+</div>
+</div>
+<!-- Price & Key Metric Banner -->
+<div class="flex items-center justify-between p-2.5 rounded-xl bg-botanical-surface border border-botanical/30">
+<div>
+<span class="text-[10px] text-botanical font-semibold uppercase block">预估总造价 (平衡优选)</span>
+<span class="text-[20px] font-bold text-wood-dark leading-none">¥ 11.2 - 13.8 <span class="text-[12px] font-medium text-wood">万</span></span>
+</div>
+<div class="text-right">
+<div class="flex items-center justify-end gap-1 text-[12px] font-semibold text-wood-dark">
+<span class="material-symbols-outlined text-[14px] text-botanical">event_available</span>
+<span>工期 45 天</span>
+</div>
+<span class="text-[10px] text-botanical font-medium block mt-0.5">全友定制覆盖 68%</span>
+</div>
+</div>
+<!-- 3D Render Stage with Hotspots & Tooltip -->
+<div class="relative rounded-xl overflow-hidden bg-warm-sidebar aspect-[16/9] border border-warm-border group/render">
+<img alt="北欧自然户型效果图" class="w-full h-full object-cover transition-transform duration-500 group-hover/render:scale-102" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAoi5YfsAzott45H8PwPW-tQkq7bW6n0aJJQvb-ph0UGCoFutHUPrLQgFxhNxZb8bUv9P5mNM2e4WYljE7PS4vENKCBaLZF1PoiWOOmXxMojqyU23BIhJd1Qsmsa9SLYZ0s0ZqOF8WhbWGH8FMDXGripaIeV5SL2zYdXgPuk6195NrUHb24RqOh-mNwqVtv9PVNAurrpd1S8TxwTk1d41ddpbG_ZWEIpDZR0-W-hch7"/>
+<div class="absolute inset-0 bg-gradient-to-t from-wood-dark/20 via-transparent to-transparent pointer-events-none"></div>
+<!-- Hotspot Anchor 1 (Sofa) -->
+<div class="absolute bottom-5 right-1/3 group/spot cursor-pointer z-10">
+<div class="relative flex items-center justify-center">
+<span class="absolute w-5 h-5 rounded-full bg-botanical/30 animate-ping"></span>
+<span class="w-3.5 h-3.5 rounded-full bg-botanical shadow-sm flex items-center justify-center">
+<span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+</span>
+</div>
+<!-- Tooltip -->
+<div class="absolute bottom-6 right-1/2 translate-x-1/2 w-52 p-2.5 rounded-xl bg-white border border-warm-border shadow-md opacity-0 pointer-events-none group-hover/spot:opacity-100 group-hover/spot:pointer-events-auto transition-all duration-150 z-30">
+<span class="text-[10px] text-botanical font-semibold block">选材热点 · 核心家具</span>
+<p class="text-[12px] font-bold text-wood truncate">全友云朵棉麻沙发 (可拆洗)</p>
+<div class="flex items-center justify-between mt-1 pt-1 border-t border-warm-border">
+<span class="text-[13px] font-bold text-botanical">¥ 3,299</span>
+<span class="text-[10px] text-wood-muted">现货直配 72h 达</span>
+</div>
+</div>
+</div>
+<!-- Hotspot Anchor 2 (Floor) -->
+<div class="absolute bottom-3 left-1/4 cursor-pointer">
+<span class="w-3 h-3 rounded-full bg-white shadow-sm flex items-center justify-center">
+<span class="w-1 h-1 rounded-full bg-botanical"></span>
+</span>
+</div>
+<div class="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-white/95 text-botanical font-mono text-[9px] font-semibold border border-warm-border shadow-2xs">
+                BIM 干涉检查通过 (0 Clash)
+              </div>
+</div>
+<!-- 4 Core Capsule Tags -->
+<div class="flex flex-wrap gap-1.5 pt-1">
+<span class="px-2 py-0.5 rounded-md bg-botanical-light text-botanical text-[11px] font-semibold border border-botanical/20">全友无醛原木水性</span>
+<span class="px-2 py-0.5 rounded-md bg-botanical-light text-botanical text-[11px] font-semibold border border-botanical/20">业主首选款</span>
+<span class="px-2 py-0.5 rounded-md bg-warm-sidebar text-wood text-[11px] font-medium border border-warm-border">定制收纳一体</span>
+<span class="px-2 py-0.5 rounded-md bg-warm-sidebar text-wood text-[11px] font-medium border border-warm-border">8年金牌质保</span>
+</div>
+</div>
+<!-- Bottom Action Button (Featured Botanical Primary CTA) -->
+<div class="pt-3 border-t border-warm-border/60 mt-2 flex gap-2">
+<button class="flex-1 py-2 px-3 rounded-xl bg-botanical text-white hover:bg-[#3f6d4d] font-semibold text-[12px] shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5" onclick="openDrawer('plan2')" type="button">
+<span class="material-symbols-outlined text-[16px]">menu_book</span>
+<span>查看方案深度报告 &amp; 明细</span>
+</button>
+<button class="py-2 px-3 rounded-xl bg-botanical-light text-botanical font-semibold text-[12px] border border-botanical/30 hover:bg-botanical hover:text-white transition-all" onclick="selectPlan('方案 02：北欧自然')">
+              选定此方案
+            </button>
+</div>
+</article>
+<!-- CARD 03: 意式轻奢 · 高端尊享型 -->
+<article class="flex flex-col justify-between rounded-2xl bg-white border border-warm-border shadow-sm hover:shadow-md transition-all duration-200 p-4 relative group">
+<div class="flex flex-col gap-2.5">
+<!-- Header -->
+<div class="flex items-center justify-between">
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-wood-light text-wood text-[11px] font-semibold border border-wood/20">
+<span class="material-symbols-outlined text-[13px]">diamond</span>
+                高端 · 尊享定制
+              </span>
+<span class="text-[11px] font-mono text-wood-muted">PLAN-A103</span>
+</div>
+<div class="flex items-baseline justify-between gap-2">
+<div>
+<h2 class="font-serif text-[18px] font-semibold text-wood-dark leading-tight">方案 03：意式轻奢 · 高端尊享型</h2>
+<p class="text-[11px] text-wood-muted mt-0.5">大理石岩板、隐形门系统与高端皮质定制</p>
+</div>
+</div>
+<!-- Price & Key Metric Banner -->
+<div class="flex items-center justify-between p-2.5 rounded-xl bg-warm-sidebar/80 border border-warm-border">
+<div>
+<span class="text-[10px] text-wood-muted uppercase font-semibold block">预估总造价 (高定专案)</span>
+<span class="text-[20px] font-bold text-wood leading-none">¥ 22.5 - 28.0 <span class="text-[12px] font-medium">万</span></span>
+</div>
+<div class="text-right">
+<div class="flex items-center justify-end gap-1 text-[12px] font-medium text-wood-dark">
+<span class="material-symbols-outlined text-[14px] text-wood-muted">schedule</span>
+<span>工期 60 天</span>
+</div>
+<span class="text-[10px] text-wood font-medium block mt-0.5">智能互联覆盖 92%</span>
+</div>
+</div>
+<!-- 3D Render Stage with Hotspots & Tooltip -->
+<div class="relative rounded-xl overflow-hidden bg-warm-sidebar aspect-[16/9] border border-warm-border group/render">
+<img alt="意式轻奢户型效果图" class="w-full h-full object-cover transition-transform duration-500 group-hover/render:scale-102" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAiYdJecumVcGoc046-Sjgn0s8P4jm3Dtg9nO_ehn0116XG_0IJWGIv8Bze3zbzMX00taU6rCAf6TWRQvZW8-kPgTxGvd3RwXipG1BHAad0G1Y6725kP2ZCk2RhOouP95phjqwd55MLbN3MRlsUyipxf7npmOY6ZIN7VxgH6PkvyjFINyd2wBq0n6MbVWH8wDHC8OFeUOZy7MqYUhsxRo9BAi4zGGMK2QUggNdBPiIo"/>
+<div class="absolute inset-0 bg-gradient-to-t from-wood-dark/20 via-transparent to-transparent pointer-events-none"></div>
+<!-- Hotspot Anchor 1 (Sintered Stone) -->
+<div class="absolute top-1/3 left-1/4 group/spot cursor-pointer z-10">
+<div class="relative flex items-center justify-center">
+<span class="absolute w-5 h-5 rounded-full bg-wood/30 animate-ping"></span>
+<span class="w-3.5 h-3.5 rounded-full bg-wood shadow-sm flex items-center justify-center">
+<span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+</span>
+</div>
+<!-- Tooltip -->
+<div class="absolute top-6 left-1/2 -translate-x-1/2 w-52 p-2.5 rounded-xl bg-white border border-warm-border shadow-md opacity-0 pointer-events-none group-hover/spot:opacity-100 group-hover/spot:pointer-events-auto transition-all duration-150 z-30">
+<span class="text-[10px] text-wood font-medium block">选材热点 · 背景墙高定</span>
+<p class="text-[12px] font-bold text-wood-dark truncate">全友 12mm 连纹雪花白岩板</p>
+<div class="flex items-center justify-between mt-1 pt-1 border-t border-warm-border">
+<span class="text-[13px] font-bold text-botanical">¥ 880 / ㎡</span>
+<span class="text-[10px] text-wood-muted">激光密缝拼贴</span>
+</div>
+</div>
+</div>
+<!-- Hotspot Anchor 2 -->
+<div class="absolute bottom-5 right-1/4 cursor-pointer">
+<span class="w-3 h-3 rounded-full bg-white shadow-sm flex items-center justify-center">
+<span class="w-1 h-1 rounded-full bg-wood"></span>
+</span>
+</div>
+<div class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-white/90 text-wood font-mono text-[9px] border border-warm-border">
+                Master Render 4K
+              </div>
+</div>
+<!-- 4 Core Capsule Tags -->
+<div class="flex flex-wrap gap-1.5 pt-1">
+<span class="px-2 py-0.5 rounded-md bg-warm-sidebar text-wood text-[11px] font-medium border border-warm-border">进口大理石岩板</span>
+<span class="px-2 py-0.5 rounded-md bg-warm-sidebar text-wood text-[11px] font-medium border border-warm-border">全屋弱电智控</span>
+<span class="px-2 py-0.5 rounded-md bg-warm-sidebar text-wood text-[11px] font-medium border border-warm-border">全案尊享包</span>
+<span class="px-2 py-0.5 rounded-md bg-warm-sidebar text-wood text-[11px] font-medium border border-warm-border">高端私定</span>
+</div>
+</div>
+<!-- Bottom Action Button -->
+<div class="pt-3 border-t border-warm-border/60 mt-2 flex gap-2">
+<button class="flex-1 py-2 px-3 rounded-xl bg-warm-sidebar hover:bg-white text-wood-dark hover:text-wood font-semibold text-[12px] border border-warm-border hover:border-wood/30 shadow-xs transition-all flex items-center justify-center gap-1.5" onclick="openDrawer('plan3')" type="button">
+<span class="material-symbols-outlined text-[16px] text-wood-muted">visibility</span>
+<span>查看方案详情 &amp; 明细</span>
+</button>
+<button class="py-2 px-3 rounded-xl bg-white border border-warm-border hover:border-wood/40 text-wood font-medium text-[12px] shadow-xs transition-all" onclick="selectPlan('方案 03：意式轻奢')">
+              选定
+            </button>
+</div>
+</article>
+</section>
+<!-- Bottom Secondary Central Action Bar (Diff Matrix Entry & Export) -->
+<footer class="flex-shrink-0 pt-2 pb-1 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-warm-border">
+<div class="flex items-center gap-2 text-[12px] text-wood-muted">
+<span class="material-symbols-outlined text-[16px] text-botanical">info</span>
+<span>点击上方各方案“查看方案明细”可滑出右侧深度 BOM 表与风控清单，亦可展开横向对比矩阵。</span>
+</div>
+<div class="flex items-center gap-3">
+<button class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-warm-sidebar text-wood font-semibold text-[13px] border border-warm-border hover:border-wood/30 shadow-xs transition-all" onclick="openMatrixModal()" type="button">
+<span class="material-symbols-outlined text-[18px] text-botanical">analytics</span>
+<span>📊 查看完整参数对比 (Diff Matrix)</span>
+</button>
+<button class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-botanical-light text-botanical hover:bg-botanical hover:text-white font-semibold text-[13px] border border-botanical/30 shadow-xs transition-all" onclick="exportReport()" type="button">
+<span class="material-symbols-outlined text-[18px]">download_for_offline</span>
+<span>一键导出对比报告 (PDF/Excel)</span>
+</button>
+</div>
+</footer>
+</main>
+</div>
+</div>
+<!-- ================= 4. INTERACTIVE 480PX SLIDE-OUT DRAWER ================= -->
+<div class="fixed inset-0 bg-wood-dark/30 backdrop-blur-xs z-50 transition-opacity duration-300 opacity-0 pointer-events-none" id="drawerOverlay" onclick="closeDrawer()"></div>
+<aside class="fixed top-0 right-0 h-full w-[480px] max-w-full bg-white z-50 shadow-2xl border-l border-warm-border transform translate-x-full transition-transform duration-300 ease-out flex flex-col" id="detailDrawer">
+<!-- Drawer Header -->
+<div class="p-5 border-b border-warm-border flex items-center justify-between bg-warm-sidebar/80">
+<div class="flex flex-col min-w-0 pr-2">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-botanical-light text-botanical font-mono text-[10px] font-bold">REPORT</span>
+<span class="text-[11px] font-mono text-wood-muted" id="drawerPlanCode">PLAN-A102</span>
+</div>
+<h3 class="font-serif text-[17px] font-bold text-wood-dark truncate mt-0.5" id="drawerPlanTitle">北欧自然 · 舒适中档型 完整深度报告</h3>
+</div>
+<button aria-label="Close drawer" class="p-1.5 rounded-lg text-wood-muted hover:text-wood-dark hover:bg-white transition-colors" onclick="closeDrawer()" type="button">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+<!-- Drawer Tabs (3 Tabs: 预算明细(BOM) | 风险预警 | 全友材料清单) -->
+<div class="flex border-b border-warm-border bg-white px-5">
+<button class="flex-1 py-3 text-[13px] font-semibold text-wood border-b-2 border-botanical transition-colors text-center" id="tabBtn-bom" onclick="switchTab('tab-bom')">
+      预算明细 (BOM)
+    </button>
+<button class="flex-1 py-3 text-[13px] font-medium text-wood-muted hover:text-wood border-b-2 border-transparent transition-colors text-center" id="tabBtn-risks" onclick="switchTab('tab-risks')">
+      风险预警
+    </button>
+<button class="flex-1 py-3 text-[13px] font-medium text-wood-muted hover:text-wood border-b-2 border-transparent transition-colors text-center" id="tabBtn-materials" onclick="switchTab('tab-materials')">
+      全友材料清单
+    </button>
+</div>
+<!-- Drawer Scrollable Content -->
+<div class="flex-1 overflow-y-auto p-5 custom-scrollbar bg-warm-bg/40 flex flex-col gap-4">
+<!-- Tab 1: 预算明细 (BOM) -->
+<div class="flex flex-col gap-3" id="tabContent-bom">
+<div class="p-3.5 rounded-xl bg-white border border-warm-border flex items-center justify-between">
+<div>
+<span class="text-[11px] text-wood-muted">核算工程总预算</span>
+<div class="text-[20px] font-bold text-wood-dark mt-0.5">¥ 11.2 - 13.8 <span class="text-[12px] font-semibold text-wood">万元</span></div>
+</div>
+<span class="px-2.5 py-1 rounded-full bg-botanical-light text-botanical font-mono text-[11px] font-semibold">5大工程项合规</span>
+</div>
+<div class="flex flex-col gap-2 bg-white p-4 rounded-xl border border-warm-border">
+<span class="text-[12px] font-semibold text-wood-dark mb-1">分项工程金额与比重</span>
+<!-- Sub item 1 -->
+<div class="flex flex-col gap-1 p-2 rounded-lg bg-warm-sidebar/50">
+<div class="flex justify-between text-[12px]">
+<span class="text-wood-dark font-medium">水电工程 (双回路弱电隔离)</span>
+<span class="font-mono text-wood">¥1.2 - 1.5万 (11%)</span>
+</div>
+<div class="w-full h-1.5 bg-warm-border rounded-full overflow-hidden">
+<div class="h-full bg-botanical rounded-full" style="width: 11%"></div>
+</div>
+</div>
+<!-- Sub item 2 -->
+<div class="flex flex-col gap-1 p-2 rounded-lg bg-warm-sidebar/50">
+<div class="flex justify-between text-[12px]">
+<span class="text-wood-dark font-medium">基础施工 (全屋找平+双眼皮吊顶)</span>
+<span class="font-mono text-wood">¥2.8 - 3.2万 (24%)</span>
+</div>
+<div class="w-full h-1.5 bg-warm-border rounded-full overflow-hidden">
+<div class="h-full bg-botanical/80 rounded-full" style="width: 24%"></div>
+</div>
+</div>
+<!-- Sub item 3 -->
+<div class="flex flex-col gap-1 p-2 rounded-lg bg-warm-sidebar/50">
+<div class="flex justify-between text-[12px]">
+<span class="text-wood-dark font-medium">主材选型 (全友实木复合地板等)</span>
+<span class="font-mono text-wood">¥3.6 - 4.5万 (33%)</span>
+</div>
+<div class="w-full h-1.5 bg-warm-border rounded-full overflow-hidden">
+<div class="h-full bg-botanical/70 rounded-full" style="width: 33%"></div>
+</div>
+</div>
+<!-- Sub item 4 -->
+<div class="flex flex-col gap-1 p-2 rounded-lg bg-warm-sidebar/50">
+<div class="flex justify-between text-[12px]">
+<span class="text-wood-dark font-medium">软装全友定制 (定制收纳+客餐厅)</span>
+<span class="font-mono text-wood">¥3.0 - 4.0万 (26%)</span>
+</div>
+<div class="w-full h-1.5 bg-warm-border rounded-full overflow-hidden">
+<div class="h-full bg-wood rounded-full" style="width: 26%"></div>
+</div>
+</div>
+<!-- Sub item 5 -->
+<div class="flex flex-col gap-1 p-2 rounded-lg bg-warm-sidebar/50">
+<div class="flex justify-between text-[12px]">
+<span class="text-wood-dark font-medium">智能家电 (新风/智能灯控)</span>
+<span class="font-mono text-wood">¥1.6 - 2.0万 (15%)</span>
+</div>
+<div class="w-full h-1.5 bg-warm-border rounded-full overflow-hidden">
+<div class="h-full bg-accent-gold rounded-full" style="width: 15%"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Tab 2: 风险预警 -->
+<div class="hidden flex flex-col gap-3" id="tabContent-risks">
+<div class="p-3.5 rounded-xl bg-botanical-surface border border-botanical/30 flex items-start gap-3">
+<span class="material-symbols-outlined text-[20px] text-botanical mt-0.5">verified_user</span>
+<div>
+<span class="text-[13px] font-bold text-wood-dark">安全评级 A+：管线走向避开承重构件</span>
+<p class="text-[12px] text-wood-muted mt-0.5">AI 结构应力分析合规度 99.2%，全程无承重打孔风险，无结构干涉项。</p>
+</div>
+</div>
+<div class="p-3.5 rounded-xl bg-white border border-warm-border flex items-start gap-3">
+<span class="material-symbols-outlined text-[20px] text-botanical mt-0.5">eco</span>
+<div>
+<span class="text-[13px] font-bold text-wood-dark">安全保障：全友无醛原木水性直供</span>
+<p class="text-[12px] text-wood-muted mt-0.5">全屋主材符合 ENF/E0 级最高环保标准，工业 4.0 柔性专线直发，免去第三方周转延期。</p>
+</div>
+</div>
+<div class="p-3.5 rounded-xl bg-white border border-warm-border flex items-start gap-3">
+<span class="material-symbols-outlined text-[20px] text-accent-gold mt-0.5">alarm</span>
+<div>
+<span class="text-[13px] font-bold text-wood-dark">工期工序缓冲：全友北欧定制餐客一体</span>
+<p class="text-[12px] text-wood-muted mt-0.5">工厂预制成品与现场泥木交叉施工，建议在第 25 天完成地面复尺核验。</p>
+</div>
+</div>
+</div>
+<!-- Tab 3: 全友材料清单 -->
+<div class="hidden flex flex-col gap-3" id="tabContent-materials">
+<div class="p-3 rounded-xl bg-white border border-warm-border flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-wood-light flex-shrink-0 flex items-center justify-center font-mono text-[12px] text-wood font-bold">01</div>
+<div class="flex-1 min-w-0">
+<h4 class="text-[13px] font-bold text-wood-dark truncate">全友「天境」隐形悬浮收纳柜</h4>
+<p class="text-[11px] text-wood-muted">无把手反弹按压系统 · 内嵌极细氛围光带</p>
+</div>
+<span class="text-[12px] font-bold text-botanical">¥ 4,899</span>
+</div>
+<div class="p-3 rounded-xl bg-white border border-warm-border flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-wood-light flex-shrink-0 flex items-center justify-center font-mono text-[12px] text-wood font-bold">02</div>
+<div class="flex-1 min-w-0">
+<h4 class="text-[13px] font-bold text-wood-dark truncate">全友头层牛皮意式奢享电动沙发</h4>
+<p class="text-[11px] text-wood-muted">德国进口五金电机 · 智能中控触控音响</p>
+</div>
+<span class="text-[12px] font-bold text-botanical">¥ 6,299</span>
+</div>
+<div class="p-3 rounded-xl bg-white border border-warm-border flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-wood-light flex-shrink-0 flex items-center justify-center font-mono text-[12px] text-wood font-bold">03</div>
+<div class="flex-1 min-w-0">
+<h4 class="text-[13px] font-bold text-wood-dark truncate">全岩板可伸缩轻奢餐桌椅组合</h4>
+<p class="text-[11px] text-wood-muted">8人位灵活拓展 · 航天级铝合金精密脚架</p>
+</div>
+<span class="text-[12px] font-bold text-botanical">¥ 3,599</span>
+</div>
+</div>
+</div>
+<!-- Drawer Footer Actions -->
+<div class="p-4 border-t border-warm-border bg-white flex gap-3">
+<button class="flex-1 py-2.5 rounded-xl bg-botanical text-white font-semibold text-[13px] shadow-sm hover:bg-[#3f6d4d] transition-colors flex items-center justify-center gap-1.5" onclick="selectPlan('当前抽屉方案')" type="button">
+<span class="material-symbols-outlined text-[17px]">check_circle</span>
+<span>一键应用为终稿方案</span>
+</button>
+<button class="px-4 py-2.5 rounded-xl bg-warm-sidebar text-wood font-medium text-[13px] border border-warm-border hover:bg-white transition-colors" onclick="exportReport()" type="button">
+      导出
+    </button>
+</div>
+</aside>
+<!-- ================= 5. DIFF MATRIX MODAL ================= -->
+<div class="fixed inset-0 bg-wood-dark/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 transition-opacity duration-200 opacity-0 pointer-events-none" id="matrixModalOverlay" onclick="handleModalBackdrop(event)">
+<div class="bg-white rounded-2xl border border-warm-border shadow-2xl max-w-5xl w-full max-h-[88vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
+<!-- Modal Header -->
+<div class="p-4 px-6 bg-warm-sidebar border-b border-warm-border flex items-center justify-between flex-shrink-0">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[22px] text-botanical">analytics</span>
+<div>
+<h3 class="font-serif text-[18px] font-bold text-wood-dark">核心参数横向评估速查矩阵 (Diff Matrix)</h3>
+<p class="text-[12px] text-wood-muted">多维量化核算对比，便于面对客户讲解与决策推演</p>
+</div>
+</div>
+<button class="p-1 rounded-lg text-wood-muted hover:text-wood hover:bg-white transition-colors" onclick="closeMatrixModal()">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+<!-- Modal Table Content -->
+<div class="overflow-x-auto overflow-y-auto flex-1 custom-scrollbar p-1">
+<table class="w-full text-left text-[13px] border-collapse">
+<thead>
+<tr class="bg-warm-sidebar text-[12px] font-semibold text-wood-muted border-b border-warm-grid">
+<th class="py-3 px-5 w-1/4">评估考核维度</th>
+<th class="py-3 px-5 w-1/4 text-wood">方案 01 · 极简经济型</th>
+<th class="py-3 px-5 w-1/4 text-botanical font-bold bg-botanical-surface border-x border-warm-grid">
+<div class="flex items-center gap-1.5">
+<span>方案 02 · 舒适中档型</span>
+<span class="px-1.5 py-0.2 rounded-full bg-botanical text-white text-[10px]">推荐</span>
+</div>
+</th>
+<th class="py-3 px-5 w-1/4 text-wood font-semibold">方案 03 · 高端尊享型</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-warm-grid">
+<!-- Row 1 -->
+<tr class="hover:bg-warm-sidebar/50">
+<td class="py-3 px-5 text-wood-muted font-medium flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-botanical">eco</span>
+<span>环保等级标准</span>
+</td>
+<td class="py-3 px-5 font-mono text-wood-dark">国标 E1 级环保辅料</td>
+<td class="py-3 px-5 font-mono text-botanical font-semibold bg-botanical-surface border-x border-warm-grid">全友原木水性无醛 E0/ENF 级</td>
+<td class="py-3 px-5 font-mono text-wood font-medium">德国蓝天使 + 日本 F4星级</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-warm-sidebar/50 bg-warm-bg/40">
+<td class="py-3 px-5 text-wood-muted font-medium flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-wood">security</span>
+<span>全屋工程质保期</span>
+</td>
+<td class="py-3 px-5 font-mono text-wood-dark">5 年基础工程保修</td>
+<td class="py-3 px-5 font-mono text-botanical font-semibold bg-botanical-surface border-x border-warm-grid">8 年金牌质保 + 终身维保服务</td>
+<td class="py-3 px-5 font-mono text-wood font-medium">15 年尊享全包 + 专属管家响应</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-warm-sidebar/50">
+<td class="py-3 px-5 text-wood-muted font-medium flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-wood-muted">schedule</span>
+<span>AI 预计交付工期</span>
+</td>
+<td class="py-3 px-5 font-mono text-wood-dark">35 天 (标品流水线)</td>
+<td class="py-3 px-5 font-mono text-botanical font-bold bg-botanical-surface border-x border-warm-grid">45 天 (定制精准交期)</td>
+<td class="py-3 px-5 font-mono text-wood font-medium">60 天 (含高精度现场对缝调试)</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-warm-sidebar/50 bg-warm-bg/40">
+<td class="py-3 px-5 text-wood-muted font-medium flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-wood">local_shipping</span>
+<span>全友制造专线保障</span>
+</td>
+<td class="py-3 px-5 text-wood-dark">标准仓直发 (3天到场)</td>
+<td class="py-3 px-5 text-botanical font-medium bg-botanical-surface border-x border-warm-grid">工业 4.0 柔性定制专线直通</td>
+<td class="py-3 px-5 text-wood">意大利岩板/五金联程专车直抵</td>
+</tr>
+<!-- Row 5 -->
+<tr class="hover:bg-warm-sidebar/50">
+<td class="py-3 px-5 text-wood-muted font-medium flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-wood-muted">balance</span>
+<span>材料溢价率 (较基准)</span>
+</td>
+<td class="py-3 px-5 font-mono text-botanical font-medium">-12.5% (极致压缩损耗)</td>
+<td class="py-3 px-5 font-mono text-botanical font-semibold bg-botanical-surface border-x border-warm-grid">+4.2% (高耐久度部件)</td>
+<td class="py-3 px-5 font-mono text-wood font-medium">+38.6% (高定与艺术造型加成)</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Modal Footer -->
+<div class="p-3.5 px-6 bg-warm-sidebar/60 border-t border-warm-grid flex items-center justify-between text-[11px] text-wood-muted flex-shrink-0">
+<span>比对基准：全友行业企业标准 Q/QY 2024 · 支持一键导出</span>
+<div class="flex items-center gap-2">
+<button class="px-3 py-1.5 rounded-lg bg-white border border-warm-border text-wood hover:bg-warm-sidebar transition-colors" onclick="closeMatrixModal()">关闭</button>
+<button class="px-3 py-1.5 rounded-lg bg-botanical text-white font-semibold hover:bg-[#3f6d4d] transition-colors" onclick="exportReport()">导出完整报表</button>
+</div>
+</div>
+</div>
+</div>
+<!-- ================= JAVASCRIPT MICRO-INTERACTIONS ================= -->
+<script>
+  // 1. Diff Toggle Switch
+  let diffActive = false;
+  function toggleDiffMode(event) {
+    event.preventDefault();
+    diffActive = !diffActive;
+    const knob = document.getElementById('diffToggleKnob');
+    if (diffActive) {
+      knob.classList.remove('bg-wood-muted');
+      knob.classList.add('bg-botanical', 'translate-x-3');
+    } else {
+      knob.classList.add('bg-wood-muted');
+      knob.classList.remove('bg-botanical', 'translate-x-3');
+    }
+  }
+
+  // 2. Drawer Interaction
+  const drawerOverlay = document.getElementById('drawerOverlay');
+  const detailDrawer = document.getElementById('detailDrawer');
+  const drawerPlanTitle = document.getElementById('drawerPlanTitle');
+  const drawerPlanCode = document.getElementById('drawerPlanCode');
+
+  const planDetails = {
+    plan1: { title: "现代简约 · 极简经济型 完整深度报告", code: "PLAN-A101" },
+    plan2: { title: "北欧自然 · 舒适中档型 完整深度报告", code: "PLAN-A102" },
+    plan3: { title: "意式轻奢 · 高端尊享型 完整深度报告", code: "PLAN-A103" }
+  };
+
+  function openDrawer(planKey) {
+    if (planKey && planDetails[planKey]) {
+      drawerPlanTitle.textContent = planDetails[planKey].title;
+      drawerPlanCode.textContent = planDetails[planKey].code;
+    }
+    drawerOverlay.classList.remove('opacity-0', 'pointer-events-none');
+    drawerOverlay.classList.add('opacity-100');
+    detailDrawer.classList.remove('translate-x-full');
+  }
+
+  function closeDrawer() {
+    drawerOverlay.classList.remove('opacity-100');
+    drawerOverlay.classList.add('opacity-0', 'pointer-events-none');
+    detailDrawer.classList.add('translate-x-full');
+  }
+
+  // Drawer Tabs Switch
+  function switchTab(tabId) {
+    const tabs = ['tab-bom', 'tab-risks', 'tab-materials'];
+    tabs.forEach(t => {
+      const content = document.getElementById('tabContent-' + t.split('-')[1]);
+      const btn = document.getElementById('tabBtn-' + t.split('-')[1]);
+      if (t === tabId) {
+        content.classList.remove('hidden');
+        btn.classList.remove('border-transparent', 'text-wood-muted');
+        btn.classList.add('border-botanical', 'text-wood', 'font-semibold');
+      } else {
+        content.classList.add('hidden');
+        btn.classList.remove('border-botanical', 'text-wood', 'font-semibold');
+        btn.classList.add('border-transparent', 'text-wood-muted');
+      }
+    });
+  }
+
+  // 3. Matrix Modal Interaction
+  const matrixModalOverlay = document.getElementById('matrixModalOverlay');
+  function openMatrixModal() {
+    matrixModalOverlay.classList.remove('opacity-0', 'pointer-events-none');
+    matrixModalOverlay.classList.add('opacity-100');
+  }
+
+  function closeMatrixModal() {
+    matrixModalOverlay.classList.remove('opacity-100');
+    matrixModalOverlay.classList.add('opacity-0', 'pointer-events-none');
+  }
+
+  function handleModalBackdrop(e) {
+    if (e.target === matrixModalOverlay) {
+      closeMatrixModal();
+    }
+  }
+
+  // Helper feedback
+  function selectPlan(name) {
+    alert('已成功选定：' + name + '！系统已生成施工深化图纸与供应链直采批次。');
+  }
+
+  function exportReport() {
+    alert('正在生成《全友·智绘家 多方案量化比选与BOM清单》PDF/Excel，稍后自动下载。');
+  }
+</script>
+</body></html>
