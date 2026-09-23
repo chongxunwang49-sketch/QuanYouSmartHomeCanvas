@@ -68,7 +68,13 @@ from .base import BaseAgent
 #: 当时检索没封顶，一次塞了 26 条依据（top_k 的 2.6 倍），
 #: 模型 24 秒内写不完十几条风险，直接超时、0 条产出。
 #: 封顶依据（`RETRIEVAL_TOP_K`）是主要修复，这里同步放宽以留出余量。
-REVIEW_TIMEOUT = 45.0
+#:
+#: ⚠️ 2026-09-23：45s → 75s。同一个成因再犯一次 —— `LLM_MAX_TOKENS`
+#:    从 8000 提到 32000 之后调用变慢，45s 又不够了。实测跑一次
+#:    `/design/generate`，降级原因里写着「[A-06] 审查超时（>45.0s）」。
+#:    审查是全链路里**输出最长**的一个（十几条风险，每条要带可溯源引用），
+#:    所以给到三个内层超时里最大的 75s，仍低于节点层 90s。
+REVIEW_TIMEOUT = 75.0
 
 #: 一次审查检索多少条依据。太少覆盖不到多类风险，太多会稀释模型的注意力。
 RETRIEVAL_TOP_K = 10
@@ -133,7 +139,14 @@ class RiskReviewAgent(BaseAgent):
     code = "A-06"
     name = "RiskReviewAgent"
     requires_vision = False
-    timeout = 55.0
+    # ⚠️ 2026-09-23：55s → 90s。**不是随手放宽，是被内层超时逼上来的。**
+    #    这个 Agent 有三层超时，不变量是「内层 < 节点层 < LLM 层(120s)」：
+    #      REVIEW_TIMEOUT (单次调用)  <  timeout (本行)  <  LLM_TIMEOUT_SECONDS
+    #    内层因为 `LLM_MAX_TOKENS` 提到 32000 已放宽到 75s
+    #    （见 REVIEW_TIMEOUT 的注释），55s 会变成「内层还没到点、
+    #    节点先被熔断」—— 兜底机制失效，整个审查归零。
+    #    一并提到 90s，与生成侧其它 Agent 对齐。
+    timeout = 90.0
 
     async def run(self, state: HomeDecoState) -> dict[str, Any]:
         quote = (state.get("quote_text") or "").strip()

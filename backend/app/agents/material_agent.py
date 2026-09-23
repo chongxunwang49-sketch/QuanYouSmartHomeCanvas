@@ -46,9 +46,20 @@ from ..schemas.material import MaterialPlan
 from ..services.material import catalog
 from .base import BaseAgent
 
-#: 模型挑选的独立超时。比节点总超时（30s）短 —— 让"兜底"先于"熔断"发生。
+#: 模型挑选的独立超时。比节点总超时短 —— 让"兜底"先于"熔断"发生。
 #: 与 A-04 的 NARRATIVE_TIMEOUT 同一个思路。
-SELECT_TIMEOUT = 22.0
+#:
+#: ⚠️ 2026-09-23：22s → 70s。同样是 `LLM_MAX_TOKENS` 从 8000 提到
+#:    32000 的连带影响（见 space_planner.py 里那张实测表）。
+#:
+#:    **注意它不是"必然超时"，而是"压着延迟分布"** —— 实测连续三个分支
+#:    分别是 13333 / 14417 / 8996ms，也就是**正常情况在 22s 以内**，
+#:    只有抖动到上沿的那一次会踩线。这比稳定失败更难查：
+#:    同一份代码同一天，跑三次两次成功一次降级，
+#:    降级原因写「选材超时（>22.0s），已按默认规则补齐」——
+#:    任务 completed、方案照出，只有 `degraded=True` 这一处痕迹。
+#:    70s 给到实测上沿的约 5 倍，与节点层（90s）保持"内层更短"的不变量。
+SELECT_TIMEOUT = 70.0
 
 SYSTEM_PROMPT = """你是一名装修材料选配顾问，为业主在一份**给定的候选清单**里挑选材料。
 
@@ -85,7 +96,9 @@ class MaterialAgent(BaseAgent):
     code = "A-05"
     name = "MaterialAgent"
     requires_vision = False
-    timeout = 30.0
+    # ⚠️ 同 A-03：30s 是在 `LLM_MAX_TOKENS=8000` 时代定的，提到 32000
+    #    之后不够用（完整分析见 space_planner.py 里那段注释）。
+    timeout = 90.0
 
     async def run(self, state: HomeDecoState) -> dict[str, Any]:
         layout = state.get("layout")

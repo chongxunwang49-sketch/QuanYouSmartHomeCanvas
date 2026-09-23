@@ -149,7 +149,45 @@ class SpacePlannerAgent(BaseAgent):
     code = "A-03"
     name = "SpacePlannerAgent"
     requires_vision = False
-    timeout = 30.0
+    # ⚠️ 2026-09-23 实测：**30s 会让方案生成整条链失败。**
+    #
+    #    现象：`/design/generate` 报
+    #      NodeTimeoutError: Node 'generate_plan' exceeded its run timeout
+    #      of 30.000s (elapsed: 30.002s)
+    #    而任务状态里 `degraded=False`、`errors=[]` —— 又是一次
+    #    「失败了但不说为什么」，原因只在那条异常里。
+    #
+    #    根因是一条**因果链，不是独立故障**：
+    #      ① 为修解析，容器侧把 `LLM_MAX_TOKENS` 从 8000 提到 32000
+    #         （deepseek-flash 是思考模型，8000 会被 reasoning 吃光）；
+    #      ② 输出预算变大 ⇒ 每次 LLM 调用变慢；
+    #      ③ 解析侧的超时跟着调了（A-01 90s / A-02 60s），
+    #         **生成侧三个 Agent 仍是 30s**。
+    #
+    #    ⚠️ 关键：这些超时不是"太小"，是**压着 LLM 的延迟分布** ——
+    #    所以表现为**间歇性**失败，比稳定失败更难查（同一份代码同一天，
+    #    有时成功有时降级）。修复后连跑一次拿到的实测（单位 ms，
+    #    三个分支各一行）：
+    #
+    #      A-02 诊断   19492
+    #      A-03 规划   18502 / 19092 / 20529   ← 30s 只比上沿高 1.5 倍
+    #      A-04 预算    6586 /  7730 /  7937
+    #      A-05 选材   13333 / 14417 /  8996   ← 内层限制曾是 22s
+    #      A-06 审查   42559                   ← 内层限制曾是 45s
+    #
+    # ✅ 取值 90s：实测上沿 20.5s 的约 4.4 倍；且低于
+    #    `LLM_TIMEOUT_SECONDS`(120s) —— 真卡死时由调用层先熔断，
+    #    这里不会变成"永远等下去"。
+    #
+    # ⚠️ 这个节点是 fan-out 的分支（每个方案一份），三个分支并行。
+    #    这里的 timeout 是**每个分支各自**的预算，不是三者相加。
+    #
+    # ⚠️ A-04 / A-05 / A-06 还各有一层**内层单次调用超时**
+    #    （NARRATIVE/SELECT/REVIEW_TIMEOUT），不变量是
+    #    「内层 < 节点层 < LLM 层」。只调节点层会让内层先触发，
+    #    结果是"兜底"而非"熔断"——方案照样出，但 `degraded=True`。
+    #    那次一并调了，见各自文件里的注释。
+    timeout = 90.0
 
     async def run(self, state: HomeDecoState) -> dict[str, Any]:
         layout = state.get("layout")

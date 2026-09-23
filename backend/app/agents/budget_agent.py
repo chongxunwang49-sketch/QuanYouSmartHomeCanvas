@@ -50,7 +50,12 @@ from ..services.budget import engine
 from .base import BaseAgent
 
 #: 文字包装的独立超时。比节点总超时短 —— 让"写字"先于"算数"被放弃。
-NARRATIVE_TIMEOUT = 20.0
+#:
+#: ⚠️ 2026-09-23：20s → 60s。同 A-05/A-06，20s 是 `LLM_MAX_TOKENS=8000`
+#:    时代的数字，提到 32000 后不够用。这一路是三个里输出最短的
+#:    （只是一段造价说明），所以给的内层预算也最小，但既然实测纯文本
+#:    调用基线已经是 24s，保留 20s 就等于**恒定降级**。
+NARRATIVE_TIMEOUT = 60.0
 
 SYSTEM_PROMPT = """你是一名装修预算顾问，负责把一份**已经算好的**预算表讲给业主听。
 
@@ -87,7 +92,11 @@ class BudgetAgent(BaseAgent):
     code = "A-04"
     name = "BudgetAgent"
     requires_vision = False
-    timeout = 30.0
+    # ⚠️ 同 A-03：30s 是在 `LLM_MAX_TOKENS=8000` 时代定的。
+    #    提到 32000 之后调用变慢，30s 会让方案生成整条链超时
+    #    （完整分析见 space_planner.py 里那段注释）。
+    #    本 Agent 与 A-03 在同一个 fan-out 里并行，预算应当一致。
+    timeout = 90.0
 
     async def run(self, state: HomeDecoState) -> dict[str, Any]:
         layout = state.get("layout")
