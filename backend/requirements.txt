@@ -1,0 +1,111 @@
+# ═══════════════════════════════════════════════════════════════════
+# 全友·智绘家 —— 后端运行时依赖（**唯一真源**）
+# ═══════════════════════════════════════════════════════════════════
+#
+# ⚠️ 为什么会有这个文件
+# ───────────────────────────────────────────────────────────────────
+# 仓库此前**没有任何依赖清单**：没有 requirements.txt / pyproject.toml /
+# setup.py，且 git 历史里从未出现过（已遍历全部 revision 确认）。
+# 依赖事实上只存在于「开发机那个 conda 环境」里 —— 换台机器、
+# 或者要构建 qy-backend 镜像（AC-16）时，装不起来。
+#
+# ⚠️ 与 docs/需求/需求文档.md 附录 E（约第 2323 行）那份 pip install **不一致**
+# ───────────────────────────────────────────────────────────────────
+# 按对话交接.md §2 第 2 条的规矩：不改需求文档，在代码注释里标注差异。
+# 附录 E 那条命令**两头都不对**：
+#
+#   · 多列了代码里**零 import** 的包：
+#       sqlalchemy / alembic / psycopg2-binary / python-jose / passlib /
+#       python-multipart / openai
+#     实测 `grep -rn "import \(psycopg2\|sqlalchemy\|jose\|passlib\)" backend/` 零命中。
+#     特别澄清 openai：llm_client.py **没有用 openai SDK**，它走 httpx 直连。
+#     文件名里的 `_to_openai_messages` / `_parse_openai_usage` 指的是
+#     「OpenAI 兼容的报文格式」，不是那个 SDK。
+#     （psycopg2 缺席还有个副作用：config.py 的 postgres_dsn 属性目前是死代码，
+#       PostgreSQL 层整体没接 —— 所以 qy-postgres 容器是「Healthy 但空」的，
+#       见对话交接.md §4.7.2 ②。这不是缺陷，AC-16 只数 Healthy 容器数。）
+#
+#   · 漏了代码**真正依赖**的包：
+#       fastapi / loguru / httpx / Pillow / PyYAML / chromadb / langgraph
+#
+# 本清单的依据不是任何文档，而是对 backend/ 全量 import 的实测扫描
+# （含函数内懒加载那一部分），以及**当前正在跑的那套环境里 pip freeze 的实际版本**。
+#
+# ⚠️ 版本口径
+# ───────────────────────────────────────────────────────────────────
+# 下面的版本号是**实测值** —— 取自本机 base 环境（D:\AI damoxing\Anaconda3\python.exe，
+# Python 3.13.5），也就是跑测试、起后端的那一个。镜像用 python:3.11-slim，
+# 这些包在 3.11 上都有 wheel。若某个包在 3.11 上没有对应版本导致构建失败，
+# 按报错调整 —— 但**不要**改成「>=」一把梭，版本漂移会让
+# 「dev 能跑、容器里跑不了」这种最难查的问题出现。
+#
+# 分组说明：
+#   【A】导入期必需 —— main.py 一旦 import 就会拉到
+#   【B】主链路必需 —— 函数内懒加载，不装则 import 不报错，
+#        但跑到那个节点才炸；对演示来说等于坏掉
+#   【C】刻意不装 —— 见文件末尾，那一段同样重要
+
+# ── 【A】导入期必需 ────────────────────────────────────────────
+fastapi==0.115.6
+uvicorn==0.34.0
+loguru==0.7.3
+pydantic==2.13.5
+pydantic-settings==2.15.0
+httpx==0.28.1
+Pillow==12.3.0
+PyYAML==6.0.3
+
+# ── 【B】主链路必需（懒加载，但少了就坏）────────────────────────
+# langgraph：graph/workflow.py 里 `from langgraph.graph import ...` 在 build_graph() 内。
+#   不装的话 import 期无感，一调 /layout/parse 就炸。
+langgraph==1.2.11
+
+# redis：core/redis_client.py:177 在 client() 内懒加载。
+#   compose 里 qy-redis 是起的，所以这个包必须有 —— 否则任务进度、
+#   额度、语义缓存、户型暂存四条路径全部退化到内存。
+redis==8.1.0
+
+# chromadb：knowledge/store.py:148 懒加载。知识库 419 条 chunk 全在它里面，
+#   不装则 A-06 拿不到任何引用依据（降级为「无来源」而不是报错，静默变差）。
+chromadb==1.5.9
+
+# numpy：image/precheck.py:142 懒加载，用于清晰度检测。
+#   precheck_image 是**主链路上的图节点**（每个任务都会走），所以是真依赖。
+numpy==2.4.6
+
+# ── 【C】刻意不装的，以及为什么不装 ─────────────────────────────
+#
+# ▶ torch / diffusers / opencv-python —— **不装**
+#     ADR-01 已决定不接 SD1.5 出图（对话交接.md §7.3），这条路径不存在了；
+#     它们在 services/image/local_sd15.py 里全是函数内 import，不装不影响
+#     除 SD15 外的任何功能；容器内也没有 GPU 直通，装了纯属死重。
+#     ⚠️ 代价：容器里 IMAGE_PROVIDER 必须保持 vector（默认值即是），
+#        改成 local_sd15 会在出图时才失败。
+#     注：需求文档 §3.2 的 qy-backend 预算行写「~600 MB（含 torch，故偏大）」，
+#        本镜像**有意偏离**这一句，此处即差异标注。
+#
+# ▶ langgraph-checkpoint-redis —— **不装**（这是个需要你知道的判断）
+#     实测本机 base 环境里**根本没装它**（`pip show` 查无此包，
+#     `import langgraph.checkpoint.redis` 报 ModuleNotFoundError）。
+#     也就是说：workflow.py 的 RedisSaver 分支**从未真正跑过**，
+#     ENABLE_REDIS_CHECKPOINTER=true 至今是纸面配置，一直是异常兜底到
+#     InMemorySaver 在撑着。
+#     现在装上它 = 在 compose 里**首次激活一条从未验证过的代码路径**，
+#     而这次跑 compose 的目的恰恰是验收 AC-16。失败方向要选对：
+#     验收 Docker 拓扑的时候，不应该同时引入一个未测的变量。
+#     ⇒ 因此 docker-compose.yml 里显式设 ENABLE_REDIS_CHECKPOINTER=false，
+#       让它走 InMemorySaver —— 与今天 dev 的行为**完全一致**，不引入新变量。
+#       AC-12（Redis 会话恢复）要单独做，届时再装、再测。
+#
+# ▶ mcp —— 不装。只有 core/mcp_client.py 懒加载它，服务于 AC-11（MCP 工具层），
+#     那个还没做。mcp_servers/ 是独立进程，由宿主/脚本拉起，不进本镜像的运行路径。
+#     （不过 mcp_servers/ 目录还是会 COPY 进去，见 Dockerfile —— 成本极低，
+#      省得将来做 AC-11 时才发现镜像里缺文件。）
+#
+# ▶ langchain-text-splitters —— 不装。knowledge/chunking.py 懒加载，
+#     只在**建库**（scripts/ingest_knowledge.py）时用。运行时检索走
+#     store.query_vectors，用不到切块。库已经建好了（419 条 chunk），
+#     容器只需要读它。
+#
+# ▶ sqlalchemy / alembic / psycopg2-binary / python-jose / passlib /
+#   python-multipart / openai —— 不装。见文件开头的说明，代码里零 import。

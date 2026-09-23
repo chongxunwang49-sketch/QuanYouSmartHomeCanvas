@@ -1,0 +1,239 @@
+# ═══════════════════════════════════════════════════════════════════
+# 全友·智绘家 —— Docker Compose 拓扑（4 容器）
+# ═══════════════════════════════════════════════════════════════════
+# 权威依据：docs/需求/需求文档.md §3.2（第 1072 行起）。**照图纸施工，不要从零设计。**
+#
+#   | # | 容器        | 镜像                | 预算    | 端口绑定            |
+#   | 1 | qy-postgres | postgres:15-alpine  | ~80 MB  | 127.0.0.1:5432:5432 |
+#   | 2 | qy-redis    | redis:7-alpine      | ~30 MB  | 127.0.0.1:6379:6379 |
+#   | 3 | qy-backend  | 本仓构建            | ~600 MB | 127.0.0.1:8000:8000 |
+#   | 4 | qy-nginx    | nginx:alpine        | ~15 MB  | 127.0.0.1:80:80     |
+#
+# ⚠️ **端口一律写 `127.0.0.1:` 前缀，绝不写成 `"5432:5432"`。**
+#    后者等价于 0.0.0.0，会把数据库暴露给同一 WiFi 下的任何设备 ——
+#    而本项目存的是用户上传的户型图（隐私数据，需求 2.3.2）。
+#    附录 B.6 专门为这一条写了一节，验收项 AC-37。
+#
+# ⚠️ **内存账（实测，不是估算）**
+#    Docker VM 硬上限 7.63 GiB。实测当前已有 8 个**别的项目的**容器在跑，
+#    占掉约 6.13 GiB，**只剩约 1.50 GiB**。
+#    本文件四个 mem_limit 合计 1428 MB —— 塞得进去，但**没有文档 §3.2 要求的
+#    那 2 GB 安全垫**（那一节的账把 my-rerank 当成了宿主机进程，而实测它是容器，
+#    吃的是这 7.63 GiB 里的 2.56 GiB，见对话交接.md §4.5.3 的修正）。
+#
+#    mem_limit 是**上限不是预留**，四容器实际占用约 725 MB，
+#    所以真实余量约 800 MB。要拿到舒服的安全垫，最干净的杠杆是
+#    `docker stop my-rerank`（可逆，`docker start` 就回来）——
+#    本项目并未接它（RERANK_URL 为空，见下方注释）。
+#
+# ⚠️ **restart 一律不设**（即 "no"）。这是刻意的：
+#    AC-16 验收期间，一个被 OOM 杀掉的容器**应该保持死亡**让人一眼看见，
+#    而不是自动重启进入 crash-loop 把问题盖住 —— 那正是本项目
+#    「不许静默降级」原则在部署层的同一件事。
+
+name: quanyou-smart-homecanvas
+
+services:
+
+  # ── 1/4 PostgreSQL ──────────────────────────────────────────
+  # ⚠️ 它是「Healthy 但空」的容器，**这不是问题**：
+  #    项目目前没有任何数据库层（户型存内存 + Redis，见 api/store.py 的注释），
+  #    psycopg2/sqlalchemy 一行代码都没 import。AC-16 只数 Healthy 容器数。
+  #    ⚠️ 别被它带偏去写 schema / ORM —— 那是 AC-14 审计日志的活。
+  qy-postgres:
+    image: postgres:15-alpine
+    container_name: qy-postgres
+    environment:
+      POSTGRES_USER: qy
+      POSTGRES_PASSWORD: qy       # 本地演示用；BIND 是回环，不对外
+      POSTGRES_DB: quanyou
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - qy-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qy -d quanyou"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    mem_limit: 160m
+    networks: [qy-net]
+
+  # ── 2/4 Redis ───────────────────────────────────────────────
+  # ⚠️ **起它是有实际意义的，不是凑数。**
+  #    本机 Redis 一直没起，所以 dev 模式下 health 常年 degraded、
+  #    任务进度走内存回退路径。起了 qy-redis 之后，这四条路径真正生效：
+  #      任务进度 / 额度限流 / 语义缓存 / 户型暂存
+  #    （见 core/redis_client.py 的模块说明。）
+  qy-redis:
+    image: redis:7-alpine
+    container_name: qy-redis
+    # maxmemory 256mb + allkeys-lru 是需求 §2.2.4 明确规定的配置。
+    # ⚠️ 容器内 redis 还是要 listen 0.0.0.0 —— 同上，对外口子由
+    #    compose 的 127.0.0.1 映射把着。protected-mode 关掉是因为
+    #    qy-backend 从 Docker 网络另一台主机连进来，会被默认保护挡住。
+    command:
+      - redis-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --bind
+      - 0.0.0.0
+      - --protected-mode
+      - "no"
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    mem_limit: 320m
+    networks: [qy-net]
+
+  # ── 3/4 后端 ────────────────────────────────────────────────
+  qy-backend:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    container_name: qy-backend
+    # ⚠️ 8000 被本地 uvicorn 占着（dev 模式那套）。
+    #    对策是**腾出 8000，不要改端口** —— dev（vite + uvicorn）与
+    #    compose 本来就是同一件事的两种跑法，在 8000 上天然互斥。
+    #    这是模式切换，不是要解决的冲突。见对话交接.md §4.7.2 ①。
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      # ── 密钥：从宿主环境继承，**绝不写进本文件** ──
+      # 实测宿主 shell 环境里已有 DEEPSEEK_API_KEY，compose 会自动取到。
+      # 若哪天没有了，写进项目根的 .env（compose 会自动读该文件做变量替换），
+      # 或改为 env_file 引用。留空也不致命 —— 代码会告警并降级到本地 Ollama，
+      # 只是解析能力明显下降。
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+
+      # ── 服务发现：容器里的 localhost 指容器自己，必须用服务名 ──
+      # 这是容器化最经典的坑，config.py 的默认值是 localhost，会连不上。
+      REDIS_URL: "redis://qy-redis:6379/0"
+      POSTGRES_HOST: "qy-postgres"
+
+      # ── Ollama：宿主机原生，**必须走 host.docker.internal** ──
+      # ⚠️ 这一条是实测补上的，不是照抄默认值。
+      #    config.py 的默认是 http://localhost:11434，而容器里的 localhost
+      #    指的是容器自己 —— 实测后果：A-01 主模型失败后转降级路径，
+      #    `ollama/minicpm-v4.6:latest: ConnectError: All connection attempts failed`，
+      #    也就是说 **compose 模式下整条降级链是死的**（降级本身又静默成功，
+      #    任务显示 completed、degraded=True，但房间数为 0）。
+      #    依据 §3.2：「Ollama | 宿主机原生（已在跑）| 不计入 Docker VM」。
+      #    对话交接.md §4.7.2 ④ 只提到了 my-rerank 要用 host.docker.internal，
+      #    漏了 Ollama —— 这里一并补上。
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+
+      # ⚠️ **显式关掉 Redis checkpointer，这是本次刻意的一个决定。**
+      #    实测 langgraph-checkpoint-redis **在本机从未安装过**
+      #    （pip show 查无此包，import 报 ModuleNotFoundError），
+      #    也就是说 workflow.py 的 RedisSaver 分支**从未真正跑过**，
+      #    ENABLE_REDIS_CHECKPOINTER=true 一直是纸面配置、靠异常兜底
+      #    降到 InMemorySaver 在撑。
+      #    现在打开它 = 在验收 Docker 拓扑的同时**首次激活一条未验证的路径**。
+      #    验收 AC-16 不该同时引入未测变量 —— 保持与今天 dev 完全一致的行为。
+      #    AC-12（Redis 会话恢复）要做的时候再单独开、单独测。
+      ENABLE_REDIS_CHECKPOINTER: "false"
+
+      # ── 数据落盘：E: 盘 bind mount 到 /data/quanyou ──
+      # 与 .env.example 的路径一一对应，只是换了容器内的前缀。
+      CHROMA_PATH: "/data/quanyou/data/chroma"
+      UPLOAD_DIR:  "/data/quanyou/uploads"
+      OUTPUT_DIR:  "/data/quanyou/outputs"
+
+      # ── Rerank：留空即关闭 ──
+      # 实测 .env 不存在 ⇒ RERANK_URL 一直是默认空值 ⇒ rerank_enabled=False。
+      # 本项目**目前没接** my-rerank。
+      # ⚠️ 将来要接，值必须是 http://host.docker.internal:9999 ——
+      #    **不能写 127.0.0.1:9999**，容器里的 127.0.0.1 指容器自己。
+      RERANK_URL: ""
+
+      # ── LLM token 预算：**必须调大，实测结论** ──
+      # ⚠️ 这是本次实测发现的一个真问题，不是调优。
+      #    config.py 的默认 LLM_MAX_TOKENS=8000，而 deepseek-flash 是思考模型，
+      #    reasoning token 先于 content 消耗预算。实测连跑两次，**两次都**：
+      #      「返回空内容，但消耗了 8000 个 reasoning token —— max_tokens=8000
+      #        被思考过程耗尽」
+      #    即 8000 **不足以**解析这张 1372×1418 的户型图（图片越大 prompt 越长，
+      #    推理链也越长）。A-01 随即转入降级路径 → 见上一条 OLLAMA_BASE_URL。
+      #    失败是**静默的**：任务显示 completed、degraded=True，但房间数为 0 ——
+      #    正是本项目最防的那类"看起来成功、实际什么都没做"。
+      #    上限已实测：DeepSeek /v1 接受到 max_tokens=65536（HTTP 200），
+      #    所以有充分余量。取 32000（4 倍），既不撞上限，也不会放任跑飞。
+      # ⚠️ 这里只在 compose 里改，**没有动 config.py 的默认值** ——
+      #    那样才能对比 dev 模式与 compose 模式的行为差异。
+      #    dev 侧要不要一起调，需要单独定（config.py 的注释原本写的是
+      #    「不要低于 2000」，说明 8000 当时被认为很宽裕）。
+      LLM_MAX_TOKENS: "32000"
+
+      # ── 出图：容器内没有 GPU 直通，只能是 vector ──
+      # 与 Dockerfile 里「不装 torch」的决定配套。
+      IMAGE_PROVIDER: "vector"
+
+      # 下面这些都沿用 config.py 的默认值，写出来只是为了让
+      # `docker compose config` 的输出自带说明，不必回头翻代码：
+      APP_ENV: "dev"
+      BIND_HOST: "127.0.0.1"
+      BACKEND_PORT: "8000"
+      ALLOW_LAN_ACCESS: "false"
+    volumes:
+      # ⚠️ 必须挂 —— 不挂的话 Chroma 是个空库，A-06 拿不到任何引用依据，
+      #    而界面只会显示「无来源」，**看起来像模型不引用，其实是没数据**。
+      #    实测宿主机 E:/quanyou 存在，chroma 有 4.8 MB 真实数据（419 条 chunk）。
+      - "E:/quanyou:/data/quanyou"
+    # host.docker.internal 在 Docker Desktop for Windows 上自带，
+    # 但在 Linux 上需要显式声明。写上它让这份 compose 不依赖宿主平台
+    # —— 上面 OLLAMA_BASE_URL 依赖这个名字能解析，不能靠"本机恰好有"。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      qy-redis:
+        condition: service_healthy
+      qy-postgres:
+        condition: service_healthy
+    mem_limit: 900m
+    networks: [qy-net]
+
+  # ── 4/4 前端 ────────────────────────────────────────────────
+  # ⚠️ **compose 模式下前端在 80 端口，不是 5173。**
+  #    演示地址从 http://localhost:5173 变成 http://127.0.0.1。
+  #    换模式时同时换地址，别以为前端坏了。
+  qy-nginx:
+    image: nginx:alpine
+    container_name: qy-nginx
+    ports:
+      - "127.0.0.1:80:80"
+    volumes:
+      # 直接把已构建的产物挂进去，**不在容器里跑 node**（§3.2 明确砍掉 node 容器）。
+      # 实测 frontend/dist 存在（77 个文件 / 9.7 MB / 构建于 2026-09-23 16:11），
+      # 且 client.ts 的 axios baseURL 是相对路径 `/api/v1`，
+      # 所以**不需要重新构建**就能放在 nginx 后面跑。
+      - "./frontend/dist:/usr/share/nginx/html:ro"
+      - "./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro"
+    depends_on:
+      - qy-backend
+    healthcheck:
+      # nginx:alpine 自带 busybox wget，不必额外装东西
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    mem_limit: 48m
+    networks: [qy-net]
+
+volumes:
+  # 具名卷存 PG 数据。不挂宿主目录是因为：本项目 PG 目前是空的，
+  # 数据没有保留价值，而具名卷不会在宿主机上留下一个需要解释的目录。
+  qy-pgdata:
+
+networks:
+  qy-net:
+    driver: bridge
