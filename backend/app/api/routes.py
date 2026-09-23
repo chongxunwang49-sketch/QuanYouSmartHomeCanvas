@@ -22,7 +22,7 @@ HTTP 路由。
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, get_args
 
 from fastapi import APIRouter, Request, Response
 from loguru import logger
@@ -31,6 +31,7 @@ from ..core.capabilities import OperationNotAllowedError
 from ..core.config import settings
 from ..graph.state import initial_state
 from ..graph.workflow import get_compiled_graph
+from ..schemas.plan import BudgetGrade, PlanStyle
 from ..services.geometry import build_walkable
 from ..services.material import catalog
 from ..services.render import hotspot_payload, render_plan_for
@@ -130,6 +131,36 @@ async def design_generate(req: GenerateRequest, request: Request) -> ApiResponse
 
     if not req.styles or not req.budget_grades:
         raise ApiError(4001, "styles 与 budget_grades 都不能为空")
+
+    # ⚠️ **必须校验取值，不能只校验非空。**
+    #
+    # 2026-09-23 实测踩到：前端「生成参数」的第 3 套发的是 `luxury`，
+    # 而后端 `PlanStyle` 里没有这个值。下游 `space_planner.py` 用
+    # `_STYLE_HINTS.get(style, '按该风格的通行做法处理')` 兜底 ——
+    # 那一套方案**完全没拿到风格引导**，界面上却仍显示「意式轻奢」。
+    # 全程零报错，正是本项目最防的那类「看起来成功、实际没做」。
+    #
+    # 拦在入口的理由与能力守卫同理（capabilities.py 的立场）：
+    # 与其让三个分支各静默降级一次，不如在这里说清哪个值不认、允许哪些。
+    allowed_styles = set(get_args(PlanStyle))
+    allowed_grades = set(get_args(BudgetGrade))
+    bad_styles = [s for s in req.styles if s not in allowed_styles]
+    bad_grades = [g for g in req.budget_grades if g not in allowed_grades]
+    if bad_styles or bad_grades:
+        detail = "".join(
+            [
+                f"不认识的风格 {bad_styles}；" if bad_styles else "",
+                f"不认识的预算档位 {bad_grades}；" if bad_grades else "",
+            ]
+        )
+        raise ApiError(
+            4001,
+            f"风格或预算档位取值不合法：{detail}",
+            data={
+                "allowed_styles": sorted(allowed_styles),
+                "allowed_budget_grades": sorted(allowed_grades),
+            },
+        )
 
     tm = get_task_manager()
     rec = tm.create("generate", trace_id=_trace_id(request))

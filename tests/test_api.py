@@ -194,6 +194,46 @@ class TestBusinessErrors:
                              json={"layout_id": "layout_ok", "styles": []})
         assert r.json()["code"] == 4001
 
+    async def test_未知风格返回4001并举出允许值(self):
+        """
+        2026-09-23 实测那个 bug 的回归测试。
+
+        前端「生成参数」第 3 套曾发 `luxury`，而后端 `PlanStyle` 里没这个值。
+        下游 `space_planner.py` 用
+        `_STYLE_HINTS.get(style, '按该风格的通行做法处理')` 兜底 ——
+        那一套方案**完全没拿到风格引导**，界面上却仍显示「意式轻奢」，
+        全程零报错。守在这一层：入口直接拒，而不是让分支静默降级。
+        """
+        await layout_store.save("layout_ok", FULL_LAYOUT)
+        async with await _client() as c:
+            r = await c.post(
+                "/api/v1/design/generate",
+                json={"layout_id": "layout_ok",
+                      "styles": ["modern", "luxury"],
+                      "budget_grades": ["economy", "high"]},
+            )
+        body = r.json()
+        assert r.status_code == 200, "业务失败不能用 4xx"
+        assert body["code"] == 4001
+        assert "luxury" in body["msg"]
+        # 光说"不合法"没用，得说清允许哪些（capabilities.py 的立场）
+        allowed = body["data"]["allowed_styles"]
+        assert "modern" in allowed and "chinese" in allowed
+        assert "luxury" not in allowed
+
+    async def test_未知预算档位返回4001(self):
+        await layout_store.save("layout_ok", FULL_LAYOUT)
+        async with await _client() as c:
+            r = await c.post(
+                "/api/v1/design/generate",
+                json={"layout_id": "layout_ok",
+                      "styles": ["modern"], "budget_grades": ["cheap"]},
+            )
+        body = r.json()
+        assert body["code"] == 4001
+        assert "cheap" in body["msg"]
+        assert "economy" in body["data"]["allowed_budget_grades"]
+
 
 # ══════════════════════════════════════════════════════════════════
 # 材料价格（同步接口）

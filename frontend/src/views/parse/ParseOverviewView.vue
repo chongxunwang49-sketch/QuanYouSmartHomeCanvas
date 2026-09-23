@@ -19,6 +19,20 @@ import { useParseSession } from '@/composables/useParseSession'
  * 在降级时给概览卡加一层水印（需求文档 2.2.4 的呈现要求之一）。
  */
 const s = useParseSession()
+
+/**
+ * 朝向的展示文案。
+ *
+ * ⚠️ 模型用**字符串 `"unknown"`** 当"识别不出"的哨兵值，而不是空值。
+ * 所以 `|| '未知'` 拦不住它 —— 那是个非空字符串，`||` 会放行，
+ * 界面上就直愣愣显示英文 `unknown`。
+ * （房间清单里对 `r.orientation` 用的是 `!== 'unknown'` 判断，
+ * 那处是对的；这里漏了同样一道。）
+ */
+function orientationText(v: string | null | undefined): string {
+  const t = (v ?? '').trim()
+  return !t || t.toLowerCase() === 'unknown' ? '未知' : t
+}
 </script>
 
 <template>
@@ -117,7 +131,7 @@ const s = useParseSession()
           <div class="rounded-xl border border-warm-border bg-warm-sidebar/60 p-3">
             <p class="text-[10px] font-semibold uppercase text-wood-muted">入户朝向</p>
             <p class="mt-0.5 text-[20px] font-bold text-wood-dark">
-              {{ s.layout.value?.entrance_orientation || '未知' }}
+              {{ orientationText(s.layout.value?.entrance_orientation) }}
             </p>
           </div>
         </div>

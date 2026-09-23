@@ -33,11 +33,22 @@ const poll = useTaskPolling<GenerateResult>()
 const layoutId = ref(String(route.query.layout || ''))
 const submitting = ref(false)
 
-/** 三套预设配对。改这里等于改"一次生成哪三套方案"。 */
+/**
+ * 三套预设配对。改这里等于改"一次生成哪三套方案"。
+ *
+ * ⚠️ **第 3 套曾写 `luxury`，而后端 `PlanStyle` 里没有这个值** ——
+ * 后果是那一套方案（高端档）落进 `_STYLE_HINTS.get(style, …)` 的兜底分支，
+ * **完全没拿到风格引导**，界面上却仍标着「意式轻奢」。
+ * 后端只从 `?layout=` 或这里拿风格，不会自己纠正，所以是静默失效。
+ *
+ * 现已与后端 `DEFAULT_BRANCH_PAIRS`（modern/nordic/chinese）对齐 ——
+ * 前端默认三套 = 后端默认三套，两边一致。
+ * 可选的风格全集见 `@/api/types` 的 `STYLE_LABEL`（同样对齐后端枚举）。
+ */
 const PAIRS = [
   { style: 'modern', grade: 'economy' },
   { style: 'nordic', grade: 'medium' },
-  { style: 'luxury', grade: 'high' },
+  { style: 'chinese', grade: 'high' },
 ] as const
 
 const styles = ref<string[]>(PAIRS.map((p) => p.style))

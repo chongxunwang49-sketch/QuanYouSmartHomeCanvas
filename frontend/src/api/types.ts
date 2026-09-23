@@ -567,13 +567,31 @@ export interface ReviewRequest {
  * 这份表**只影响展示**，不参与任何逻辑判断 —— 后端的配对是按位置来的，
  * 前端不重算。缺项时回落到原始 key，而不是猜一个中文名。
  */
+/**
+ * ⚠️ **这份表必须与后端 `schemas/plan.py` 的 `PlanStyle` 逐字对应。**
+ *
+ * 它同时是两个东西的数据源：
+ *   ① 展示层的中文名（`PlanCard` / `PlanDrawer` / `DiffMatrix`）
+ *   ② 「生成参数」里风格下拉框的**可选项**（`GenerateView.vue`）
+ *
+ * 因为 ②，这里多一个键就等于**让用户选到一个后端不支持的值**，
+ * 而后端的表现是静默的：`space_planner.py` 用
+ * `_STYLE_HINTS.get(style, '按该风格的通行做法处理')` 兜底，
+ * 那一套方案就**拿不到任何风格引导**，但界面上仍显示那个风格名。
+ *
+ * 实测踩过（2026-09-23）：这里曾写 `luxury: '意式轻奢'`，后端没有这个值，
+ * 于是「生成参数」默认的第三套（高端档）实际是"无风格"生成的。
+ * 另外 `japanese` 也与后端的 `japandi` 对不上。
+ *
+ * 后端权威枚举：modern / nordic / chinese / cream / japandi / industrial
+ */
 export const STYLE_LABEL: Record<string, string> = {
   modern: '现代简约',
   nordic: '北欧自然',
   chinese: '新中式',
-  luxury: '意式轻奢',
   cream: '奶油风',
-  japanese: '日式侘寂',
+  japandi: '日式侘寂',
+  industrial: '工业风',
 }
 
 export const GRADE_LABEL: Record<string, string> = {
