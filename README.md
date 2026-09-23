@@ -373,16 +373,6 @@ docs/          非代码文档（与功能文件分开存放）
   面试/         面试亮点.md          可讲事件与追问预案
 ```
 
-### 前端怎么跑
-
-```bash
-cd frontend && npm install && npm run dev     # http://localhost:5173
-# 另开一个终端，在仓库根目录：
-python -m uvicorn backend.app.main:app --port 8000
-```
-
-设计与工程说明见 [`frontend/README.md`](frontend/README.md)。
-
 ---
 
 ## 已知限制
@@ -407,46 +397,13 @@ python -m uvicorn backend.app.main:app --port 8000
 - 价格、规范、材料数据必须可溯源，禁止编造
 - 端口一律绑 `127.0.0.1`，**全部演示在本地完成**，不做公网暴露
 
-### 推送与同步
-
-**日常只推 Gitee。** GitHub 是公开镜像，留到项目完工时一次性推送。
-
-| 远端 | 用途 | 需要代理吗 |
-|---|---|---|
-| `gitee` | **日常就推这个**，代码保障在这儿 | 不需要，国内直连 |
-| `origin`（GitHub） | 公开镜像，**项目完工后再推** | 需要，见下 |
-
-**为什么 GitHub 不日常推**：本机**直连不到 `github.com`**
-（实测 `curl https://github.com` 返回 `000`），必须先让代理软件在跑；
-忘了就报 `Failed to connect to github.com port 443 after 21s` ——
-而那个报错看起来像"网络坏了"，不像"少开了个软件"。
-
-⚠️ **git 不读 Windows 的系统代理**，所以"浏览器能上 GitHub"不等于"git 能"。
-本仓库已在本地配置里**按 URL** 指定了代理（只对 GitHub 生效，Gitee 仍直连）：
-
-```bash
-git config http.https://github.com/.proxy http://127.0.0.1:7897
-```
-
-于是**只要代理软件开着**（不必管里面那个"系统代理"开关），
-`git push origin main` 就能用。
-
-> **一条走过又退回来的路**（记下来免得重复踩）：曾搭过「推 Gitee →
-> GitHub Actions 定时同步」。方向是对的 —— 同步动作发生在 GitHub 服务器上，
-> 本机不需要代理。**卡在 Gitee 的反爬策略**：它对**云数据中心 IP 段**
-> （GitHub runner 在 Azure）的匿名克隆返回 401，报
-> `could not read Username`。实测排除了"境外 IP 被墙"这个初始假设
-> （本机走代理从境外出口匿名克隆是成功的）。
-> 修法是加一对 Gitee 令牌密钥 —— 对一个演示项目来说，
-> 为了省"推之前确认代理开着"而多维护两处凭据，不划算。工作流已停用。
-
-
 ## 相关文档
 
 非代码文档统一放在 `docs/` 下，与功能文件分开：
 
 - [docs/需求/需求文档.md](docs/需求/需求文档.md) —— 完整需求、架构决策记录（ADR）、验收清单、风险登记册
 - [docs/参考/开源项目链接.md](docs/参考/开源项目链接.md) —— 逐条核实过的开源项目清单
+- [frontend/README.md](frontend/README.md) —— 前端的结构、构建纪律与设计令牌
 - [docs/面试/面试亮点.md](docs/面试/面试亮点.md) —— 开发过程中可讲给面试官听的事件与追问预案
 - [skills/](skills/) —— 各 Agent 的能力边界与 System Prompt（属功能文件，不随文档移动）
 
