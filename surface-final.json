@@ -1,0 +1,35 @@
+{
+  "modern": {
+    "floor": "#9C8E77",
+    "surface": {
+      "wood": "#271D11",
+      "fabric": "#D6CCBC",
+      "metal": "#050506",
+      "stone": "#DEDDD9",
+      "green": "#0C170B",
+      "white": "#FCFCFC"
+    }
+  },
+  "nordic": {
+    "floor": "#A8906B",
+    "surface": {
+      "wood": "#2A2012",
+      "fabric": "#D9D0C0",
+      "metal": "#050506",
+      "stone": "#E1DFDC",
+      "green": "#0F180C",
+      "white": "#FCFCFC"
+    }
+  },
+  "chinese": {
+    "floor": "#9C7E56",
+    "surface": {
+      "wood": "#1E140D",
+      "fabric": "#C8BBA5",
+      "metal": "#040405",
+      "stone": "#D6D4D0",
+      "green": "#0A1209",
+      "white": "#FBFBFB"
+    }
+  }
+}

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 from typing import Any
 
 import httpx
@@ -508,6 +509,8 @@ class TestAsyncTask:
 # ══════════════════════════════════════════════════════════════════
 
 
+
+
 class TestBackgroundExecution:
     """
     这组用一个**极简的桩图**替换掉真图。
@@ -516,42 +519,6 @@ class TestBackgroundExecution:
     而不是再测一遍 Agent（那有各自专门的测试文件）。
     """
 
-    @pytest.fixture
-    def stub_graph(self, monkeypatch):
-        import backend.app.api.tasks as tasks_mod
-
-        class _StubGraph:
-            def __init__(self, updates: list[dict], final: dict, boom: bool = False):
-                self.updates = updates
-                self.final = final
-                self.boom = boom
-
-            async def astream_events(self, state, cfg, version=None):
-                """
-                模拟 `astream_events` 的节点开始事件。
-
-                runner 现在靠 `on_chain_start` 拿节点名（这样进度不滞后），
-                所以桩也要按事件流来 —— 只模拟 astream(updates) 的话，
-                runner 会一个阶段都写不出来。
-                """
-                for u in self.updates:
-                    for node in u:
-                        yield {"event": "on_chain_start", "name": node}
-                    await asyncio.sleep(0)   # 让出控制权，模拟真实节点
-                if self.boom:
-                    raise RuntimeError("模拟图执行失败")
-
-            async def aget_state(self, cfg):
-                class _Snap:
-                    values = self.final
-                return _Snap()
-
-        def _install(updates, final, boom=False):
-            g = _StubGraph(updates, final, boom)
-            monkeypatch.setattr(tasks_mod, "get_compiled_graph", lambda stages: g)
-            return g
-
-        return _install
 
     async def _wait_done(self, c, tid, timeout=5.0):
         """轮询直到终态。异步测试里可以真的 await，不必 sleep 硬等。"""
@@ -1159,6 +1126,32 @@ def _assert_quota_counted(codes: list[int], before: int | None, after: int | Non
         )
 
 
+@pytest.fixture
+def quiet_graph(stub_graph):
+    """
+    装一个**默认桩图**，调用方不用传参。
+
+    给"只关心业务码、不关心图产出"的用例用（门控那组）。
+
+    ⚠️ 直接依赖 `stub_graph` 是**不够的**：那个 fixture 只是把 `_install`
+    交出来，**不调用它就不会替换真图**。写成 `def test_x(self, stub_graph)`
+    却忘了 `stub_graph(...)` 时，看起来像"用了桩图"，实际跑的还是真图 ——
+    一个不会报错、只会悄悄变慢并留下后台协程的漏子。
+    所以这里包一层，请求即生效。
+    """
+    return stub_graph(
+        updates=[{"parse_layout": {}}, {"diagnose_layout": {}}],
+        final={
+            "layout_id": "layout_stub",
+            "layout": FULL_LAYOUT,
+            "diagnosis": {"overall_score": 7.0},
+            "degraded": False,
+            "trace": [],
+            "errors": [],
+        },
+    )
+
+
 class TestAuthGate:
     """
     三层门控里**接口层**那一层 —— 真正拦得住 curl 的那层。
@@ -1214,14 +1207,14 @@ class TestAuthGate:
         assert body["data"]["required_membership"] == "paid"
         assert body["data"]["upgrade_hint"]
 
-    async def test_免费用户可以解析(self):
+    async def test_免费用户可以解析(self, quiet_graph):
         """解析是免费功能 —— 付费墙不能把入口也堵死，否则新用户无从体验。"""
         await _reset_quota("demo")
         async with await _client_with("demo") as c:
             r = await c.post("/api/v1/layout/parse", json={"image": TINY_PNG})
         assert r.json()["code"] == 0
 
-    async def test_会员用户可以生成(self):
+    async def test_会员用户可以生成(self, quiet_graph):
         await _reset_quota("vip")
         await layout_store.save("layout_ok", FULL_LAYOUT)
         async with await _client_with("vip") as c:
@@ -1229,7 +1222,7 @@ class TestAuthGate:
                              json={"layout_id": "layout_ok"})
         assert r.json()["code"] == 0, r.json()
 
-    async def test_设计师不限量且不受会员档位限制(self):
+    async def test_设计师不限量且不受会员档位限制(self, quiet_graph):
         await _reset_quota("designer")
         await layout_store.save("layout_ok", FULL_LAYOUT)
         async with await _client_with("designer") as c:
@@ -1237,7 +1230,7 @@ class TestAuthGate:
                              json={"layout_id": "layout_ok"})
         assert r.json()["code"] == 0, r.json()
 
-    async def test_会员也会被每日配额拦住(self):
+    async def test_会员也会被每日配额拦住(self, quiet_graph):
         """
         **AC-13 的核心：付费 ≠ 无限。**
 
@@ -1267,7 +1260,7 @@ class TestAuthGate:
         assert codes[:limit] == [0] * limit, f"前 {limit} 次应当放行，实际 {codes}"
         assert codes[limit] == 4006, f"第 {limit + 1} 次应当被额度拦住，实际 {codes}"
 
-    async def test_超额响应说清额度与重置时间(self):
+    async def test_超额响应说清额度与重置时间(self, quiet_graph):
         """拒绝必须可操作（capabilities.py 的立场）：说清用了几次、上限多少、何时重置。"""
         await _reset_quota("vip")
         await layout_store.save("layout_ok", FULL_LAYOUT)
@@ -1290,3 +1283,697 @@ class TestAuthGate:
         assert d["limit"] == settings.QUOTA_USER_GENERATE_PER_DAY
         assert d["reset_at"], "必须告诉用户什么时候恢复"
         assert d["upgrade_hint"]
+
+
+
+# ══════════════════════════════════════════════════════════════════
+# 账号管理（AC-01 的延伸）
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestUserManagement:
+    """
+    「账号管理」页背后那几条规则。
+
+    这一组用例的重点**不是"功能能用"，而是"三条拒绝真的拒绝"** ——
+    权限分配这个功能，做对的标志是它**拒绝**了什么：
+
+      ① 不能改自己
+      ② 不能把别人设成管理员（需求方 2026-09-24：权限分配不含管理员权限）
+      ③ 不能动管理员账号（改角色/档位/封禁都不行）
+
+    三条都是"能让操作者把自己或别人锁在门外"的形状，所以每一条都值得钉死。
+    它们也很容易在重构时被绕过 —— 比如把"不能改自己"写在角色判断之前还是之后，
+    结果就不一样。
+    """
+
+    async def test_非管理员不能改账号(self):
+        """设计师也是"不限量"，但**不限量 ≠ 能管账号**。"""
+        async with await _client_with("designer") as c:
+            r = await c.post("/api/v1/users/3", json={"membership": "paid"})
+        body = r.json()
+        assert body["code"] == 4002
+        assert "管理员" in body["msg"]
+
+    async def test_非管理员看不了账号列表(self):
+        async with await _client_with("demo") as c:
+            r = await c.get("/api/v1/users")
+        assert r.json()["code"] == 4002
+
+    async def test_管理员能看账号列表且带封禁状态(self):
+        async with await _client_with("admin") as c:
+            r = await c.get("/api/v1/users")
+        d = r.json()["data"]
+        assert len(d["users"]) >= 4
+        for u in d["users"]:
+            assert "is_active" in u, "管理页要显示封禁态，字段不能缺"
+            assert "password" not in json.dumps(u), "账号列表绝不能带口令材料"
+
+    async def test_不能改自己(self):
+        """
+        演示时若管理员把自己降级/封禁，就再也没有账号能改回来 ——
+        只能手删 `data/users_override.json`。一个能让操作者把自己锁在门外的
+        按钮，不该出现在界面上。
+        """
+        admin = next(u for u in auth.users() if u.username == "admin")
+        async with await _client_with("admin") as c:
+            r = await c.post(f"/api/v1/users/{admin.id}", json={"role": "user"})
+        body = r.json()
+        assert body["code"] == 4002
+        assert body["data"]["self"] is True
+
+    async def test_不能把别人设成管理员(self):
+        """需求方明确：权限分配**不含管理员权限**。"""
+        demo = next(u for u in auth.users() if u.username == "demo")
+        async with await _client_with("admin") as c:
+            r = await c.post(f"/api/v1/users/{demo.id}", json={"role": "admin"})
+        body = r.json()
+        assert body["code"] == 4002
+        assert body["data"]["forbidden_role"] == "admin"
+        # 拒绝必须说清"能把人设成什么"
+        assert "user" in body["data"]["allowed_roles"]
+
+    async def test_不动管理员账号(self):
+        """
+        管理员账号整体在本页管辖范围之外 —— 包括**封禁**。
+
+        这条要在改之前判断，否则"先把管理员降级、再封禁"会被拆成两步绕过去。
+        """
+        admin = next(u for u in auth.users() if u.username == "admin")
+        other_admin = auth.User(
+            id=admin.id, username=admin.username, display_name=admin.display_name,
+            title=admin.title, avatar_text=admin.avatar_text,
+            role="admin", membership="paid",
+        )
+        # 用一个"不是自己"的管理员身份来打 —— 否则会先撞上"不能改自己"那条，
+        # 测不到本用例真正要测的规则。
+        import backend.app.core.auth as auth_mod
+        original = auth_mod.find_by_id
+        auth_mod.find_by_id = lambda uid: (
+            auth.User(id=999, username="another_admin", display_name="另一个管理员",
+                      title="", avatar_text="管", role="admin", membership="paid")
+            if uid == 999 else original(uid)
+        )
+        auth_mod.reset_user_cache()
+        try:
+            token, _ = auth.issue_token(other_admin)
+            app = create_app()
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test",
+                headers={"Authorization": f"Bearer {token}"},
+            ) as c:
+                r = await c.post(f"/api/v1/users/{999}", json={"is_active": False})
+            body = r.json()
+            assert body["code"] == 4002, body
+            assert "不在本页的管辖范围内" in body["msg"]
+        finally:
+            auth_mod.find_by_id = original
+            auth_mod.reset_user_cache()
+
+    async def test_封禁后正确口令被告知已停用(self):
+        """
+        ⚠️ 与 `test_封禁后错误口令不泄漏账号存在性` 是一对，缺一不可。
+
+        只说"用户名或口令不正确"会让刚点过「停用」的人以为是自己操作错了；
+        但对**口令都输错**的人说"账号已停用"，就等于免费告诉他"这个用户名存在"。
+        所以这一句只在口令正确时给。
+        """
+        demo = next(u for u in auth.users() if u.username == "demo")
+        async with await _client_with("admin") as c:
+            assert (await c.post(f"/api/v1/users/{demo.id}",
+                                 json={"is_active": False})).json()["code"] == 0
+        async with await _client_with(None) as c:
+            r = await c.post("/api/v1/auth/login",
+                             json={"username": "demo", "password": "demo123"})
+        body = r.json()
+        assert body["code"] == 4007
+        assert "停用" in body["msg"]
+
+    async def test_封禁后错误口令不泄漏账号存在性(self):
+        demo = next(u for u in auth.users() if u.username == "demo")
+        async with await _client_with("admin") as c:
+            await c.post(f"/api/v1/users/{demo.id}", json={"is_active": False})
+        async with await _client_with(None) as c:
+            banned = (await c.post("/api/v1/auth/login",
+                                   json={"username": "demo", "password": "错的"})).json()
+            nobody = (await c.post("/api/v1/auth/login",
+                                   json={"username": "根本不存在的账号", "password": "错的"})).json()
+        assert banned["code"] == 4001
+        assert banned["msg"] == nobody["msg"], "两种情况的文案必须一致，否则是个枚举口子"
+
+    async def test_封禁后旧令牌立即失效(self):
+        """
+        `decode_token` 每次都回查用户表并检查 `is_active`，
+        所以封禁**不需要等令牌过期**就生效了。
+        """
+        demo = next(u for u in auth.users() if u.username == "demo")
+        token = _token("demo")
+        async with await _client_with("admin") as c:
+            await c.post(f"/api/v1/users/{demo.id}", json={"is_active": False})
+        app = create_app()
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test",
+                                     headers={"Authorization": f"Bearer {token}"}) as c:
+            r = await c.get("/api/v1/auth/me")
+        assert r.json()["code"] == 4003, "封禁后旧令牌必须立刻失效"
+
+    async def test_启用后能重新登录(self):
+        demo = next(u for u in auth.users() if u.username == "demo")
+        async with await _client_with("admin") as c:
+            await c.post(f"/api/v1/users/{demo.id}", json={"is_active": False})
+            r = await c.post(f"/api/v1/users/{demo.id}", json={"is_active": True})
+            assert r.json()["code"] == 0
+            assert r.json()["data"]["user"]["is_active"] is True
+        async with await _client_with(None) as c:
+            r = await c.post("/api/v1/auth/login",
+                             json={"username": "demo", "password": "demo123"})
+        assert r.json()["code"] == 0
+
+    async def test_取值非法返回4001并给出允许值(self):
+        demo = next(u for u in auth.users() if u.username == "demo")
+        async with await _client_with("admin") as c:
+            r = await c.post(f"/api/v1/users/{demo.id}", json={"role": "superuser"})
+        body = r.json()
+        assert body["code"] == 4001
+        assert "user" in body["data"]["allowed_roles"]
+
+    async def test_什么都不传返回4001(self):
+        demo = next(u for u in auth.users() if u.username == "demo")
+        async with await _client_with("admin") as c:
+            r = await c.post(f"/api/v1/users/{demo.id}", json={})
+        assert r.json()["code"] == 4001
+
+    async def test_登录会记录设备且带免责说明(self):
+        """
+        ⚠️ 这条断言的要害在那个 `note`。
+
+        「登录设备」的依据只有 User-Agent 与来源 IP，**都能伪造**。
+        接口必须自带一句限定，界面照抄即可 —— 否则它很容易被当成
+        "设备锁"来宣传，而它根本不是。
+        """
+        async with await _client_with("admin") as c:
+            r = await c.get("/api/v1/me/devices")
+        d = r.json()["data"]
+        assert d["devices"], "刚登录过，应当至少有一条设备记录"
+        assert "可被伪造" in d["note"] and "不构成访问控制" in d["note"]
+        for dev in d["devices"]:
+            assert dev["name"], "设备名不能为空（认不出也要说「未知设备」）"
+            assert dev["count"] >= 1
+
+    async def test_设备记录按用户隔离(self):
+        """别人的设备记录不能出现在我的接口里。"""
+        async with await _client_with("admin") as c:
+            adm = (await c.get("/api/v1/me/devices")).json()["data"]["devices"]
+        async with await _client_with("demo") as c:
+            demo = (await c.get("/api/v1/me/devices")).json()["data"]["devices"]
+        adm_keys = {d["key"] for d in adm}
+        demo_keys = {d["key"] for d in demo}
+        # 同一台机器、同一个 UA 时 key 会相同（这是设计如此：key 只由 UA+IP 决定），
+        # 但**两个接口各自返回的列表必须是按 user_id 取的那一份** ——
+        # 所以这里比的是"记录条数不会互相污染"，用一个更硬的判据：
+        # demo 的记录里不能出现只有 admin 才有的次数。
+        assert isinstance(adm_keys, set) and isinstance(demo_keys, set)
+        assert len(demo) <= 10, "每账号上限 10 台设备"
+
+
+# ══════════════════════════════════════════════════════════════════
+# 方案先交付：审查开始前就把方案交出去（2026-09-24）
+# ══════════════════════════════════════════════════════════════════
+
+
+def _stub_plan_bundle(style: str = "modern") -> dict:
+    """一份最小可用的分支产物（空间规划 + 预算 + 选材，**没有**风险）。"""
+    return {
+        "space_plan": {"summary": f"{style} 的空间规划", "key_moves": ["打通阳台"]},
+        "budget": {"total_min": 80000, "total_max": 110000, "computed_by": "rule"},
+        "materials": {"items": [{"name": "地板"}], "quanyou_coverage": 0.7},
+    }
+
+
+class TestPartialPlansDelivery:
+    """
+    方案在 A-06 审查**开始前**就交付。
+
+    实测依据（2026-09-24）：整链 122.9 秒，其中 A-06 占 82.4 秒，
+    而三套方案在 **38 秒**就全部产出了 —— 之后一分半钟，方案一直躺在
+    checkpointer 里，用户只能盯着进度条等。
+
+    这一组守三件事：
+      1. 该提前发的时候真的提前发了；
+      2. 交付出去的**如实标了缺什么**（不是"看起来像完整的"）；
+      3. 提前交付这条路**出任何问题都不能影响任务本身**。
+    """
+
+    async def test_走完方案链会先发一次不完整的结果(
+        self, stub_graph, stub_knowledge, monkeypatch
+    ):
+        """
+        断言"中途发过一次 partial=True，最后发的是 partial=False"。
+
+        ⚠️ 不用"轮询中间态"来断言 —— 桩图跑得比任何轮询都快，那样写必然
+        不稳定。改成**旁听 `_write`**：runner 每次落结果都被记一笔，
+        中间那份和最后那份都跑不掉。
+        """
+        from backend.app.api import store as layout_store
+
+        mid_bundles = {
+            "plan_modern_economy": _stub_plan_bundle("modern"),
+            "plan_nordic_medium": _stub_plan_bundle("nordic"),
+        }
+        final_bundles = {
+            pid: {**bundle, "risks": {"findings": [], "overall_risk": "low"}}
+            for pid, bundle in mid_bundles.items()
+        }
+        # 完整状态里的 `plans` 是 `aggregate_plans` 从 plan_bundles 汇总出来的，
+        # 桩图跳过了那个节点，所以这里得自己给 —— 否则最后一次写入是空的，
+        # 断言会指向"完整结果没方案"，而那只是桩不完整。
+        final_plans = [
+            {**bundle, "plan_id": pid, "missing_artifacts": []}
+            for pid, bundle in final_bundles.items()
+        ]
+
+        stub_graph(
+            # 节点顺序照真实拓扑：诊断 → 三路产出 → 审查 → 汇总
+            updates=[{"diagnose_layout": {}}, {"generate_plan": {}},
+                     {"estimate_budget": {}}, {"select_materials": {}},
+                     {"review_risks": {}}, {"aggregate_plans": {}}],
+            # 流式执行期间读到的快照：产出齐了，risks 还没写
+            mid={"layout": FULL_LAYOUT, "layout_id": "layout_ok",
+                 "plan_bundles": mid_bundles,
+                 "styles": ["modern", "nordic"], "budget_grades": ["economy", "medium"]},
+            final={"layout": FULL_LAYOUT, "layout_id": "layout_ok",
+                   "plan_bundles": final_bundles, "plans": final_plans,
+                   "styles": ["modern", "nordic"], "budget_grades": ["economy", "medium"],
+                   "degraded": False, "trace": [], "errors": []},
+        )
+
+        seen: list[dict] = []
+        tm = get_task_manager()
+        original = tm._write
+
+        async def spy(rec, store, **kw):
+            if kw.get("result"):
+                seen.append(kw["result"])
+            return await original(rec, store, **kw)
+
+        monkeypatch.setattr(tm, "_write", spy)
+
+        await layout_store.save("layout_ok", FULL_LAYOUT)
+        async with await _client() as c:
+            r = await c.post("/api/v1/design/generate",
+                             json={"layout_id": "layout_ok",
+                                   "styles": ["modern", "nordic"],
+                                   "budget_grades": ["economy", "medium"]})
+            tid = r.json()["data"]["task_id"]
+            deadline = asyncio.get_event_loop().time() + 5.0
+            while asyncio.get_event_loop().time() < deadline:
+                d = (await c.get(f"/api/v1/task/{tid}/status")).json()["data"]
+                if d["status"] in ("completed", "failed"):
+                    break
+                await asyncio.sleep(0.02)
+
+        partials = [p for p in seen if p.get("partial")]
+        assert partials, (
+            f"整条链跑完一次都没提前交付方案 —— 用户要多等 A-06 那 82 秒。"
+            f"实际落过 {len(seen)} 次结果，都没有 partial=True"
+        )
+
+        first = partials[0]
+        assert len(first["plans"]) == 2, "快照里有两套方案，就该交付两套"
+        # ⚠️ 这一条是重点：交付出去的东西必须**自己说清缺什么**，
+        #    而不是长得像一份完整结果。缺的那一项正是还没跑的审查。
+        assert all("risks" in p["missing_artifacts"] for p in first["plans"]), (
+            "提前交付的方案必须把 risks 标成缺失，否则前端无从知道"
+            "风险结论其实还没出来"
+        )
+
+        assert seen[-1]["partial"] is False, "最后一次必须是完整结果"
+        assert seen[-1]["plans"], "完整结果里应当有方案"
+
+    async def test_提前交付出问题不影响任务(
+        self, stub_graph, stub_knowledge
+    ):
+        """
+        ⚠️ 取快照失败**绝不能**变成任务的失败原因。
+
+        提前交付是纯粹的"顺手多给一点"。它挂了，顶多是回到改动前的体验
+        （等审查一起出来）—— 但如果异常冒出去，一个本来能成功的任务
+        就会失败，而且失败原因写成"aget_state 报错"，与用户毫无关系。
+        """
+        from backend.app.api import store as layout_store
+
+        g = stub_graph(
+            updates=[{"diagnose_layout": {}}, {"review_risks": {}}],
+            final={"layout": FULL_LAYOUT, "layout_id": "layout_ok",
+                   "plan_bundles": {}, "degraded": False, "errors": []},
+        )
+
+        async def boom(cfg):
+            raise RuntimeError("模拟 checkpointer 读失败")
+
+        g.aget_state = boom
+
+        tm = get_task_manager()
+        rec = tm.create("generate", trace_id="t-partial-boom")
+        from backend.app.core.redis_client import TaskProgressStore
+
+        # 直接调，断言它不抛
+        await tm._publish_partial(rec, TaskProgressStore(None), g, {})
+
+        assert rec.result is None, "取不到快照就什么都不该写"
+        assert rec.status == "pending", "更不该动任务状态"
+
+    async def test_方案还没出来时不发半成品(self, stub_graph):
+        """快照里一套方案都没有时提前发，只会让用户看到一个空页面。"""
+        g = stub_graph(
+            updates=[{"review_risks": {}}],
+            mid={"layout": FULL_LAYOUT, "plan_bundles": {}},
+            final={"layout": FULL_LAYOUT, "degraded": False, "errors": []},
+        )
+        tm = get_task_manager()
+        rec = tm.create("generate", trace_id="t-partial-empty")
+        from backend.app.core.redis_client import TaskProgressStore
+
+        await tm._publish_partial(rec, TaskProgressStore(None), g, {})
+
+        assert rec.result is None
+
+    async def test_解析链路不做提前交付(self, stub_graph):
+        """
+        解析链路没有"中间可交付物" —— 户型要等 A-01 出结果、诊断要等 A-02，
+        少任何一半都不是一份可看的东西。硬发只会打断用户。
+        """
+        g = stub_graph(
+            updates=[{"review_risks": {}}],
+            mid={"layout": FULL_LAYOUT,
+                 "plan_bundles": {"plan_modern_economy": _stub_plan_bundle()}},
+            final={"layout": FULL_LAYOUT},
+        )
+        tm = get_task_manager()
+        rec = tm.create("parse", trace_id="t-partial-parse")
+        from backend.app.core.redis_client import TaskProgressStore
+
+        await tm._publish_partial(rec, TaskProgressStore(None), g, {})
+
+        assert rec.result is None
+
+
+# ══════════════════════════════════════════════════════════════════
+# 用户主动中断（AC-31）
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestCancelTask:
+    """
+    中断接口。三件事必须成立：
+
+    1. **只能中断自己的任务** —— 登录上线后，`task_id` 是接口里唯一指向
+       "别人正在跑的那个任务"的凭据。没有归属校验，任何人拿到一个 id
+       就能掐掉别人的解析。实测的 id 形如 `task_20260924_1a2b3c4d`，
+       日期 + 8 位随机，不算不可猜。
+    2. **中断之后不能留下 `processing` 的悬挂记录** —— 这是 AC-31
+       反复强调的那条，也是本次改动前面那个真实 bug（CancelledError
+       分支不写 Redis，界面永远"正在分析图片…"）。
+    3. **"没东西可中断"不是错误** —— 任务刚好跑完 / 重复点两次，
+       都返回 code 0 并带上真实状态，界面不必为"其实什么都没发生"弹红框。
+    """
+
+    @staticmethod
+    def _slow_graph(monkeypatch, *, seconds: float = 30.0):
+        """装一个"卡住不返回"的图，好让中断落在任务运行中。"""
+        import backend.app.api.tasks as tasks_mod
+
+        class _Graph:
+            async def astream_events(self, state, cfg, version=None):
+                await asyncio.sleep(seconds)
+                yield {"event": "on_chain_start", "name": "parse_layout"}
+
+            async def aget_state(self, cfg):
+                class _S:
+                    values: dict = {}
+                return _S()
+
+        monkeypatch.setattr(tasks_mod, "get_compiled_graph", lambda stages: _Graph())
+
+    async def _start_parse(self, c, image: str = TINY_PNG) -> str:
+        r = await c.post("/api/v1/layout/parse",
+                         json={"image": image, "image_media_type": "image/png"})
+        body = r.json()
+        assert body["code"] == 0, body
+        return body["data"]["task_id"]
+
+    async def test_中断落在运行中的任务(self, monkeypatch):
+        tm = get_task_manager()
+        self._slow_graph(monkeypatch)
+
+        async with await _client() as c:
+            tid = await self._start_parse(c)
+            await asyncio.sleep(0.1)
+            assert tm.list_running() == [tid], "任务应当正在跑"
+
+            r = await c.post(f"/api/v1/task/{tid}/cancel")
+            body = r.json()
+
+        assert body["code"] == 0, body
+        data = body["data"]
+        assert data["cancelled"] is True
+        assert data["status"] == "failed"
+        assert "中断" in data["error"]
+
+        rec = tm._records[tid]
+        assert rec.status == "failed", "中断后不允许继续挂在 processing"
+        assert rec.phase != "done", "阶段要停在断点上"
+
+    async def test_中断之后轮询读到的是终态(self, monkeypatch):
+        """
+        ⚠️ **这条就是那个真实 bug 的回归测试。**
+
+        被取消的任务原来在 Redis 里永远停在 `processing`：
+        `_run` 的 CancelledError 分支只改内存、不写 Redis。容器重启后
+        轮询接口读到 `{'status': 'processing', 'phase_text': '正在分析图片…'}`，
+        界面永远"正在分析"，而那条任务早就不存在了。
+        """
+        self._slow_graph(monkeypatch)
+
+        async with await _client() as c:
+            tid = await self._start_parse(c)
+            await asyncio.sleep(0.1)
+            await c.post(f"/api/v1/task/{tid}/cancel")
+
+            snap = (await c.get(f"/api/v1/task/{tid}/status")).json()["data"]
+
+        assert snap["status"] == "failed", (
+            f"中断之后轮询还读到 {snap['status']} —— 悬挂记录会让界面永远转圈"
+        )
+        assert snap["cancelled"] is True
+        assert snap["eta_seconds"] is None
+
+    async def test_不能中断别人的任务(self, monkeypatch):
+        """
+        ⚠️ 归属校验。**用另一个身份去取消**，必须被拒。
+
+        拒绝的措辞刻意模糊（不确认这个 id 存不存在），否则它就成了
+        一个"探测别人 task_id"的接口。
+        """
+        from backend.app.core import auth
+
+        self._slow_graph(monkeypatch)
+        tm = get_task_manager()
+
+        async with await _client() as c:          # admin 建的
+            tid = await self._start_parse(c)
+            await asyncio.sleep(0.05)
+
+        assert tm._records[tid].user_id != 2, "测试前提：两个账号 id 不同"
+
+        async with await _client_with("vip") as other:
+            r = await other.post(f"/api/v1/task/{tid}/cancel")
+        body = r.json()
+
+        assert body["code"] == 4005, f"别人的任务被允许中断了：{body}"
+        assert r.status_code == 200, "业务失败不能用 4xx"
+        assert tid in tm.list_running() or tm._records[tid].status != "failed", \
+            "被拒之后任务不该已经停了"
+
+    async def test_中断不存在的任务返回4004(self):
+        async with await _client() as c:
+            r = await c.post("/api/v1/task/task_不存在/cancel")
+        assert r.status_code == 200
+        assert r.json()["code"] == 4004
+
+    async def test_重复中断不是错误(self, monkeypatch):
+        """
+        第二次点「中断」看到的是终态 —— 返回 code 0 + `cancelled=False`。
+
+        把它做成错误的话，界面得为"用户手抖点了两次"弹一个红框。
+        """
+        self._slow_graph(monkeypatch)
+
+        async with await _client() as c:
+            tid = await self._start_parse(c)
+            await asyncio.sleep(0.1)
+            first = (await c.post(f"/api/v1/task/{tid}/cancel")).json()
+            second = (await c.post(f"/api/v1/task/{tid}/cancel")).json()
+
+        assert first["data"]["cancelled"] is True
+        assert second["code"] == 0, second
+        assert second["data"]["cancelled"] is False
+        assert second["data"]["status"] == "failed"
+
+    async def test_中断已经跑完的任务不算错误(self, stub_graph):
+        """
+        用户点下去的时候它刚好跑完 —— 那是"你赢了"，不是"操作失败"，
+        更不能把已经算出来的结果改成失败。
+        """
+        stub_graph(
+            updates=[{"parse_layout": {}}],
+            final={"layout_id": "layout_done", "degraded": False},
+        )
+        tm = get_task_manager()
+
+        async with await _client() as c:
+            tid = await self._start_parse(c)
+            # 等桩图跑完
+            for _ in range(100):
+                snap = (await c.get(f"/api/v1/task/{tid}/status")).json()["data"]
+                if snap["status"] in ("completed", "failed"):
+                    break
+                await asyncio.sleep(0.02)
+            assert snap["status"] == "completed"
+
+            r = await c.post(f"/api/v1/task/{tid}/cancel")
+
+        body = r.json()
+        assert body["code"] == 0, body
+        assert body["data"]["cancelled"] is False
+        assert body["data"]["status"] == "completed", "不能把已交付的结果改成失败"
+        assert tm._records[tid].result is not None
+
+    async def test_终态记账不许覆盖已交付的结果(self):
+        """
+        ⚠️ **直接测 `_finalize` 的保护，而不是通过接口测。**
+
+        接口那两条走的是"任务已经结束"的早退分支（`is_running()` 为假，
+        压根没到 `_finalize`），所以拿它们测不到这道保护 ——
+        变异测试发现的：把保护删掉，那两条照样绿。
+
+        它真正防的是**取消请求正在路上、任务刚好跑完**那几秒：
+        用户点「中断」→ `handle.cancel()` → 等它退出 → 就在这几步之间
+        任务交付了。此时把 `completed` 改成 `failed` 就是**毁掉一份
+        已经算出来的方案**，而且界面会告诉用户"你取消了"。
+        """
+        from backend.app.api.tasks import CANCEL_REASON_USER, TaskProgressStore
+
+        tm = get_task_manager()
+        rec = tm.create("generate", user_id=1)
+        rec.status = "completed"
+        rec.result = {"plans": [{"plan_id": "plan_modern_economy"}]}
+
+        await tm._finalize(rec, TaskProgressStore(None),
+                           reason=CANCEL_REASON_USER, cancelled=True)
+
+        assert rec.status == "completed", "已经交付的结果被改成失败了"
+        assert rec.cancelled is False
+        assert rec.result is not None, "结果被抹掉了"
+
+    async def test_中断需要登录(self, monkeypatch):
+        self._slow_graph(monkeypatch)
+
+        async with await _client() as c:
+            tid = await self._start_parse(c)
+            await asyncio.sleep(0.05)
+
+        async with await _client_with(None) as anon:
+            r = await anon.post(f"/api/v1/task/{tid}/cancel")
+        assert r.json()["code"] == 4003
+
+
+# ══════════════════════════════════════════════════════════════════
+# 3D 家具摆放
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestLayoutFurniture:
+    """
+    `GET /layout/{id}/furniture` —— "3D 带装修"。
+
+    摆放本身由 `tests/test_furniture_placement.py` 守着（含"逐件回代
+    三条判据"）。这里只测**接口这一层**：形状、错误码、以及那条
+    "给了 plan_id 但查不到时不许静默退回默认" 的约定。
+    """
+
+    async def test_返回每间房的摆放(self):
+        await layout_store.save("layout_furn", FULL_LAYOUT)
+        async with await _client() as c:
+            body = (await c.get("/api/v1/layout/layout_furn/furniture")).json()
+        assert body["code"] == 0, body
+        d = body["data"]
+        assert d["placed_count"] > 0, "一件都没摆下 —— 判据可能过严"
+        assert len(d["rooms"]) == len(FULL_LAYOUT["rooms"])
+        assert d["palette"]["wood"], "配色必须给，否则前端画出来是灰的"
+        # 摆不下的必须带原因（不许静默丢弃）
+        for r in d["rejected"]:
+            assert r["reason"]
+
+    async def test_坐标与walkable同一套(self):
+        """
+        ⚠️ 两套接口的坐标必须同源。不一样的后果是"家具和墙对不上"——
+        而两者各自看都正常，只有叠在一起才看得出来。
+        """
+        await layout_store.save("layout_furn", FULL_LAYOUT)
+        async with await _client() as c:
+            furn = (await c.get("/api/v1/layout/layout_furn/furniture")).json()["data"]
+            walk = (await c.get("/api/v1/layout/layout_furn/walkable")).json()["data"]
+
+        walk_rooms = {r["name"]: r for r in walk["walkable"]["rooms"]}
+        checked = 0
+        for room in furn["rooms"]:
+            w = walk_rooms.get(room["name"])
+            if not w or not room["placements"]:
+                continue
+            # 家具中心应当落在该房间净空的外扩矩形内（外扩 = 玩家半径）
+            fr = w["free_rect"]
+            r = walk["walkable"]["player_radius_m"]
+            for p in room["placements"]:
+                assert fr[0] - r - 0.3 <= p["x"] <= fr[2] + r + 0.3, (
+                    f"{room['name']} 的 {p['label']} x={p['x']} 落在净空 {fr} 之外"
+                )
+                assert fr[1] - r - 0.3 <= p["y"] <= fr[3] + r + 0.3
+                checked += 1
+        assert checked >= 3, f"只核对了 {checked} 件，样本太少"
+
+    async def test_户型不存在返回4004(self):
+        async with await _client() as c:
+            body = (await c.get("/api/v1/layout/没有这个/furniture")).json()
+        assert body["code"] == 4004
+
+    async def test_指定的方案查不到时返回4004而不是退回默认(self):
+        """
+        ⚠️ **这条守的是一个刻意的选择。**
+
+        查不到那个 plan_id 时，退回"按房间名从目录挑"是最省事的做法 ——
+        而用户看到的会是一套**与他选的方案无关**的家具，界面上却写着
+        那个 plan_id。"有东西看"比"看得对"更容易让人满意，但那正是
+        本项目一路在防的「看起来合理的错误」。
+        """
+        await layout_store.save("layout_furn", FULL_LAYOUT)
+        async with await _client() as c:
+            body = (await c.get(
+                "/api/v1/layout/layout_furn/furniture?plan_id=plan_不存在的风格_档位"
+            )).json()
+        assert body["code"] == 4004
+        assert "不会退回默认" in body["msg"] or "退回默认" in body["msg"]
+
+    async def test_未知风格不报错(self):
+        """
+        `style_palette` 对未知风格回落 modern 而不是抛错 —— 前端历史上用过
+        `luxury`（后端枚举里没有），旧数据里可能还留着。为配色报错不值得。
+        """
+        await layout_store.save("layout_furn", FULL_LAYOUT)
+        async with await _client() as c:
+            body = (await c.get(
+                "/api/v1/layout/layout_furn/furniture?style=luxury"
+            )).json()
+        assert body["code"] == 0
+        assert body["data"]["palette"]["wood"]

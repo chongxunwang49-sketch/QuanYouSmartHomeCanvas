@@ -1,0 +1,80 @@
+{
+  "A 中性体块": {
+    "modern": {
+      "wood": "#6E5C46",
+      "fabric": "#D6D0C6",
+      "metal": "#3B3B3E",
+      "stone": "#EDEAE4",
+      "green": "#5C6B54",
+      "white": "#FAF9F6"
+    },
+    "nordic": {
+      "wood": "#7A6242",
+      "fabric": "#DCD3C2",
+      "metal": "#43403C",
+      "stone": "#F0EBDD",
+      "green": "#63734F",
+      "white": "#FCFAF5"
+    },
+    "chinese": {
+      "wood": "#5A3E28",
+      "fabric": "#CDBEA3",
+      "metal": "#33302B",
+      "stone": "#E6DCCB",
+      "green": "#4E5C43",
+      "white": "#F6F1E6"
+    }
+  },
+  "B 材质写实": {
+    "modern": {
+      "wood": "#8A6A44",
+      "fabric": "#C9C2B6",
+      "metal": "#4A4E55",
+      "stone": "#E7E1D6",
+      "green": "#5E7A56",
+      "white": "#F2EFE9"
+    },
+    "nordic": {
+      "wood": "#A67C4A",
+      "fabric": "#D3C9B5",
+      "metal": "#54514B",
+      "stone": "#EFE8D9",
+      "green": "#6C8A5B",
+      "white": "#F7F3EA"
+    },
+    "chinese": {
+      "wood": "#6B4A32",
+      "fabric": "#C0AE90",
+      "metal": "#3E3A33",
+      "stone": "#DFD3BF",
+      "green": "#556B47",
+      "white": "#EFE7D8"
+    }
+  },
+  "C 高对比示意": {
+    "modern": {
+      "wood": "#7A5230",
+      "fabric": "#E4DCCB",
+      "metal": "#2E3440",
+      "stone": "#F0EDE6",
+      "green": "#4E7A45",
+      "white": "#FFFFFF"
+    },
+    "nordic": {
+      "wood": "#8C5E2A",
+      "fabric": "#EADFC7",
+      "metal": "#2E3440",
+      "stone": "#F5F0E2",
+      "green": "#4E7A45",
+      "white": "#FFFFFF"
+    },
+    "chinese": {
+      "wood": "#5C3A22",
+      "fabric": "#D8C8A6",
+      "metal": "#2B2620",
+      "stone": "#EDE3D0",
+      "green": "#456138",
+      "white": "#FFFFFF"
+    }
+  }
+}

@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { dashboardStats } from '@/api'
+import type { DashboardStatsData } from '@/api/types'
 import { imageAttribution, imagePool } from '@/assets/images/pool'
 import AppIcon from '@/components/AppIcon.vue'
 import EmptyState from '@/components/EmptyState.vue'

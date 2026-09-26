@@ -381,3 +381,82 @@ def floorplan_data_uri() -> str:
     from tests.helpers import floorplan_data_uri as _uri
 
     return _uri()
+
+# ══════════════════════════════════════════════════════════════════
+# 共享 fixture：桩图
+# ══════════════════════════════════════════════════════════════════
+#
+# ⚠️ 它原先住在 `tests/test_api.py` 里。2026-09-24 移到 conftest，
+#    原因是 `tests/test_audit.py` 也需要它（要跑一次任务生命周期才能
+#    验证审计事件），而 pytest 的 fixture **只在定义它的模块与 conftest
+#    里可见** —— 跨模块用不了。
+#
+#    留在原处、让 test_audit 去 import 也能work，但那会让"哪个测试模块
+#    依赖哪个测试模块"变成一张隐形的网；conftest 是这件事该在的地方。
+
+@pytest.fixture
+def stub_graph(monkeypatch):
+    """
+    用**极简的桩图**替换真图。
+
+    ⚠️ 它原来只定义在 `TestBackgroundExecution` **类里面**，所以其它测试类
+    用不到 —— 而 `TestAuthGate` 的门控用例恰恰也需要它。后者只是要看
+    HTTP 返回的业务码（4003 / 4005 / 4006 / 0），**完全不需要真跑图**，
+    却因为没桩图而每次都真的起一个图任务，fan-out 九路并发 Agent，
+    并在用例结束后继续占着事件循环。
+
+    实测后果（2026-09-23）：这些残留协程把 Redis 往返挤过 `socket_timeout`，
+    额度检查于是走降级放行，配额用例偶发失败并报出
+    `assert 0 == 4006` —— 一条指向"权限逻辑写错了"的错误线索。
+    把桩图提到模块级、让门控用例也用上，是从**源头**掐掉那份负载。
+    """
+@pytest.fixture
+def stub_graph(monkeypatch):
+    import backend.app.api.tasks as tasks_mod
+
+    class _StubGraph:
+        def __init__(self, updates: list[dict], final: dict,
+                     boom: bool = False, mid: dict | None = None):
+            self.updates = updates
+            self.final = final
+            self.boom = boom
+            #: 流式执行**期间**读到的状态。模拟真实 checkpointer 的中间快照：
+            #: 九路产出已经合并、A-06 还没写。见 TaskManager._publish_partial。
+            self.mid = mid
+            self.streaming = False
+
+        async def astream_events(self, state, cfg, version=None):
+            """
+            模拟 `astream_events` 的节点开始事件。
+
+            runner 现在靠 `on_chain_start` 拿节点名（这样进度不滞后），
+            所以桩也要按事件流来 —— 只模拟 astream(updates) 的话，
+            runner 会一个阶段都写不出来。
+            """
+            self.streaming = True
+            try:
+                for u in self.updates:
+                    for node in u:
+                        yield {"event": "on_chain_start", "name": node}
+                    await asyncio.sleep(0)   # 让出控制权，模拟真实节点
+            finally:
+                self.streaming = False
+            if self.boom:
+                raise RuntimeError("模拟图执行失败")
+
+        async def aget_state(self, cfg):
+            values = self.mid if (self.streaming and self.mid is not None) else self.final
+
+            class _Snap:
+                pass
+
+            snap = _Snap()
+            snap.values = values
+            return snap
+
+    def _install(updates, final, boom=False, mid=None):
+        g = _StubGraph(updates, final, boom, mid)
+        monkeypatch.setattr(tasks_mod, "get_compiled_graph", lambda stages: g)
+        return g
+
+    return _install

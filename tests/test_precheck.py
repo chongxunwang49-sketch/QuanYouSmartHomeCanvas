@@ -370,18 +370,31 @@ class TestPrecheckingPhaseIsReal:
 
     def test_阶段表里每个节点都真实存在(self):
         """
-        穷举：`_NODE_PHASE` 里登记的每个节点名，都必须在图上能找到。
+        穷举：`_NODE_PHASE` 里登记的每个节点名，都必须**至少在某一张图里**
+        能找到。
 
         防的是 `detecting_rooms` / `extracting_dimensions` 那类问题 ——
         需求文档的阶段表列了 8 行，实现只发出 4 行，另外两行
         **永远不会出现**。声明了却不存在，和撒谎只差一步。
+
+        ⚠️ **判据是"在某张图里"，不是"在 full 图里"。**
+        2026-09-26 加 `retrieve_knowledge` 时在这里红了一次 —— 而它是对的：
+        那个节点只注册在 `stages="review"` 的图上，因为**只有报价单审查
+        有一步"先检索再审查"**；方案链的审查是对三套方案各查各的
+        （在 `_review_plans` 内部，每套一组查询），前面挂一个统一的
+        检索节点对它没有意义。
+
+        所以断言写成"存在性"而不是"在某一特定图里存在" ——
+        前者是真正要守的性质（不会永远不出现），后者是我顺手写死的实现细节。
         """
         from backend.app.api.tasks import _NODE_PHASE
 
-        graph_nodes = set(workflow.build_graph(
-            with_checkpointer=False, stages="full"
-        ).get_graph().nodes)
-        missing = [n for n in _NODE_PHASE if n not in graph_nodes]
+        all_nodes: set[str] = set()
+        for stage in ("full", "parse", "generate", "review"):
+            all_nodes |= set(workflow.build_graph(
+                with_checkpointer=False, stages=stage
+            ).get_graph().nodes)
+        missing = [n for n in _NODE_PHASE if n not in all_nodes]
         assert not missing, (
             f"以下节点在 _NODE_PHASE 里登记了，但图上不存在：{missing}"
             f"（图上的节点：{sorted(graph_nodes)}）"

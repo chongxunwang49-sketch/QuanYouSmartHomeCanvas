@@ -43,7 +43,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+for _s in (sys.stdout, sys.stderr):
+    _rc = getattr(_s, "reconfigure", None)
+    if callable(_rc):
+        try:
+            _rc(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 from derive_surface_palette import (  # noqa: E402
     contrast_ratio, delta_e, hex_to_rgb, hsl_to_rgb, rgb_to_hex,
@@ -52,6 +58,13 @@ from derive_surface_palette import (  # noqa: E402
 CATALOG = ROOT / "seed_data" / "furniture_catalog.json"
 
 #: 族色之间要求的最小 Lab ΔE。见脚本说明：这是**先测后定**的。
+#: 亮度下限/上限。**没有它俩，最远点贪心会挑出 #06060E 这种"报表好看、
+#: 实际近黑"的颜色** —— 实测踩过：整个族色塌成一片黑，而约束检查全绿。
+#: 这两个数是"看起来还算个颜色"的边界，不是审美偏好：
+#:   下限拦近黑（0.06 以下读起来就是黑块），上限拦近白（0.72 以上跟白墙糊在一起）。
+LUMA_FLOOR_MIN = 0.06
+LUMA_CEIL_MAX = 0.72
+
 MIN_FAMILY_DELTA_E = 6.0
 
 #: 每个族的颜色必须对地面达到的对比度。与 `derive_surface_palette.py` 同值。

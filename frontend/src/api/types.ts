@@ -49,6 +49,14 @@ export const ErrorCode = {
   NEED_PAID: 4005,
   /** 当日额度用完（AC-13，`api/deps.py` 的 `consume_quota`） */
   QUOTA_EXCEEDED: 4006,
+  /**
+   * 账号已被管理员停用。
+   *
+   * ⚠️ **只在口令正确时才会返回它**（后端 `auth.is_disabled_account`）——
+   * 口令都输错的人拿到的是合并过的 4001，否则这里就成了一个用户名枚举口子。
+   * 与普通 4001 分开的意义：被封的人不会以为是自己记错了口令。
+   */
+  ACCOUNT_DISABLED: 4007,
   /** 执行失败 */
   EXEC_FAILED: 5001,
   /** 依赖不可用（Redis / 模型 / 知识库） */
@@ -393,11 +401,30 @@ export interface Capability {
  * 现在按后端真实形状声明，并去掉索引签名：**让类型系统真的能拦住这类漂移。**
  * `tests/test_frontend_contract.py` 里还有一条逐键比对的用例兜底。
  */
+/**
+ * 能力报告。**嵌套结构**，不是扁平字段。
+ *
+ * ⚠️ 这里踩过一次真实的、静默的漂移（2026-09-24）：旧的类型声明的是
+ * `can_generate_plan` / `can_estimate_budget` / `missing` / `suggestion`
+ * 一组字段，而后端 `CapabilityReport.to_dict()` 返回的是
+ * `{mode, reason, operations: {<op>: {allowed, missing, reason, suggestion}}}` ——
+ * 那组扁平字段**一个都不存在**。更糟的是旧类型带 `[key: string]: unknown`，
+ * 于是取到 `undefined` 也不报类型错，界面一直在猜：
+ * 「有房间有面积就能生成」的兜底分支恒为真，用户点下去后端回 4002。
+ * 所以这里**不许再加索引签名**。
+ */
 export interface Capabilities {
   mode: string
   reason: string
-  /** 操作名 → 判定。操作名见 `core/capabilities.py` 的 `_PROBES` */
-  operations: Record<string, Capability>
+  operations: Record<string, CapabilityOperation>
+}
+
+/** 单个操作的可用性。`missing` 缺什么、`suggestion` 怎么修 —— 都要能显示给用户 */
+export interface CapabilityOperation {
+  allowed: boolean
+  missing: string[]
+  reason: string
+  suggestion: string
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -516,6 +543,31 @@ export interface RiskReview {
 }
 
 /** 一套完整方案。三个分支产物 + 一次汇聚审查。 */
+/**
+ * 一项室内环境风险（AC-20）。
+ *
+ * ⚠️ **它没有、也不该有浓度字段。** 判据是材料环保等级 + 户型通风条件，
+ * 推到的是**风险档**；甲醛浓度只能现场采样检测。所以 `note`/`disclaimer`
+ * 里的每一句都要原样展示 —— 缺了它们，`risk` 会被读成检测结论。
+ */
+export interface HazardItem {
+  risk: 'low' | 'medium' | 'high' | 'unknown'
+  /** 评不了就是评不了，**不是**"没问题"。显示时要与 low 明确区分 */
+  insufficient_data: boolean
+  /** 每条结论的依据。**要展示** —— 用户据此才知道怎么改善 */
+  basis: string[]
+  note: string
+}
+
+export interface PlanEnvironment {
+  formaldehyde: HazardItem
+  tvoc: HazardItem
+  ventilation: { poor: boolean; basis: string }
+  computed_by: string
+  /** 强制展示的免责声明 */
+  disclaimer: string
+}
+
 export interface Plan {
   plan_id: string
   plan_index: number
@@ -525,6 +577,11 @@ export interface Plan {
   budget: Budget | null
   materials: Materials | null
   risks: RiskReview | null
+  /**
+   * 室内环境风险（AC-20）。**由规则引擎算，不由模型写** ——
+   * 见后端 `services/environment.py`。缺产物时为 undefined。
+   */
+  environment?: PlanEnvironment | null
   /** 哪些产物没产出。**如实展示缺失，不要假装完整** */
   missing_artifacts: string[]
 }
@@ -700,6 +757,14 @@ export interface PlanHotspot {
   rings: [number, number][][]
   precision: HotspotPrecision
   source: HotspotSource
+  /**
+   * 属于哪间房。**空值是 null**（门热区没有房间）。
+   *
+   * ⚠️ 漏了它的话 AC-10「点一块地面 → 选定房间」会静默失效：
+   * `undefined != null` 为 false，判断会走进另一条分支。
+   * 命名必须 snake_case —— 后端返回的就是 `room_index`。
+   */
+  room_index: number | null
   /** 计价数量（㎡ 或 樘）。null 表示不按量算 */
   quantity: number | null
   unit: string
@@ -802,6 +867,105 @@ export interface MaterialOptionsData {
     quanyou_preference_bonus: number
   }
   catalog_version: string
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 3D 家具摆放（"3D 带装修"）
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * 一件摆好的家具。**坐标是场景坐标系（米），与 `/walkable` 同一套** ——
+ * 所以 `three/coords.ts` 的 `planToEngine` 直接能用，不需要第二套换算。
+ */
+export interface FurniturePlacement {
+  spec_id: string
+  label: string
+  room_index: number
+  room_name: string
+  /** 中心点（米，图纸平面坐标） */
+  x: number
+  y: number
+  /** 世界轴对齐的宽与深（米）。旋转已在后端折进这两个值里 */
+  w: number
+  d: number
+  /** 图纸平面的逆时针角度，只有 0/90/180/270 */
+  rot_deg: number
+  mount: 'floor' | 'wall' | 'ceiling' | string
+  height_m: number
+  /** 在风格配色里的角色：wood / fabric / metal / stone / green / white */
+  color_role: string
+  /** 这一件的实际体色（`#RRGGBB`）。同族同色 —— 见后端 derive_family_palette */
+  color: string
+  y_offset_m: number
+  /** True = 不参与行走碰撞（地毯、地台、吊灯） */
+  no_collide: boolean
+  /** 挂墙件的附件（镜面、吊柜）。与主体一起画 */
+  extras: { w?: number; d?: number; h?: number; dx?: number; dy?: number; dz?: number }[]
+  /** 为什么摆在这里。**要能说出口** —— 悬停与排错都用它 */
+  basis: string[]
+}
+
+export interface FurnitureRoom {
+  index: number
+  name: string
+  kind: string | null
+  area_m2: number | null
+  free_rect: [number, number, number, number] | null
+  placements: FurniturePlacement[]
+}
+
+export interface FurnitureRejection {
+  room: string
+  spec_id: string
+  label: string
+  /** 为什么没摆下。**必须显示或至少保留** —— 不许静默丢弃 */
+  reason: string
+  /**
+   * 拒绝的**性质**，由后端给，前端不按文案猜：
+   *
+   *   `"space"`  空间不够 —— 等比放大房间可以解决
+   *   `"policy"` 规则不摆（同类只摆一件、本间房占地达上限）——
+   *              放大一万倍也解决不了
+   *
+   * ⚠️ 分这两类不是措辞讲究：混在一起显示，用户会以为
+   * "等比放大没生效"（它确实解决不了 policy 那一半）。
+   */
+  kind?: 'space' | 'policy'
+  skipped_by_capacity?: string[]
+}
+
+export interface FurnitureData {
+  layout_id?: string
+  plan_id?: string | null
+  style: string
+  /** 3D 表面色（**不是**界面配色）。后端给的是 surface 那一套 —— 见后端 seed_data 的说明 */
+  palette: Record<string, string | null>
+  wall_color: string
+  /**
+   * 3D 场景自己的地面色，**比 `floor_color` 深**。
+   *
+   * ⚠️ 两个都要用对：`surface_floor` 是给 3D 的地面，`floor_color` 是
+   * 2D 平面图的底色。拿后者铺 3D 地面的话，浅色家具会跟地面糊在一起
+   * （实测 modern 的 fabric 只有 1.01:1）。
+   */
+  surface_floor: string
+  /** 界面/2D 用的地面色。3D **不要**用它铺地 */
+  floor_color: string
+  rooms: FurnitureRoom[]
+  placed_count: number
+  rejected: FurnitureRejection[]
+  warnings: string[]
+  notes: string[]
+  /**
+   * 3D 场景被**等比放大**了多少倍（1 = 没放大）。
+   *
+   * 家具摆不下时，后端会把 3D 场景放大到装得下为止 —— 见
+   * `backend/app/services/furniture/scaling.py`。**只放大 3D**：
+   * 平面图、热区、造价仍按真实尺寸。所以界面上必须显示这个倍数，
+   * 否则用户会拿 3D 目测房间大小，而那是个错的数。
+   */
+  scene_scale?: number
+  scene_scale_note?: string
 }
 
 export interface ReviewRequest {
@@ -994,4 +1158,188 @@ export interface SceneData {
   rooms: { name: string; kind: string; area_m2: number; polygon: [number, number][]; polygon_is_bbox: boolean }[]
   quality: { walls_closed: boolean; wall_count: number; can_build_walls: boolean; issues: string[] }
   confidence: number
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// 4.6′ 知识库与工作台统计（2026-09-26 补齐）
+// ══════════════════════════════════════════════════════════════════
+
+/** 库里的一篇文档（**按 `source` 聚合**，不是一条 chunk）。 */
+export interface KnowledgeDocument {
+  source: string
+  source_dir: string
+  doc_type: string
+  priority: string
+  tags: string[]
+  chunks: number
+  /** 章节路径，最多几条 —— 用来在清单里看出这篇讲什么 */
+  headings: string[]
+}
+
+/**
+ * `GET /knowledge/list` 的返回体。
+ *
+ * ⚠️ `available: false` **不是错误**，是"这个能力现在用不了，因为 reason"。
+ * 与 `/system/health` 同一立场 —— 界面据此显示状态，
+ * 而不是把它渲染成一片空白（空白会被读成"知识库是空的"）。
+ */
+export interface KnowledgeListData {
+  available: boolean
+  reason: string
+  collection: string
+  path: string
+  chunk_count: number
+  document_count: number
+  documents: KnowledgeDocument[]
+  /** 可选语料类型。**由后端给** —— 前端硬编码一份会随语料类型变更漂移 */
+  doc_types: string[]
+  limits: { max_upload_chars: number; min_chunk_chars: number }
+  notes: string[]
+}
+
+/** `POST /knowledge/upload` 的返回体。 */
+export interface KnowledgeUploadResult {
+  source: string
+  written: number
+  chunk_count: number
+  available: boolean
+  notes: string[]
+}
+
+/** `GET /dashboard/stats` 的返回体。 */
+export interface DashboardStatsData {
+  available: boolean
+  reason: string
+  /**
+   * ⚠️ `null` 表示**读不到**，不是 0 —— 两者含义相反（见后端注释）。
+   * 界面上必须区别显示："—" 与 "0"。
+   */
+  layouts: number | null
+  plans: number | null
+  audit_events: number | null
+  by_action: Record<string, number>
+  kb: { available: boolean; reason: string; collection: string; chunks: number; documents?: number }
+  notes: string[]
+}
+
+/**
+ * 一个阶段/一类请求的性能摘要。
+ *
+ * ⚠️ **`available: false` 与"0 毫秒"是两件事。** 样本不足时后端给
+ * `available: false` + `reason`，而不是给一个 0 —— 性能报告里一个假的 0
+ * 会被读成"快到无法测量"，而真相是"根本没数据"。
+ */
+export interface MetricSummary {
+  label: string
+  available: boolean
+  reason?: string
+  unit?: string
+  n?: number
+  p50?: number
+  p95?: number
+  max?: number
+  target_p95?: number
+  /** 是否达到需求文档 2.3.1 给的目标。**后端算好给**，前端不重算 */
+  meets_target?: boolean
+  source?: string
+}
+
+/** 按 Agent 分的 LLM 调用指标。`avg_total_tokens` 就是"Token 消耗"。 */
+export interface AgentMetric {
+  unit: string
+  n: number
+  p50: number
+  p95: number
+  max: number
+  avg_total_tokens: number
+}
+
+/** `GET /system/metrics` 的返回体（AC-23）。 */
+export interface MetricsData {
+  window_days: number
+  metrics: Record<string, MetricSummary>
+  llm_by_agent: Record<string, AgentMetric>
+  /** 在飞任务的 id。⚠️ 所以这个接口要登录 —— task_id 是取消任务的凭据 */
+  running_tasks: string[]
+  /**
+   * 这批数字是从哪儿来的。
+   *
+   * ⚠️ **是对象不是字符串。** 第一版按字符串写、模板里直接
+   * `{{ metrics.source }}` —— 那样渲染出来是 `[object Object]`，
+   * 而类型检查**不会报错**（`unknown`/对象都能插值）。
+   * 属于"看起来像个故障、但不报错"的那种。
+   */
+  source: {
+    audit_files: string[]
+    scanned_lines: number
+    task_samples: Record<string, number>
+    llm_samples: Record<string, number>
+    /** 聚合过程中出错的文件与原因。非空就说明这批数字**不完整** */
+    errors: string[]
+  }
+  notes: string[]
+  persistence: {
+    enabled: boolean
+    available: boolean
+    reason?: string
+    sink: Record<string, number>
+    pool: Record<string, unknown>
+    migrations?: string[]
+    audit_rows?: number
+    note?: string
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 4.3‴ 地面材质替换（AC-10，2026-09-26 重定性）
+// ══════════════════════════════════════════════════════════════════
+
+/** 一种可以用在地面的材料。**清单由后端给**，前端不硬编码。 */
+export interface FloorMaterialOption {
+  id: string
+  name: string
+  brand: string
+  is_quanyou: boolean
+  spec: string
+  price_range: [number, number]
+  /** 材料**代表色**（`#RRGGBB`）。它是代表色、不是效果图 */
+  swatch: string
+  search_url: string
+}
+
+/** 一间房当前换了什么。 */
+export interface FloorSubstitution {
+  room_index: number
+  room_name: string
+  area_m2: number
+  /** 材料下架时为 null —— 这时看 `note` 怎么说 */
+  material: FloorMaterialOption | null
+  /**
+   * 造价区间 = 面积 × 单价区间。
+   *
+   * ⚠️ **是区间不是数**：单价本身有区间，取中位数会变成一个看起来
+   * 很确定、其实不确定的数字（后端有意不这么做）。
+   */
+  /** `unit` 是「元」—— 这是**总额**（已乘面积），不是单价。单价在 material 里 */
+  cost: { min: number; max: number; unit: string } | null
+  note?: string
+}
+
+export interface FloorMaterialsData {
+  layout_id: string
+  /** 每间房的地面（点图选房用）。后端 2026-09-26 起返回 */
+  rooms: FloorMaterialRoom[]
+  substitutions: FloorSubstitution[]
+  eligible: FloorMaterialOption[]
+  notes: string[]
+}
+
+/** 一间房的地面：换材质时要按面积算造价，所以面积也在这儿 */
+export interface FloorMaterialRoom {
+  room_index: number
+  room_name: string
+  area_m2: number
+  /** 当前材料 id；没换过是空串 */
+  material_id: string
 }

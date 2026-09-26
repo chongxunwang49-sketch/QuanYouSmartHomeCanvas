@@ -186,7 +186,7 @@ async def main() -> int:
     #
     # ⚠️ 复用而不是重写：那是这个项目里唯一一份"20/20 指回契约"的清单，
     #    重写一份就等于多一个会漂移的副本。
-    from scripts.e2e_smoke import checklist
+    from scripts.e2e_smoke import checklist, checklist_rows
 
     banner("逐条清单（与 e2e_smoke 同一份）")
     expected_rooms = len(layout.get("rooms") or [])
@@ -201,7 +201,7 @@ async def main() -> int:
         # ⚠️ 不能让"AC-32 未通过"概括成"重放有问题"：清单里那些条目
         #    属于**别的验收项**（AC-02/05/06/18/20…）。混在一起报，
         #    读的人会去查重放脚本，而真正的问题在 A-06 的提示词上。
-        for name, ok, _detail in _checklist_rows(out, expected_rooms):
+        for name, ok, _detail in checklist_rows(out, expected_rooms=expected_rooms):
             if not ok and name not in failed_items:
                 failed_items.append(name)
 

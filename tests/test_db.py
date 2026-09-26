@@ -716,3 +716,57 @@ class TestDegradesGracefully:
         assert got is None
         assert stats["failed"] >= 1, f"连接失败没有被计数：{stats}"
         pool.reset()
+
+
+
+# ══════════════════════════════════════════════════════════════════
+# 终态那条路径的签名（防一类"改一处、崩另一处"）
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestTerminalPathSignatures:
+    """
+    ⚠️ **这批断言来自一次实际事故**（2026-09-24，端到端跑出来的）。
+
+    给 `TaskManager` 加 `_persist_plans()` 时，插入位置正好在
+    `@staticmethod` 与 `_log_phase_durations` 之间 —— 装饰器被新方法吃掉了。
+    于是：
+
+        _persist_plans 变成 staticmethod（但签名里有 self）
+        _log_phase_durations 退回实例方法（但签名里没有 self）
+
+    后果不是启动报错，而是**任务跑到最后一步才炸**：
+
+        task_xxx 完成，degraded=False
+        task_xxx 执行失败: TaskManager._log_phase_durations()
+                          takes 2 positional arguments but 3 were given
+
+    任务内容其实已经全部算完、户型也已经落库，只因为在终点线上抛了一次，
+    整条任务被判成 `failed`。**单元测试当时全绿** —— 因为没有任何用例
+    真的把 `_run` 跑到终态。
+
+    所以这里钉住两个方法的形状。它拦不住所有同类错误，但这一种
+    （装饰器与签名错配）是最容易在插入代码时发生的，而代价最大。
+    """
+
+    def test_终态方法的签名与装饰器一致(self):
+        import inspect
+
+        from backend.app.api.tasks import TaskManager
+
+        dur = inspect.getattr_static(TaskManager, "_log_phase_durations")
+        assert isinstance(dur, staticmethod), (
+            "_log_phase_durations 不是 staticmethod 了 —— 它被调用时是 "
+            "`self._log_phase_durations(rec, marks)`，退化成实例方法会多一个 self"
+        )
+        assert list(inspect.signature(dur.__func__).parameters) == ["rec", "marks"]
+
+        persist = inspect.getattr_static(TaskManager, "_persist_plans")
+        assert not isinstance(persist, staticmethod), (
+            "_persist_plans 变成 staticmethod 了 —— 它的签名里有 self，"
+            "装饰错了会在任务终态才炸"
+        )
+        assert inspect.iscoroutinefunction(persist)
+        assert list(inspect.signature(persist).parameters) == [
+            "self", "rec", "final",
+        ], "调用点是 `await self._persist_plans(rec, final)`"

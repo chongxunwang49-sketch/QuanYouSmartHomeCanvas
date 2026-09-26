@@ -67,8 +67,12 @@ export const useAuthStore = defineStore('auth', () => {
   /** 付费功能可用。与后端 `User.can_use_paid_features` 同一判据 */
   const canUsePaid = computed(() => user.value?.can_use_paid_features ?? false)
   const isAdmin = computed(() => role.value === 'admin')
-  /** 管理员与设计师都能进「用户管理」看全局账号表 */
-  const canManageUsers = computed(() => isUnlimited.value)
+  /**
+   * 是否能进「账号管理」。**只有管理员** ——
+   * 2026-09-24 起「账号管理」与「个人中心」是两个页面：
+   * 管理页仅管理员可见，其它角色（含设计师）用的是个人中心。
+   */
+  const canManageUsers = computed(() => isAdmin.value)
 
   /**
    * 某个付费功能是否可用。
@@ -89,7 +93,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (canUsePaid.value) return ''
     const name = PAID_FEATURES[feature]
     if (!user.value) return `「${name}」需要登录后使用`
-    return `「${name}」需要开通会员。当前档位：免费版 —— 在「用户管理 → 我的套餐」里开通演示会员即可解锁（演示环境，不会真实扣费）`
+    return `「${name}」需要开通会员。当前档位：免费版 —— 在「个人中心 → 我的套餐」里开通演示会员即可解锁（演示环境，不会真实扣费）`
   }
 
   // ── 动作 ────────────────────────────────────────────────

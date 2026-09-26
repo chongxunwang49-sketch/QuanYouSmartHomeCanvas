@@ -272,3 +272,124 @@ class TestSearchMany:
         assert r.available is False
         assert "挂了" in r.reason
         assert r.chunks, "部分成功的结果仍要保留，不能因为一个失败就全丢"
+
+
+
+# ══════════════════════════════════════════════════════════════════
+# 并发：检索绝不能占着事件循环
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestRetrievalOffTheEventLoop:
+    """
+    ⚠️ **这组守的是一个实测出来的、28–30 秒的卡顿（2026-09-24）。**
+
+    `search()` / `search_many()` 是**同步阻塞**的：embedding 走同步 httpx
+    打 Ollama（实测单条 636ms），向量查询走 ChromaDB 的同步客户端
+    （实测单次 844ms）。而 A-06 在 async 节点里用 `asyncio.gather`
+    对三套方案并发调它们。
+
+    实测现象：`review_risks` 一开始，**整个事件循环被卡住约 28–30 秒** ——
+    证据是那个窗口里轮询接口完全没有响应（前后两条轮询记录之间凭空少了一次），
+    而 `/task/{id}/status` 是纯内存查询。连带后果直接打在用户可见的地方：
+    **"方案先交付"晚到了 28 秒**（本该第 54 秒交付，实际第 82 秒）。
+
+    修法是把检索丢到**单线程**池里跑。单线程不是保守 —— 见下面第二条。
+    """
+
+    def test_检索池必须是单线程的(self):
+        """
+        ⚠️ **多线程访问 Chroma 会直接坏掉，而且坏得悄无声息。**
+
+        第一版想当然用了 `asyncio.to_thread`（默认多线程），实测三路并发
+        同时碰 Chroma，三路**全部**失败：
+
+            ValueError: Could not connect to tenant default_tenant. Are you sure it exists?
+            AttributeError: 'RustBindingsAPI' object has no attribute 'bindings'
+            KeyError: 'E:\\quanyou\\data\\chroma'
+
+        而检索层的契约是"失败即返回空结果 + 原因"（见模块说明），
+        所以**它不会报错，只会静默地拿不到依据** —— A-06 于是退化成
+        "凭常识审"，界面上完全看不出来。这正是本项目最防的那类失败。
+
+        所以这里断言的是 `max_workers == 1` 这个**安全不变量**，
+        不是随手定的实现细节。
+        """
+        pool = retriever._pool()
+        assert pool._max_workers == 1, (
+            "检索池不是单线程的 —— 并发访问 Chroma 会静默失败，"
+            "A-06 会拿不到依据却不报错"
+        )
+
+    async def test_异步检索不阻塞事件循环(self, monkeypatch):
+        """
+        用一个"会睡一会儿"的假检索替换真检索：真检索要打 Ollama + Chroma，
+        单元测试里不该依赖它们。这里验证的是**调度**，不是检索本身。
+
+        ⚠️ **心跳必须先跑起来，再去调检索。** 第一版把两者放进
+        `asyncio.gather`，结果是"先阻塞 0.4 秒、再跳 0.6 秒心跳" ——
+        心跳一次都没落在阻塞窗口里，于是把实现改回"直接在循环里跑"
+        这个用例**照样通过**（变异测试发现的）。那样的测试比没有更糟：
+        它声称守着一个约束，实际上什么都没守。
+        """
+        import asyncio
+        import time
+
+        def slow_search(queries, **kwargs):
+            time.sleep(0.4)
+            return retriever.RetrievalResult(query="|".join(queries), chunks=[])
+
+        monkeypatch.setattr(retriever, "search_many", slow_search)
+
+        ticks: list[float] = []
+
+        async def heartbeat():
+            started = time.perf_counter()
+            while time.perf_counter() - started < 1.0:
+                ticks.append(time.perf_counter() - started)
+                await asyncio.sleep(0.05)
+
+        hb = asyncio.create_task(heartbeat())
+        await asyncio.sleep(0.1)          # 先让心跳正常跳几拍
+        await retriever.search_many_async(["a", "b"], top_k_each=3)
+        await hb
+
+        assert len(ticks) >= 8, (
+            f"检索期间事件循环几乎没跑（只有 {len(ticks)} 次心跳）—— "
+            f"轮询接口在这个窗口里会完全没有响应"
+        )
+        gaps = [b - a for a, b in zip(ticks, ticks[1:])]
+        assert max(gaps) < 0.2, (
+            f"事件循环被卡住了 {max(gaps):.2f}s（心跳间隔：{[round(g, 2) for g in gaps]}）—— "
+            f"这 0.4 秒里所有异步任务都停了，包括任务状态轮询"
+        )
+
+    def test_停机时能收掉池子(self):
+        """
+        池线程是非 daemon 的，解释器退出时会 join 它们 ——
+        不主动收，停机可能被一次在飞的检索拖住（上限 `EMBED_TIMEOUT=180s`，
+        比 AC-31 的 150 秒停机预算还长）。
+        """
+        first = retriever._pool()
+        retriever.shutdown_retrieval_pool()
+        assert retriever._POOL is None, "停机后池子应当被清掉"
+
+        second = retriever._pool()
+        assert second is not first, "再起来时应当是新池子"
+
+    def test_异步与同步检索语义一致(self, monkeypatch):
+        """
+        两条路径必须是**同一个函数**，否则迟早漂移成两种行为。
+        """
+        import asyncio
+
+        seen: dict = {}
+
+        def fake(queries, **kwargs):
+            seen.update(kwargs)
+            return retriever.RetrievalResult(query="x", chunks=[])
+
+        monkeypatch.setattr(retriever, "search_many", fake)
+        asyncio.run(retriever.search_many_async(
+            ["q"], top_k_each=7, doc_type="regulation", max_total=5))
+        assert seen == {"top_k_each": 7, "doc_type": "regulation", "max_total": 5}

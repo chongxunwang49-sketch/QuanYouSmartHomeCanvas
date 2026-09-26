@@ -137,10 +137,7 @@ export function provideParseSession(): ParseSession {
     // 后端拒绝时会说清"缺什么"与"怎么办"，**原样展示** ——
     // 不要改写成"系统繁忙"这种糊弄话（DegradedNotice 的立场）。
     const cap = opCapability('generate_plan')
-    if (cap) {
-      const missing = cap.missing?.length ? `缺少${cap.missing.join('、')}。` : ''
-      return `${missing}${cap.suggestion ?? ''}`.trim() || cap.reason || ''
-    }
+    if (cap?.suggestion) return cap.suggestion
     if (!(layout.value?.total_area ?? 0)) return '缺少户型总面积，无法估算造价'
     return ''
   })

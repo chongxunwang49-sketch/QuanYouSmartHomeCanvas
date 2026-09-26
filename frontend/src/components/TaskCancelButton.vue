@@ -108,7 +108,7 @@ async function confirm() {
           <li class="flex gap-2">
             <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-accent-gold" />
             <span>
-              任务会**立刻停下**，这一次不会有结果产出。已经跑完的部分无法恢复。
+              任务会<strong class="font-semibold">立刻停下</strong>，这一次不会有结果产出。已经跑完的部分无法恢复。
             </span>
           </li>
           <li class="flex gap-2">

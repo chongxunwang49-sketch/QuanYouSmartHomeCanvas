@@ -296,23 +296,120 @@ async def main() -> int:
     print(f"  degraded   : {out.get('degraded')}")
     print(f"  错误       : {len(out.get('errors') or [])} 条")
 
+    # ── AC-36：语义化进度 ────────────────────────────────────
+    #
+    # ⚠️ **必须走任务管理器才采得到阶段序列。** 上面那条链是
+    #    `graph.ainvoke` 一次跑完的，它只看得到**终态**的 phase ——
+    #    而 AC-36 的原话是「`phase` 在任务执行中**至少经历 3 个不同取值**」，
+    #    那要的是**过程中**的观测。
+    #
+    #    所以这里额外跑一次解析（约 50 秒），走的是接口层同一条路
+    #    （`TaskManager.create` + `start` + 轮询 `status`）。
+    #    多花一次解析的钱，换一条**可测量的** AC —— 值。
+    #
+    #    ⚠️ 用**一份全新的 state**，不复用上面那条链的：`ainvoke` 虽然不
+    #    改传入的 dict，但两个任务共用一份状态是自找麻烦（task_id 之类的
+    #    字段会互相看得到），而这里多构造一次的成本是零。
+    phases_seen = await _observe_phases(
+        initial_state(
+            task_id="e2e-ac36",
+            image_ref=part.to_data_uri(),
+            image_media_type=part.media_type,
+            detail_level="full",
+        ),
+        kind="parse",
+    )
+
     # ── 验收清单（AC-15）──
-    passed, total = checklist(out, expected_rooms=expected_rooms)
+    passed, total = checklist(out, expected_rooms=expected_rooms,
+                              phases=phases_seen)
     banner(f"验收清单：{passed}/{total}")
     ok = passed == total
     print(f"\n  {'✓ 链路通过' if ok else '✗ 链路存在问题'}")
     return 0 if ok else 1
 
 
+async def _observe_phases(state_fn, *, kind: str,
+                          attempts: int = 2) -> tuple[list[str], str]:
+    """
+    跑一个任务，把轮询过程中见过的 `phase` 按出现顺序记下来。
+
+    ⚠️ 这是 AC-36 唯一的**测量**手段：`phase` 是**过程中**的量，
+    终态里只剩一个值。上面那条主链是 `ainvoke` 一次跑完的，
+    看不到中间过程 —— 所以这里另起一个任务，走接口层同一条路。
+
+    返回 `(阶段序列, 失败原因)`。**失败原因非空 = 这次没测成**。
+
+    ⚠️ **为什么要有重试。** 实测踩过一次：这个观测任务跑在主链之后，
+    而那一次主链很慢（A-06 花了 88 秒、fan-out 段 120 秒）—— 观测任务
+    在同一个本机模型服务上撞了节点超时而**失败**，于是只看到一个阶段
+    `['analyzing']`，清单报的是"AC-36 未通过"。
+
+    那是**测量失败**，不是 AC 失败：AC-36 关心的是"机制能不能产出 3 个
+    阶段"，而那已经由 `tests/test_progress.py` 与审查链的实测守着。
+    把一次 API 抖动报成"某条 AC 不达标"，与这个项目"不产出看起来合理的
+    错误"是同一条纪律的反面。
+
+    所以：重试一次；两次都失败才返回失败原因，让清单如实说
+    "**未能测量**"而不是判它不过。
+
+    ⚠️ `state_fn` 收的是**构造函数**不是 state —— 重试要一份干净的状态，
+    复用同一份会让第二次带着第一次的中间产物（`review_sources` 之类）。
+    """
+    from backend.app.api.tasks import get_task_manager
+
+    tm = get_task_manager()
+    last_note = ""
+    for attempt in range(1, attempts + 1):
+        rec = tm.create(kind, trace_id=f"e2e-ac36-{attempt}")
+        tm.start(rec, state_fn(), stages=kind)
+
+        seen: list[str] = []
+        deadline = time.perf_counter() + 240
+        while time.perf_counter() < deadline:
+            await asyncio.sleep(1.0)
+            snap = await tm.status(rec.task_id)
+            if snap is None:
+                continue
+            ph = str(snap.get("phase") or "")
+            if ph and ph not in seen:
+                seen.append(ph)
+                print(f"      · [{attempt}] 阶段 {len(seen)}: {ph}  "
+                      f"{snap.get('phase_text', '')}")
+            if snap.get("status") in ("completed", "failed", "cancelled"):
+                if snap.get("status") == "completed":
+                    return seen, ""
+                last_note = (f"第 {attempt} 次观测任务 {snap.get('status')}："
+                             f"{snap.get('error') or '未给出原因'}")
+                print(f"      · [{attempt}] 观测任务未跑完 —— {last_note}")
+                break
+        else:
+            last_note = f"第 {attempt} 次观测任务超时（>240s）"
+        if len(seen) < 3 and attempt < attempts:
+            print(f"      · [{attempt}] 只看到 {len(seen)} 个阶段，重试一次")
+            await asyncio.sleep(3)
+    return [], last_note or "观测任务未能跑完，且没有给出原因"
+
+
 #: AC-15 的判据。每条都是对**真实产物**的断言，不是"跑完没报错"。
 #: 之所以列这么多条，是因为"整条链跑通了"这句话本身没有信息量 ——
 #: 三套方案里有一套没出预算、审查结论全是编造的引用，链路照样"跑通"。
-def checklist(out: dict, *, expected_rooms: int = 4) -> tuple[int, int]:
+def checklist_rows(
+    out: dict, *, expected_rooms: int = 4, phases: list[str] | None = None,
+) -> list[tuple[str, bool, str]]:
     """
-    逐条检查黄金路径的产物。返回 (通过数, 总数)。
+    构造逐条检查的结果，返回 `[(条目名, 是否通过, 证据)]`。
 
-    ⚠️ 每一条都对应需求文档里的一个验收项（编号写在描述里），
-    这样"20/20"就不是一个自报的数字，而是能指回契约的结论。
+    ⚠️ `phases` **不给就跳过 AC-36 那一条**（不给一个假结论）。
+    重放脚本不做阶段观测（它跑的是冻结的解析产物，不经过任务管理器），
+    所以它报的总数会比 e2e 少一条 —— 那是实情，不是漏检。
+
+    ⚠️ **抽出来是因为重放脚本也要用它**（`scripts/replay_golden_path.py`）。
+    那个脚本需要知道"是哪一条没过"，好把结论指名道姓地报出来 ——
+    而它此前只能拿到一个 `(通过数, 总数)`，于是任何一条红了都会
+    被它概括成"AC-32 未通过"，让读的人去查重放，而问题其实在别处
+    （比如 A-06 的提示词）。重写一份清单就等于多一个会漂移的副本，
+    所以这里是抽函数而不是复制。
     """
     layout = out.get("layout") or {}
     diag = out.get("diagnosis") or {}
@@ -419,6 +516,31 @@ def checklist(out: dict, *, expected_rooms: int = 4) -> tuple[int, int]:
         ("AC-17 链路无错误条目", not errors, f"errors={[e.get('message','')[:60] for e in errors]}"),
     ]
 
+    # ── AC-36 语义化进度 ──
+    #
+    # ⚠️ **只有真的观测过阶段序列时才出这一条。** 不给 `phases` 就跳过，
+    #    而不是判成"通过"或"失败" —— 没测过的条目报任何一个结论都是假话。
+    #    重放脚本（`replay_golden_path.py`）不经过任务管理器，所以它那里
+    #    总数会少一条，那是实情。
+    if phases is not None:
+        checks.append((
+            "AC-36 语义化进度（一次执行中 phase 至少 3 个不同取值）",
+            len(phases) >= 3,
+            f"实测经历 {len(phases)} 个阶段：{phases}",
+        ))
+
+    return checks
+
+
+def checklist(out: dict, *, expected_rooms: int = 4,
+              phases: list[str] | None = None) -> tuple[int, int]:
+    """
+    逐条检查黄金路径的产物。返回 (通过数, 总数)。
+
+    ⚠️ 每一条都对应需求文档里的一个验收项（编号写在描述里），
+    这样"20/20"就不是一个自报的数字，而是能指回契约的结论。
+    """
+    checks = checklist_rows(out, expected_rooms=expected_rooms, phases=phases)
     for name, ok, detail in checks:
         mark = "✓" if ok else "✗"
         print(f"  {mark} {name}")

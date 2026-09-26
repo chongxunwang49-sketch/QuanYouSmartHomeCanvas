@@ -1,0 +1,1224 @@
+"""
+HTTP 路由。
+
+对应需求文档第四章的接口契约。当前实现：
+
+    POST /api/v1/layout/parse          4.2 户型解析（异步）
+    POST /api/v1/design/generate       4.3 方案生成（异步）
+    POST /api/v1/avoid-pit/review      4.6 报价单/合同审查（异步）
+    GET  /api/v1/task/{task_id}/status 4.4 任务状态轮询
+    GET  /api/v1/material/price        4.5 材料价格查询（同步，纯查表）
+    GET  /api/v1/layout/{id}/plan.svg  4.3′ 矢量户型图（同步，AC-07）
+    GET  /api/v1/layout/{id}/hotspots  4.3′ 物品热区+价格（同步，AC-09/21）
+    GET  /api/v1/layout/{id}/walkable  4.3″ 3D 漫游几何（同步，第一人称）
+    POST /api/v1/auth/login            4.1 登录（AC-01）
+    GET  /api/v1/auth/me               4.1 当前用户
+    GET  /api/v1/system/health         4.6 健康检查
+    GET  /api/v1/system/metrics        4.6′ 性能指标（AC-23）
+
+**四个异步接口的形状是一致的**：立即返回 task_id，客户端轮询 4.4。
+差别只在 `kind` 与起始 `stages`。
+
+**门控分布**（AC-01 + AC-13，判定逻辑见 `api/deps.py`）：
+
+    接口              免费用户            会员            管理员/设计师
+    layout/parse      可用（5 次/日）      可用（5 次/日）  不限
+    design/generate   **需开通**（4005）   可用（3 次/日）  不限
+    avoid-pit/review  **需开通**（4005）   可用            不限
+
+⚠️ 会员**照样受配额约束** —— 配额防的是跑飞，与是否付费无关。
+
+未实现（依赖本机服务）：4.6 的 knowledge/upload。
+见 README 的「未开始」。
+"""
+
+from __future__ import annotations
+
+import asyncio
+
+from typing import Any, get_args
+
+from fastapi import APIRouter, Depends, Request, Response
+from loguru import logger
+
+from ..core import auth
+from ..core.auth import User
+from ..core.logger import audit
+from ..core.capabilities import OperationNotAllowedError
+from ..core import metrics
+from ..core.config import settings
+from ..core.progress import total_seconds
+from ..core.redis_client import get_quota_limiter
+from ..graph.state import initial_state
+from ..graph.workflow import get_compiled_graph
+from ..schemas.plan import BudgetGrade, PlanStyle
+from ..services.geometry import build_walkable
+from ..services.material import catalog
+from ..services.render import hotspot_payload, render_plan_for
+from . import store as layout_store
+from .deps import consume_quota, current_user, require_paid
+from .schemas import (
+    ApiError,
+    ApiResponse,
+    GenerateRequest,
+    LoginRequest,
+    MembershipRequest,
+    ParseRequest,
+    ReviewRequest,
+    UserUpdateRequest,
+)
+from .tasks import get_task_manager
+
+router = APIRouter(prefix="/api/v1")
+
+
+def _trace_id(request: Request) -> str:
+    """取中间件写进 request.state 的 trace_id。"""
+    return getattr(request.state, "trace_id", "") or ""
+
+
+# ══════════════════════════════════════════════════════════════════
+# 4.1 认证（AC-01）
+# ══════════════════════════════════════════════════════════════════
+#
+# ⚠️ 这三个接口的约定与其它接口**不同**，写清楚免得后来的人改错：
+#
+#   · `/auth/login` 是唯一**不需要**令牌的写接口（否则死锁）。
+#   · 认证失败是 **HTTP 200 + code 4003**，不是 401 ——
+#     理由见 `api/deps.py` 模块说明。前端拿到 4003 就跳 /login。
+#   · 口令错误**不区分**"用户不存在"与"口令错误"，两种情况返回同一句话。
+#     区分开等于给了一个枚举用户名的接口。
+
+
+@router.post("/auth/login", response_model=ApiResponse)
+async def auth_login(req: LoginRequest, request: Request) -> ApiResponse:
+    """
+    登录，返回访问令牌与用户信息。
+
+    ⚠️ **没有 refresh token。** 需求文档 2.3.2 要求双令牌，这里有意偏离：
+    演示场景下 12 小时的有效期足够，双令牌的复杂度换不来演示价值。
+    偏离理由写在 `core/auth.py` 的文件头。
+    """
+    user = auth.verify_credentials(req.username, req.password)
+    if user is None:
+        # ⚠️ 顺序有讲究：**先看是不是"口令对但账号被停用"**，
+        #    再回落到那句合并的 4001。
+        #
+        #    合并 4001 的理由是"不区分用户是否存在"（区分开就是用户名枚举接口）。
+        #    而"账号被停用"这条只在**口令正确**时才说（见 auth.is_disabled_account），
+        #    所以它不泄漏"用户名是否存在" —— 只对已经拿到口令的人多说一句，
+        #    而那个人本来就能进，只是被管理员停了。
+        #
+        #    不说这一句的代价很具体：演示时刚在管理页点了「停用」，
+        #    回头登录只看到"用户名或口令不正确"，会以为自己操作错了、
+        #    或者口令记错了 —— 排查方向整个偏掉。
+        if auth.is_disabled_account(req.username, req.password):
+            logger.info(f"[auth] 账号已停用 username={req.username!r} trace={_trace_id(request)}")
+            # 审计：账号被停用后仍尝试登录 —— 这类事件事后最需要查
+            audit("login_failed", username=req.username, reason="account_disabled")
+            raise ApiError(
+                4007,
+                "该账号已被管理员停用，无法登录。请联系管理员在「账号管理」里启用。",
+                data={"action": "contact_admin"},
+            )
+        logger.info(f"[auth] 登录失败 username={req.username!r} trace={_trace_id(request)}")
+        # ⚠️ 只记用户名与原因，**绝不记口令** —— 审计日志会落盘 180 天，
+        #    而且（按设计）不含变量快照正是为了不把口令写进去
+        #    （见 logger.setup_logging 里 diagnose=False 的说明）。
+        audit("login_failed", username=req.username, reason="bad_credentials")
+        # ⚠️ 不区分"用户不存在"与"口令错误" —— 区分开就是一个用户名枚举接口
+        raise ApiError(4001, "用户名或口令不正确")
+
+    token, expires_in = auth.issue_token(user)
+
+    # 记一次登录设备（个人中心的"登录设备"就是它）。**失败不影响登录** ——
+    # 见 auth.record_login 的说明：它是锦上添花，不该成为进门的门槛。
+    auth.record_login(
+        user.id,
+        request.headers.get("user-agent", ""),
+        request.client.host if request.client else "",
+    )
+
+    logger.info(f"[auth] 登录成功 user={user.username} role={user.role} trace={_trace_id(request)}")
+    audit("login", username=user.username, user_id=user.id,
+          role=user.role, membership=user.membership)
+    return ApiResponse.ok({
+        "access_token": token,
+        "token_type": "Bearer",
+        "expires_in": expires_in,
+        "user": user.to_dict(),
+    })
+
+
+@router.get("/me/devices", response_model=ApiResponse)
+async def my_devices(user: User = Depends(current_user)) -> ApiResponse:
+    """
+    我的登录设备（个人中心）。
+
+    ⚠️ **这是"从登录请求推断出的设备"，不是密码学意义的设备绑定。**
+    依据只有 User-Agent 与来源 IP，两者都可伪造 —— 所以它只回答
+    "我自己看看有哪些地方登录过"，**不构成任何访问控制**。
+    接口与界面都必须这么写，不要把它说成"设备锁"。
+    """
+    return ApiResponse.ok({
+        "devices": auth.login_records(user.id),
+        "note": "依据登录请求的 User-Agent 与来源 IP 推断，可被伪造；仅用于自查，不构成访问控制。",
+    })
+
+
+@router.get("/auth/me", response_model=ApiResponse)
+async def auth_me(user: User = Depends(current_user)) -> ApiResponse:
+    """
+    当前登录用户。
+
+    前端刷新页面后靠它恢复登录态 —— 令牌存在 localStorage，
+    但**用户信息不做本地持久化**，每次重新问一次：
+    管理员刚改了某人的角色/档位，刷新就该看到新的，
+    而不是从 localStorage 里读出一个过期快照。
+    """
+    return ApiResponse.ok({"user": user.to_dict()})
+
+
+@router.get("/auth/quota", response_model=ApiResponse)
+async def auth_quota(user: User = Depends(current_user)) -> ApiResponse:
+    """
+    我今日的额度（AC-13）。**只读，不消耗。**
+
+    为什么要有这个接口：界面上"今日已用 2/5"这种显示，如果不给查询口，
+    前端就只能自己记 —— 而它是**按用户在后端按天算的**，前端记的那个数
+    在换设备、刷新、并发提交后全是错的。宁可多一个只读接口，
+    也不要摆一个**猜出来的**数字（本项目最忌讳"看起来合理的错误"）。
+
+    ⚠️ 管理员与设计师的 `limit` 是 `null`（不限量），但 `used` **照样是真实计数** ——
+    见 `deps.consume_quota` 的说明：次数对谁都累计，只是对管理员不设上限。
+    """
+    limiter = get_quota_limiter()
+    quota: dict[str, Any] = {}
+    for task_type in ("parse", "generate", "review"):
+        result = await limiter.peek(user_id=user.id, role=user.role, task_type=task_type)
+        quota[task_type] = result.to_dict()
+    return ApiResponse.ok({
+        "quota": quota,
+        "user_id": user.id,
+        "role": user.role,
+        "unlimited": user.is_unlimited,
+    })
+
+
+@router.post("/auth/membership", response_model=ApiResponse)
+async def set_my_membership(
+    req: MembershipRequest,
+    user: User = Depends(current_user),
+) -> ApiResponse:
+    """
+    自助改自己的会员档位（演示用"开通会员"）。
+
+    ⚠️ **这是演示开关，不是支付流程。** 没有任何扣费、没有订单、
+    没有有效期 —— 点了就是点了，并且**落盘到 `data/users_override.json`**
+    （`.gitignore` 里），所以重启后仍然有效，且不会污染入库的种子文件。
+
+    ⚠️ 只对 `role == user` 开放。管理员与设计师**不受档位限制**
+    （`User.is_unlimited`），给他们改档位是没有意义的一件操作 ——
+    与其让界面上多一个点了没用的按钮，不如明确拒绝并说清原因。
+    """
+    if user.role != auth.ROLE_USER:
+        raise ApiError(
+            4002,
+            f"当前角色是{user.role_label}，不受会员档位限制，"
+            f"因此没有可开通或取消的档位。",
+            data={"role": user.role, "unlimited": True},
+        )
+    if req.membership not in auth.MEMBERSHIPS:
+        raise ApiError(
+            4001,
+            f"档位取值不合法：{req.membership}；允许 {list(auth.MEMBERSHIPS)}",
+            data={"allowed": list(auth.MEMBERSHIPS)},
+        )
+    updated = auth.set_user_membership(user.id, req.membership)
+    logger.info(f"[auth] {user.username} 自助改档位 → {req.membership}")
+    return ApiResponse.ok({"user": updated.to_dict()})
+
+
+@router.get("/users", response_model=ApiResponse)
+async def list_users(user: User = Depends(current_user)) -> ApiResponse:
+    """
+    全部账号。**仅管理员。**
+
+    ⚠️ 这是本项目**第一个按角色而非"登录与否"判定的接口**。
+    在设计师那里返回 4002 而不是空列表：空列表会被界面渲染成
+    "一个账号都没有"，那是**看起来合理但错误**的一种表现（本项目三原则之一）。
+    """
+    if user.role != auth.ROLE_ADMIN:
+        raise ApiError(
+            4002,
+            f"查看全部账号需要管理员权限。当前角色：{user.role_label}。",
+            data={"role": user.role, "required_role": auth.ROLE_ADMIN},
+        )
+    return ApiResponse.ok({
+        "users": [u.to_dict() for u in auth.users()],
+        "roles": list(auth.ROLES),
+        "memberships": list(auth.MEMBERSHIPS),
+    })
+
+
+@router.post("/users/{user_id}", response_model=ApiResponse)
+async def update_user(
+    user_id: int,
+    req: UserUpdateRequest,
+    user: User = Depends(current_user),
+) -> ApiResponse:
+    """
+    管理员改**别人**的角色 / 档位 / 启用状态。**仅管理员。**
+
+    ⚠️ 三条**刻意的拒绝**，每一条都是"能让操作者把自己锁在门外"的形状：
+
+      ① 不能改自己 —— 演示时若管理员把自己降成普通用户，就再也没有账号
+         能改回来（改回来需要管理员），只能手删 `data/users_override.json`。
+      ② **不能把别人设成管理员** ——「管理页做的是权限分配，但不含管理员权限」
+         （需求方 2026-09-24 明确）。管理员账号的增减是一条不该出现在
+         演示界面上的路径：它一旦可点，一个误操作就能造出一个权限对等的
+         账号，而且没有任何地方能看出"谁造了它"。
+      ③ **不能封禁管理员账号**（含自己）—— 封了管理员就没人能解封。
+         与 ② 同源：管理员账号整体在这个管理页的**管辖范围之外**。
+
+    想试角色切换，用 demo / vip 那两个账号登进去看。
+    """
+    if user.role != auth.ROLE_ADMIN:
+        raise ApiError(
+            4002,
+            f"修改账号需要管理员权限。当前角色：{user.role_label}。",
+            data={"role": user.role, "required_role": auth.ROLE_ADMIN},
+        )
+    if user_id == user.id:
+        raise ApiError(
+            4002,
+            "不能修改自己的账号 —— 演示时一旦把自己降级或封禁，就没有账号能改回来了。"
+            "想验证角色差异，请用 demo / vip 账号登录查看。",
+            data={"self": True},
+        )
+    if req.role is None and req.membership is None and req.is_active is None:
+        raise ApiError(4001, "role / membership / is_active 至少要传一个")
+    if req.role == auth.ROLE_ADMIN:
+        raise ApiError(
+            4002,
+            "本页不提供管理员权限的分配。把账号提升为管理员会造出一个权限对等的账号，"
+            "而这条路径不该出现在演示界面上（要加管理员请直接改 "
+            "seed_data/users.json 并重启）。",
+            data={"forbidden_role": auth.ROLE_ADMIN, "allowed_roles": [auth.ROLE_DESIGNER, auth.ROLE_USER]},
+        )
+
+    target = auth.find_by_id(user_id)
+    if target is None:
+        raise ApiError(4004, f"用户不存在：id={user_id}")
+
+    # ②/③ 的另一半：不许动管理员账号。**要在改之前判断**，
+    # 否则"把管理员先降级再封禁"会被拆成两步绕过去。
+    if target.role == auth.ROLE_ADMIN:
+        raise ApiError(
+            4002,
+            f"账号 {target.username} 是管理员，不在本页的管辖范围内 —— "
+            f"管理员账号不能被改角色、改档位或封禁。",
+            data={"target_role": target.role},
+        )
+
+    try:
+        updated = target
+        if req.role is not None:
+            updated = auth.set_user_role(user_id, req.role)
+        if req.membership is not None:
+            updated = auth.set_user_membership(user_id, req.membership)
+        if req.is_active is not None:
+            updated = auth.set_user_active(user_id, req.is_active)
+    except ValueError as e:
+        # auth 层抛的取值校验错误 → 4001，并带上允许的取值
+        raise ApiError(
+            4001,
+            str(e),
+            data={"allowed_roles": [auth.ROLE_DESIGNER, auth.ROLE_USER],
+                  "allowed_memberships": list(auth.MEMBERSHIPS)},
+        ) from e
+
+    logger.info(f"[auth] {user.username} 修改用户 id={user_id} → "
+                f"role={req.role} membership={req.membership} is_active={req.is_active}")
+    return ApiResponse.ok({"user": updated.to_dict()})
+
+
+# ══════════════════════════════════════════════════════════════════
+# 4.2 户型解析
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.post("/layout/parse", response_model=ApiResponse)
+async def parse_layout(
+    req: ParseRequest,
+    request: Request,
+    user: User = Depends(current_user),
+) -> ApiResponse:
+    """
+    提交户型图解析。**立即返回 task_id**，结果经 `/task/{id}/status` 轮询。
+
+    只跑「解析 → 诊断」这一段（实测 33–48 秒）。方案生成是另一个接口 ——
+    在这里顺带跑完会多花 90 秒、多调十几次 LLM，而调用方只要那份户型 JSON。
+
+    解析是**免费功能**（不受会员档位限制），但受每日配额约束（AC-13）。
+    """
+    if not req.image.strip():
+        raise ApiError(4001, "image 不能为空")
+
+    # ⚠️ 顺序是有意的：**先校验入参、再扣额度**。
+    #    反过来的话，一个拼错的请求也会白扣用户一次配额。
+    await consume_quota(user, "parse")
+
+    tm = get_task_manager()
+    rec = tm.create("parse", trace_id=_trace_id(request), user_id=user.id)
+
+    state = initial_state(
+        task_id=rec.task_id,
+        trace_id=rec.trace_id,
+        image_ref=req.image,
+        image_media_type=req.image_media_type,
+        detail_level=req.detail_level,
+        prefer_local=req.prefer_local,
+    )
+    tm.start(rec, state, stages="parse")
+
+    return ApiResponse.ok({
+        "task_id": rec.task_id,
+        "trace_id": rec.trace_id,
+        "status": "processing",
+        "poll": f"/api/v1/task/{rec.task_id}/status",
+        # 前端据此设计轮询节奏（2.2.4）；给个参考值省得它自己猜。
+        # ⚠️ 这是**实测区间**的中位估计，不是承诺值 ——
+        # 两次真实解析分别是 33s 与 48s，差异来自模型侧延迟波动。
+        # 轮询策略仍要按 2.2.4 的 2 秒节奏走，前端不能依赖这个数。
+        #
+        # 这个数**不在这里手填**：它和轮询接口返回的剩余时间同源
+        # （`core/progress.py` 的阶段模型）。手填的话，改了一处忘了另一处，
+        # 就会出现"一开始说 40 秒，第一轮轮询立刻改口说 90 秒"。
+        "estimated_seconds": round(total_seconds("parse")),
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 4.3 方案生成
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.post("/design/generate", response_model=ApiResponse)
+async def design_generate(
+    req: GenerateRequest,
+    request: Request,
+    user: User = Depends(current_user),
+) -> ApiResponse:
+    """
+    按 `layout_id` 生成方案。**立即返回 task_id**。
+
+    生成是**付费功能**：免费用户在入口就被 4005 拦下。
+
+    ⚠️ **不重新解析户型图。** 视觉解析约 16 秒，且模型有随机性 ——
+    同一个 `layout_id` 重新解析可能得到不同的房间数。用户会发现自己看的户型
+    和生成方案用的不是同一份，而界面上写着同一个 id。
+    **同一个 id 必须指同一份数据。**
+
+    所以这里从暂存里取户型，图从 `diagnose_layout` 进（跳过已做过的解析）。
+    """
+    # ⚠️ 授权检查放在**读户型之前** —— 先答"你能不能做这件事"，
+    #    再答"这份数据在不在"。反过来等于给了一个探测 layout_id 的接口。
+    require_paid(user, "装修方案生成")
+
+    layout = await layout_store.load(req.layout_id)
+    if layout is None:
+        raise ApiError(
+            4004,
+            f"找不到 layout_id={req.layout_id} 的户型。"
+            f"可能已过期（暂存 1 小时），请重新解析。",
+        )
+
+    # 能力守卫：数据不支撑方案生成时**在入口就拦下**，不放进图里
+    # 让三个分支各撞一次墙（capabilities.py 的立场）
+    from ..core.capabilities import check_operation
+
+    cap = check_operation(layout, "generate_plan")
+    if not cap.allowed:
+        raise ApiError(4002, cap.reason,
+                       data={"missing": cap.missing, "suggestion": cap.suggestion})
+
+    if not req.styles or not req.budget_grades:
+        raise ApiError(4001, "styles 与 budget_grades 都不能为空")
+
+    # ⚠️ **必须校验取值，不能只校验非空。**
+    #
+    # 2026-09-23 实测踩到：前端「生成参数」的第 3 套发的是 `luxury`，
+    # 而后端 `PlanStyle` 里没有这个值。下游 `space_planner.py` 用
+    # `_STYLE_HINTS.get(style, '按该风格的通行做法处理')` 兜底 ——
+    # 那一套方案**完全没拿到风格引导**，界面上却仍显示「意式轻奢」。
+    # 全程零报错，正是本项目最防的那类「看起来成功、实际没做」。
+    #
+    # 拦在入口的理由与能力守卫同理（capabilities.py 的立场）：
+    # 与其让三个分支各静默降级一次，不如在这里说清哪个值不认、允许哪些。
+    allowed_styles = set(get_args(PlanStyle))
+    allowed_grades = set(get_args(BudgetGrade))
+    bad_styles = [s for s in req.styles if s not in allowed_styles]
+    bad_grades = [g for g in req.budget_grades if g not in allowed_grades]
+    if bad_styles or bad_grades:
+        detail = "".join(
+            [
+                f"不认识的风格 {bad_styles}；" if bad_styles else "",
+                f"不认识的预算档位 {bad_grades}；" if bad_grades else "",
+            ]
+        )
+        raise ApiError(
+            4001,
+            f"风格或预算档位取值不合法：{detail}",
+            data={
+                "allowed_styles": sorted(allowed_styles),
+                "allowed_budget_grades": sorted(allowed_grades),
+            },
+        )
+
+    await consume_quota(user, "generate")
+    # ── AC-19：材料偏好必须在**提交任务之前**校验 ──────────────
+    #
+    # 排除到候选池为空这件事，晚一步发现会有两种代价，都很难看：
+    #   · 整个池子空了 → A-05 抛错 → 任务失败，而 A-02 诊断 + 九路并发的
+    #     40 秒和一次付费额度**已经花掉了**（`consume_quota` 在下面）；
+    #   · 只有某个档位空了 → 那套方案照出，只是**静默少一个品类**，
+    #     用户拿到一份"看起来正常、短了一行"的清单。这正是本项目
+    #     最防的那类「看起来合理的错误」。
+    #
+    # 所以这里一次把「品类 × 档位」全试一遍，把矛盾在提交前说清。
+    # 与上面 styles/budget_grades 的取值校验同一个立场（capabilities.py）：
+    # 与其让三个分支各静默降级一次，不如在入口说清哪里不对、允许什么。
+    from ..services.material.filters import MaterialFilters, validate_filters
+
+    filters = MaterialFilters.from_payload({
+        "excluded_categories": req.excluded_categories,
+        "excluded_brands": req.excluded_brands,
+        "preferred_brands": req.preferred_brands,
+        "quanyou_priority": req.quanyou_priority,
+    })
+    problems = validate_filters(
+        filters,
+        grades=req.budget_grades,
+        room_names=[
+            str((r or {}).get("name") or "")
+            for r in (layout.get("rooms") or [])
+            if isinstance(r, dict)
+        ],
+    )
+    if problems:
+        raise ApiError(
+            4001,
+            "材料偏好与可选范围冲突：" + "；".join(p.message for p in problems),
+            data={
+                "problems": [p.as_dict() for p in problems],
+                "allowed_categories": [
+                    {"key": c["key"], "label": c["label"]}
+                    for c in catalog.categories()
+                ],
+                "allowed_brands": sorted({p.brand for p in catalog.all_products()}),
+            },
+        )
+
+
+    tm = get_task_manager()
+    rec = tm.create("generate", trace_id=_trace_id(request), user_id=user.id)
+
+    state = initial_state(
+        task_id=rec.task_id,
+        trace_id=rec.trace_id,
+        # 关键：把已解析的户型直接放进状态，图从诊断进
+        layout=layout,
+        layout_id=req.layout_id,
+        styles=req.styles,
+        budget_grades=req.budget_grades,
+        quanyou_priority=req.quanyou_priority,
+        requirements=req.requirements or {},
+        # 与 quanyou_priority 同源（filters 里那份是权威，见 state.py 注释）
+        material_filters=filters.to_dict(),
+    )
+    tm.start(rec, state, stages="generate")
+
+    return ApiResponse.ok({
+        "task_id": rec.task_id,
+        "trace_id": rec.trace_id,
+        "status": "processing",
+        "poll": f"/api/v1/task/{rec.task_id}/status",
+        "plan_count": min(len(req.styles), len(req.budget_grades)),
+        # ⚠️ 需求文档 4.3 的示例写的是 45 秒，那是**实现前**的估计。
+        # 实测整条链 122.9s（A-02 15.8 + 九路并发 21.3 + A-06 审查 82.4），
+        # 与文档的差异在此标注（文档是决策记录，不改）。
+        "estimated_seconds": round(total_seconds("generate")),
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 4.6 报价单/合同审查
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.post("/avoid-pit/review", response_model=ApiResponse)
+async def avoid_pit_review(
+    req: ReviewRequest,
+    request: Request,
+    user: User = Depends(current_user),
+) -> ApiResponse:
+    """
+    审查一份报价单/合同。**立即返回 task_id**。
+
+    走的是 A-06 的 quote 模式（唯一模式 —— 分支内的 plan 模式由链上自动触发）。
+
+    审查是**付费功能**：免费用户在入口就被 4005 拦下。
+    ⚠️ 它**不占用解析/生成的配额** —— `TaskType` 只有 parse 与 generate
+    两个桶（见 `redis_client.py`），审查没有自己的计数器。
+    这不是遗漏：审查成本约 19 秒、一次 LLM 调用，与生成不是一个量级。
+    """
+    if not req.quote_text.strip():
+        raise ApiError(4001, "quote_text 不能为空")
+
+    require_paid(user, "报价单避坑审查")
+
+    tm = get_task_manager()
+    rec = tm.create("review", trace_id=_trace_id(request), user_id=user.id)
+
+    state = initial_state(
+        task_id=rec.task_id,
+        trace_id=rec.trace_id,
+        quote_text=req.quote_text,
+        requirements=req.requirements or {},
+    )
+    # 审查不依赖户型，独立跑 A-06 一个节点（复用完整图的话会缺 layout 而失败）
+    tm.start(rec, state, stages="review")
+
+    return ApiResponse.ok({
+        "task_id": rec.task_id,
+        "trace_id": rec.trace_id,
+        "status": "processing",
+        "poll": f"/api/v1/task/{rec.task_id}/status",
+        # 单次 A-06 实测约 19s（`REVIEW_TIMEOUT=75s` 是上限，不是期望值）。
+        # 同上：与剩余时间同源，不在这里手填。
+        "estimated_seconds": round(total_seconds("review")),
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 4.4 任务状态轮询
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.get("/task/{task_id}/status", response_model=ApiResponse)
+async def task_status(task_id: str, request: Request) -> ApiResponse:
+    """
+    查询任务状态。
+
+    ⚠️ **未完成时同样返回 200 + code=0**，只是 `status` / `phase` / `progress` 不同。
+    用 4xx 表示"还没好"会被前端 axios 拦截器误判为错误（4.4 明确要求）。
+
+    响应标 `Cache-Control: no-store` —— 进度必须实打实地拿到最新值，
+    中间层缓存会让界面卡在某个阶段不动（4.4）。
+    """
+    from fastapi.responses import JSONResponse
+
+    data = await get_task_manager().status(task_id)
+    if data is None:
+        raise ApiError(4004, f"任务不存在或已过期（结果保留 1 小时）：{task_id}")
+
+    resp = JSONResponse(content=ApiResponse.ok(data).model_dump())
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@router.post("/task/{task_id}/cancel", response_model=ApiResponse)
+async def cancel_task(
+    task_id: str,
+    user: User = Depends(current_user),
+) -> ApiResponse:
+    """
+    中断一个在飞任务（AC-31）。
+
+    **取消权归用户本人** —— 停机不再主动打断任何任务，见
+    `TaskManager.shutdown` 的口径说明。
+
+    ⚠️ 三个"不是错误"的情况，都在这里按正常响应返回（`code=0`）：
+      · 任务已经跑完了 —— 用户点的时候它刚好结束，那是"你赢了"
+      · 任务早就不在本进程里（重启过）—— 没东西可打断
+      · 重复点两次 —— 第二次看到的是终态
+    把它们做成错误，界面就得为"其实什么都没发生"弹一个红框。
+
+    ⚠️ 额度**不退**：`consume_quota` 在建任务之前就执行了，token 此时
+    已经产生（见 deps.consume_quota）。所以前端的确认框里必须提前写明，
+    不能等用户点完再说。
+    """
+    from .tasks import TaskNotFound, TaskNotOwned
+
+    try:
+        data = await get_task_manager().cancel(task_id, user_id=user.id)
+    except TaskNotFound:
+        raise ApiError(4004, f"任务不存在或已过期（结果保留 1 小时）：{task_id}")
+    except TaskNotOwned:
+        # ⚠️ 措辞刻意模糊：既不确认"这个 id 存在"，也不透露它属于谁。
+        raise ApiError(4005, "只能中断自己发起的任务")
+
+    return ApiResponse.ok(data)
+
+
+# ══════════════════════════════════════════════════════════════════
+# 4.5 材料价格查询（同步，纯查表）
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.get("/material/price", response_model=ApiResponse)
+async def material_price(
+    category: str = "",
+    brand: str = "",
+    quanyou_first: bool = True,
+) -> ApiResponse:
+    """
+    材料价格查询。
+
+    **同步接口**：纯查演示目录，不调模型、不查向量库，毫秒级返回。
+
+    返回结构对齐 4.5 的契约：`quanyou_recommended`（全友自有）+ `items`（其它品牌）。
+    **一定要带上 `disclaimer`** —— 需求文档 5.3 与 R-09 要求演示数据必须显著标注，
+    而这正是最容易被前端"顺手美化"掉的地方。
+    """
+    cats = {c["key"]: c for c in catalog.categories()}
+    if category and category not in cats:
+        raise ApiError(4001, f"未知品类 {category}；可用：{sorted(cats)}")
+
+    products = [
+        p for p in catalog.all_products()
+        if (not category or p.category == category)
+        and (not brand or brand in p.brand)
+    ]
+
+    def row(p: catalog.Product) -> dict[str, Any]:
+        return {
+            "id": p.id, "name": p.name, "brand": p.brand,
+            "category": p.category,
+            "category_label": cats.get(p.category, {}).get("label", p.category),
+            "spec": p.spec,
+            "price_range": list(p.price_range),
+            "unit": cats.get(p.category, {}).get("unit", ""),
+            "eco_level": p.eco_level,
+            "search_url": p.search_url,
+        }
+
+    qy = sorted([row(p) for p in products if p.is_quanyou],
+                key=lambda r: r["price_range"][0])
+    other = sorted([row(p) for p in products if not p.is_quanyou],
+                   key=lambda r: r["price_range"][0])
+
+    return ApiResponse.ok({
+        "category": category or "all",
+        "category_name": cats.get(category, {}).get("label", "全部品类"),
+        # quanyou_first=False 时只给市场对照，不推自有品牌
+        "quanyou_recommended": qy if quanyou_first else [],
+        "items": other,
+        "total": len(qy) + len(other),
+        "catalog_version": catalog.catalog_version(),
+        "disclaimer": catalog.disclaimer(),
+    })
+
+
+@router.get("/material/options", response_model=ApiResponse)
+async def material_options() -> ApiResponse:
+    """
+    材料偏好的可选项（AC-19）。
+
+    存在的理由很窄：**前端不该把品类与品牌硬编码一份**。
+    硬编码的清单会随目录变更而漂移，而且漂移是静默的 ——
+    界面照常显示一个后端已经不认的品类，用户勾了，请求 4001 回来，
+    看起来像后端的故障。所以清单从目录里来，跟 `catalog.py` 单点一致。
+
+    `constants` 里的两个数字同理：AC-18 的 60% 底线与偏好品牌加分
+    都定义在 `catalog.py`，前端引用它们，而不是各写一遍。
+    """
+    return ApiResponse.ok({
+        "categories": [
+            {"key": c["key"], "label": c["label"], "unit": c.get("unit", "")}
+            for c in catalog.categories()
+        ],
+        "brands": sorted({p.brand for p in catalog.all_products()}),
+        "quanyou_brand": "全友",
+        "constants": {
+            "min_quanyou_coverage": catalog.MIN_QUANYOU_COVERAGE,
+            "preferred_brand_bonus": catalog.PREFERRED_BRAND_BONUS,
+            "quanyou_preference_bonus": catalog.QUANYOU_PREFERENCE_BONUS,
+        },
+        "catalog_version": catalog.catalog_version(),
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 4.3′ 矢量图与热区（AC-07 / AC-09 / AC-21）
+# ══════════════════════════════════════════════════════════════════
+#
+# 为什么是**两个**接口而不是把 SVG 塞进解析结果里：
+#
+#   · 解析接口的响应已经带了 layout + scene + diagnosis + trace。
+#     再塞一张 30–60KB 的 SVG，每次轮询都要传一遍 ——
+#     而轮询是每 1–5 秒一次的（需求文档 2.2.4）。
+#   · SVG 要能单独被 <img src> / 新窗口打开 / 下载，这些都需要一个 URL。
+#     需求文档 4.4 的契约里写的就是 `"vector": {"url": ...}`，是 URL 不是内容。
+#
+# ⚠️ 两个接口都必须走 `render_plan_for` —— 见该函数的说明。
+
+
+@router.get("/layout/{layout_id}/plan.svg")
+async def layout_plan_svg(layout_id: str) -> Response:
+    """
+    矢量户型图（AC-07）。
+
+    **同步接口**：纯 CPU、纯字符串拼接，实测 0.5ms 量级 ——
+    AC-07 的"< 3s"有四个数量级的余量。所以不需要走异步任务那一套。
+
+    返回裸 `image/svg+xml` 而不是 `ApiResponse` 信封：它的消费者是
+    `<img>` / `<iframe>` / 浏览器窗口，不是我们的前端代码。
+    """
+    layout = await layout_store.load(layout_id)
+    if not layout:
+        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+
+    try:
+        _, plan = render_plan_for(layout)
+    except Exception as e:  # noqa: BLE001 —— 渲染不该失败，失败要留下原因
+        logger.exception(f"[render] 矢量图渲染失败 layout_id={layout_id}")
+        raise ApiError(5003, f"矢量图渲染失败：{type(e).__name__}") from e
+
+    return Response(
+        content=plan.svg,
+        media_type="image/svg+xml",
+        headers={
+            # 户型属于用户数据，别让中间层缓存
+            "Cache-Control": "private, max-age=300",
+            "X-Plan-Width": str(plan.width_px),
+            "X-Plan-Height": str(plan.height_px),
+            # 画不准的地方必须能传到调用方，不能只留在服务端日志里
+            "X-Plan-Warnings": str(len(plan.warnings)),
+        },
+    )
+
+
+@router.get("/layout/{layout_id}/walkable", response_model=ApiResponse)
+async def layout_walkable(layout_id: str) -> ApiResponse:
+    """
+    3D 漫游的几何输入（新需求：第一人称在模型中行走）。
+
+    返回碰撞线段（门洞已切开）、房间净空、门连通图、出生点。
+
+    ⚠️ **`mode` 字段决定前端走哪条路**：
+
+        "walk"  可以做第一人称贴地行走（有碰撞、只能从门进出）
+        "fly"   降级为自由视角（可穿墙飞行）
+
+    降级的判据在 `services/geometry/walkable.py`：墙不闭合、房间站不下人、
+    门过窄、有房间走不到 —— 任一不成立就走 fly。**硬做第一人称会把用户
+    关在房间里**，那比功能少一点更糟。
+
+    `issues` 里逐条写明了为什么（`ok=false` 时必定非空）—— 静默降级
+    是欺骗用户（AC-17）。
+    """
+    layout = await layout_store.load(layout_id)
+    if not layout:
+        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+
+    try:
+        scene, plan = render_plan_for(layout)
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"[render] 场景归一化失败 layout_id={layout_id}")
+        raise ApiError(5003, f"场景归一化失败：{type(e).__name__}") from e
+
+    walk = build_walkable(scene)
+    return ApiResponse.ok({
+        "layout_id": layout_id,
+        # 3D 场景本体：直接给米制场景，前端挤出墙体用
+        "scene": scene.to_dict(),
+        "walkable": walk.to_dict(),
+        # 画布像素坐标（2D 图与热区）。3D 用不到，但前端要在同一页
+        # 同时显示平面图和 3D 时用得上 —— 不给的话它会自己算，
+        # 而自己算就是"两套坐标"的开端。
+        "plan_transform": plan.projection.as_dict(),
+    })
+
+
+@router.get("/layout/{layout_id}/furniture", response_model=ApiResponse)
+async def layout_furniture(
+    layout_id: str, style: str = "modern", plan_id: str = "",
+) -> ApiResponse:
+    """
+    3D 场景里的家具摆放（"3D 带装修"）。
+
+    **纯规则算，不问模型** —— 与 ADR-07（预算）、`environment.py`（环保）
+    同一条纪律：坐标要站得住，就得能同时满足"在房间里 / 不堵门 /
+    不压别的家具"，而这三条是可计算的。交给模型只会变成祈祷它算对了。
+
+    Args:
+        style: 方案风格，决定配色（`seed_data/furniture_catalog.json` 的三套）。
+        plan_id: 给了就用**方案里说的那些家具**（`space_plan.zones[].furniture`
+                 经 `catalog.match` 匹配成目录条目）；不给则按房间名从目录挑。
+                 ⚠️ 给了但查不到那个方案时**不会静默退回默认**，而是 4004 ——
+                 退回默认会让用户以为"3D 是按我这套方案摆的"。
+
+    ⚠️ **摆不下的家具在 `rejected` 里，带原因**，不是静默丢弃。
+       每间房最多 3 件、同类只摆一件 —— 前者是"不塞满"，后者是因为
+       实测出现过客厅摆三张沙发（沙发是最大的三件，连着占满名额）。
+
+    ⚠️ 坐标与 `/layout/{id}/walkable` **同一套场景坐标系（米）**，
+       前端可直接用 `three/coords.ts` 转换，不需要第二套换算。
+    """
+    layout = await layout_store.load(layout_id)
+    if not layout:
+        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+
+    try:
+        scene, _plan = render_plan_for(layout)
+        walkable = build_walkable(scene)
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"[furniture] 场景归一化失败 layout_id={layout_id}")
+        raise ApiError(5003, f"场景归一化失败：{type(e).__name__}") from e
+
+    room_phrases = await _phrases_from_plan(layout_id, plan_id)
+
+    from ..services.furniture import placement
+
+    result = placement.place_all(
+        walkable=walkable.to_dict(), scene=scene.to_dict(),
+        style=style, room_phrases=room_phrases,
+    )
+    result["layout_id"] = layout_id
+    result["plan_id"] = plan_id or None
+    return ApiResponse.ok(result)
+
+
+async def _phrases_from_plan(
+    layout_id: str, plan_id: str,
+) -> dict[str, list[str]] | None:
+    """
+    从库里取那套方案，把每个房间的家具短语抽出来。
+
+    查不到就 4004 —— **不退回默认摆放**。退回去的话，用户看到的是一套
+    与他选的方案无关的家具，而界面上写着那个 plan_id。
+    """
+    if not plan_id:
+        return None
+    from ..db import pool, repository
+
+    rows = await repository.load_plan(layout_id, plan_id)
+    if rows is None:
+        # ⚠️ **"库不通"和"确实没有"必须分开说。**
+        #
+        # `load_plan` 把"查询失败"和"没查到这一行"都表示成 `None`
+        # （因为 `pool.fetch_all` 的契约是"失败返回 None"）。原来那句话
+        # 只好把两种可能一起列出来 —— 读起来像在推卸责任，而且**当真正的
+        # 原因是第三种（SQL 写错了）时，它会把水搅浑**：实测 2026-09-24，
+        # `load_plan` 的 SELECT 引用了一个不存在的列 `budget`，方案明明在库里，
+        # 用户看到的却是"可能是还没生成过、或数据库暂时不可用"。
+        #
+        # 现在用 `pool.is_available()` 把两种情形**分开**，各说各的 ——
+        # 如果真的查不到，那就是真的没有，不必再提数据库。
+        if not await pool.is_available():
+            raise ApiError(
+                4004,
+                f"数据库暂时不可用，读不到方案 {plan_id}（户型 {layout_id}）。"
+                f"这不是「没有这个方案」—— 请稍后重试。"
+                f"此时不会退回默认摆放，因为那会让你以为这套 3D 是"
+                f"按你选的方案摆的。",
+            )
+        raise ApiError(
+            4004,
+            f"找不到方案 {plan_id}（户型 {layout_id}）—— 数据库是通的，"
+            f"所以确实没有这一套（可能还没生成过，或结果已过期）。"
+            f"此时不会退回默认摆放，因为那会让你以为这套 3D 是按你选的"
+            f"方案摆的。",
+        )
+    space = rows.get("space_plan") or {}
+    out: dict[str, list[str]] = {}
+    for zone in space.get("zones") or []:
+        name = str(zone.get("room_name") or "")
+        items = [str(x) for x in (zone.get("furniture") or []) if str(x).strip()]
+        if name and items:
+            out.setdefault(name, []).extend(items)
+    return out or None
+
+
+@router.get("/layout/{layout_id}/hotspots", response_model=ApiResponse)
+async def layout_hotspots(layout_id: str) -> ApiResponse:
+    """
+    物品热区（AC-09 的物品热区 / AC-21 的价格与链接）。
+
+    ⚠️ 热区坐标是**画布像素**，必须和 `/plan.svg` 画出来的图配套使用。
+    两个接口共用 `render_plan_for`，同一份 layout 必然得到同一套变换 ——
+    这是"悬停位置和画面对得上"的全部保证。
+
+    `precision` 一律是 `exact`：坐标是从几何**量出来**的，不是从生成图猜的。
+    AI 图那条路径上的 `room_level` / `none` 见 `render/geo_check.py`。
+    """
+    layout = await layout_store.load(layout_id)
+    if not layout:
+        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+
+    try:
+        scene, plan = render_plan_for(layout)
+        payload = hotspot_payload(scene, plan.projection)
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"[render] 热区生成失败 layout_id={layout_id}")
+        raise ApiError(5003, f"热区生成失败：{type(e).__name__}") from e
+
+    return ApiResponse.ok({
+        "layout_id": layout_id,
+        "image": {
+            "url": f"/api/v1/layout/{layout_id}/plan.svg",
+            "width": plan.width_px,
+            "height": plan.height_px,
+        },
+        "transform": plan.projection.as_dict(),
+        "warnings": plan.warnings,
+        **payload,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 4.6 健康检查
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.get("/system/health", response_model=ApiResponse)
+async def system_health() -> ApiResponse:
+    """
+    健康检查。**每个依赖单独报告，且整体永远返回 200。**
+
+    为什么不整体返回 503：这是一个**演示与开发用**的服务，
+    知识库没起来时前端仍应能打开页面、看到"知识库不可用"的提示，
+    而不是拿到一个连不上的服务。哪个依赖挂了由 `checks` 说清楚。
+    """
+    from ..core.redis_client import get_redis
+    from ..services.knowledge import store as knowledge_store
+
+    tm = get_task_manager()
+    checks: dict[str, Any] = {}
+
+    # ── LLM 主模型 ──
+    checks["deepseek"] = {
+        "ok": bool(settings.DEEPSEEK_API_KEY),
+        "detail": "已配置" if settings.DEEPSEEK_API_KEY else "未配置 DEEPSEEK_API_KEY，将走本地 Ollama",
+    }
+
+    # ── Redis ──
+    try:
+        ok = await get_redis().ping()
+        checks["redis"] = {"ok": bool(ok),
+                           "detail": "可用" if ok else "不可用（进度退化为内存）"}
+    except Exception as e:  # noqa: BLE001
+        checks["redis"] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
+
+    # ── 知识库 ──
+    try:
+        info = knowledge_store.collection_info()
+        checks["knowledge"] = {
+            "ok": info.available and info.count > 0,
+            "detail": (f"{info.count} 条 chunk"
+                       if info.available else info.reason),
+        }
+    except Exception as e:  # noqa: BLE001
+        checks["knowledge"] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
+
+    # ── 材料目录 ──
+    try:
+        n = len(catalog.all_products())
+        checks["material_catalog"] = {"ok": n > 0, "detail": f"{n} 个商品"}
+    except Exception as e:  # noqa: BLE001
+        checks["material_catalog"] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
+
+    return ApiResponse.ok({
+        "status": "ok" if all(c["ok"] for c in checks.values()) else "degraded",
+        "checks": checks,
+        "running_tasks": tm.list_running(),
+        "version": settings.APP_VERSION if hasattr(settings, "APP_VERSION") else "dev",
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 4.6′ 性能指标（AC-23）
+# ══════════════════════════════════════════════════════════════════
+
+#: 第 2.3.1 节的目标。**在这里抄一份是刻意的** —— 接口要能自己回答
+#: "达标了没有"，而"达标"只有在有目标值时才成立。文档改了这里也要改，
+#: 所以每一项都标了它出自哪一节。
+_TARGETS = {
+    "parse": {"p95_s": 20, "label": "户型解析", "doc": "2.3.1"},
+    "generate": {"p95_s": 60, "label": "方案生成", "doc": "2.3.1"},
+    "http": {"p95_ms": 2000, "label": "API 响应（排除 LLM）", "doc": "2.3.1"},
+    "svg_render": {"p95_ms": 3000, "label": "矢量图渲染", "doc": "2.3.1"},
+}
+
+
+async def _overview(*, days: int = 1) -> dict[str, Any]:
+    return await asyncio.to_thread(_build_overview, days)
+
+
+def _build_overview(days: int) -> dict[str, Any]:
+    """同步聚合。**由 `asyncio.to_thread` 调用** —— 见 metrics 模块的说明。"""
+    hot = metrics.snapshot()
+    sweep = metrics.sweep_audit_files(settings.LOG_DIR, days=days)
+
+    metrics_out: dict[str, Any] = {}
+    notes: list[str] = []
+
+    # ── 长任务：解析 / 生成（来自审计文件，重启后仍在）──
+    for kind, target in (("parse", _TARGETS["parse"]),
+                         ("generate", _TARGETS["generate"])):
+        summary = metrics.summarize(sweep.task_seconds.get(kind, []))
+        if summary is None:
+            metrics_out[kind] = {
+                "label": target["label"],
+                "available": False,
+                # ⚠️ **不给 0**。"没采到"和"0 秒"是两件事，混起来就是谎。
+                "reason": (f"最近 {days} 天的审计文件里没有 {kind} 任务的完成记录"
+                           f"（{sweep.errors[0] if sweep.errors else '样本不足 2 条'}）"),
+            }
+            continue
+        metrics_out[kind] = {
+            "label": target["label"],
+            "available": True,
+            "unit": "s",
+            **summary,
+            "target_p95": target["p95_s"],
+            "meets_target": summary["p95"] <= target["p95_s"],
+            "source": "audit_file",
+        }
+
+    # ── 热路径：HTTP 响应 / 矢量图渲染（进程内，重启即清零）──
+    for name, target in (("http", _TARGETS["http"]),
+                         ("svg_render", _TARGETS["svg_render"])):
+        summary = hot.get(name)
+        if summary is None:
+            metrics_out[name] = {
+                "label": target["label"],
+                "available": False,
+                "reason": "进程内样本不足 2 条（环形缓冲重启即清零）",
+            }
+            continue
+        metrics_out[name] = {
+            "label": target["label"],
+            "available": True,
+            "unit": "ms",
+            **summary,
+            "target_p95": target["p95_ms"],
+            "meets_target": summary["p95"] <= target["p95_ms"],
+            "source": "in_process_ring",
+        }
+
+    # ── 各 Agent 的 LLM 调用（审计文件里的 llm_call 事件）──
+    llm: dict[str, Any] = {}
+    for agent, values in sorted(sweep.llm_ms.items()):
+        summary = metrics.summarize(values)
+        if summary is None:
+            continue
+        tokens = sweep.llm_tokens.get(agent, [])
+        llm[agent] = {
+            "unit": "ms",
+            **summary,
+            "avg_total_tokens": round(sum(tokens) / len(tokens)) if tokens else None,
+        }
+
+    notes.append(
+        "长任务（解析/生成）与各 Agent 的耗时来自审计文件，进程重启后仍在；"
+        "HTTP 与矢量图渲染来自进程内环形缓冲（上限 5000 条），重启即清零。"
+    )
+    notes.append(
+        "第 2.3.1 节里未采集的两项：热区悬停响应（要前端 Performance API）、"
+        "AI 效果图 P95（该交付物已于 V2.4 作废，见修订说明第三节）。"
+    )
+    if sweep.errors:
+        notes.extend(sweep.errors)
+
+    return {
+        "window_days": days,
+        "metrics": metrics_out,
+        "llm_by_agent": llm,
+        "running_tasks": get_task_manager().list_running(),
+        "source": sweep.to_source(),
+        "notes": notes,
+    }
+
+
+@router.get("/system/metrics", response_model=ApiResponse)
+async def system_metrics(days: int = 1,
+                         user: User = Depends(current_user)) -> ApiResponse:
+    """
+    性能基线（AC-23）。**只读，不改任何状态。**
+
+    ⚠️ **这个接口要登录，`/system/health` 不要** —— 两者有意区别。
+
+    健康检查是"服务活着吗"，给监控探针用，公开无害。而指标响应里带
+    `running_tasks`（在飞任务的 id），而 AC-31 之后 **task_id 本身就是
+    "能取消那个任务"的凭据**。把它挂在一个不需要登录的接口上，等于
+    开了一条本地越权的路 —— 虽然本项目只绑回环（AC-37），但"因为没人
+    能访问所以不用鉴权"正是那种会在换部署时反咬一口的假设。
+    登录门槛很低（任何角色都行），代价与收益完全不成比例。
+
+    ⚠️ **"没采到"与"0"是两件事。** 任何一个指标样本不足时会带
+    `available: false` 与一句 `reason`，而不是给一个 0 —— 性能报告里
+    一个假的 0 会被当成"快到无法测量"，而真相是"根本没数据"。
+
+    ⚠️ 聚合是**同步文件 IO**（审计文件可能几 MB），所以走
+    `asyncio.to_thread`。今天刚在 A-06 的检索上踩过同步 IO 卡住事件循环
+    28 秒的坑，不想在指标接口上再踩一次。
+    """
+    if days < 1 or days > 30:
+        # 上限 30 天：审计文件保留 180 天，全扫一遍要几秒 —— 那是接口该
+        # 拒绝的量级，不是该默默承受的。
+        raise ApiError(4001, f"days 取值需在 1..30 之间，收到 {days}")
+
+    overview = await _overview(days=days)
+    # ⚠️ 落库那一块**不能放进 `_build_overview`**：它是同步函数、跑在
+    #    `to_thread` 里，而连库是异步的（psycopg 的异步模式）。
+    #    在这里 await 之后再合并 —— 顺便也让"线程里不碰数据库"这件事
+    #    保持成一个简单的事实。
+    overview["persistence"] = await _persistence_block()
+    return ApiResponse.ok(overview)
+
+
+async def _persistence_block() -> dict[str, Any]:
+    """
+    落库状况。**这是"数据库到底有没有在工作"的唯一权威回答。**
+
+    在此之前，唯一能确认审计落库的办法是手动 `psql` 数行数 ——
+    而"落库失败了但没人知道"正是审计最怕的失败模式（见 db/audit_sink.py）。
+
+    三个计数各有各的含义，都**不合并**：
+      · `written`      真的写进去了
+      · `failed`       尝试写但失败了（数据库不通、约束冲突……）
+      · `dropped_full` 队列满被挤掉的（数据库长时间不通时的表现）
+    `failed + dropped_full > 0` 就是"审计有缺口"，而不是"一切正常"。
+    """
+    from ..db import audit_sink, migrations, pool, repository
+
+    available = await pool.is_available()
+    block: dict[str, Any] = {
+        "enabled": settings.ENABLE_DB,
+        "available": available,
+        "sink": audit_sink.stats(),
+        "pool": pool.stats(),
+    }
+
+    if not available:
+        block["available"] = False
+        block["reason"] = (
+            "数据库连接不可用 —— 户型与方案只进内存 + Redis（重启即失），"
+            "审计事件只落文件。"
+            f"检查 POSTGRES_HOST={settings.POSTGRES_HOST} 与 `docker compose ps`。"
+        )
+        return block
+
+    block["migrations"] = sorted(await migrations.applied() or [])
+    block["audit_rows"] = await repository.count_audit_events()
+    block["note"] = (
+        "`audit_rows` 是库里的累计行数；它与审计文件里的行数**不要求相等** —— "
+        "文件是进程外日志、库是结构化存储，各自保留策略不同。"
+    )
+    return block
+
+
+__all__ = ["router"]

@@ -87,9 +87,14 @@ class TestRingBuffer:
         assert snap["svg_render"]["p50"] == 10.0
 
     def test_snapshot可以只取指定的几个(self):
+        # 每桶记两条 —— 只有一条时 summarize 会返回 None（样本不足），
+        # 那样这条用例测的就成了"过滤"以外的事
         metrics.record("http", 1.0)
-        metrics.record("other", 2.0)
+        metrics.record("http", 2.0)
+        metrics.record("other", 3.0)
+        metrics.record("other", 4.0)
         assert set(metrics.snapshot(["http"])) == {"http"}
+        assert set(metrics.snapshot()) == {"http", "other"}
 
 
 class TestSweepAuditFiles:
@@ -147,12 +152,12 @@ class TestSweepAuditFiles:
     def test_坏行跳过而不是整个失败(self, tmp_path: Path):
         """进程被杀时可能留下半行 JSON —— 一个坏行不该让指标接口整体失败。"""
         tmp_path.mkdir(parents=True, exist_ok=True)
-        lines = "\n".join([
+        bad_lines = "\n".join([
             json.dumps(self._task("parse", 30.0)),
             '{"record": {"extra": {"event": "task_fi',      # 半行 JSON
             json.dumps(self._task("parse", 50.0)),
         ])
-        (tmp_path / "app_2026-09-24.log").write_text(lines + "\n",
+        (tmp_path / "app_2026-09-24.log").write_text(bad_lines + "\n",
                                                      encoding="utf-8")
         sweep = metrics.sweep_audit_files(tmp_path)
         assert sweep.task_seconds["parse"] == [30.0, 50.0]
@@ -163,7 +168,7 @@ class TestSweepAuditFiles:
         self._write(tmp_path, [self._task("parse", 2.0)], "app_2026-09-23.log")
         self._write(tmp_path, [self._task("parse", 3.0)], "app_2026-09-24.log")
 
-        assert metrics.sweep_audit_files(tmp_path)["task_seconds"]["parse"] == [3.0]
+        assert metrics.sweep_audit_files(tmp_path).task_seconds["parse"] == [3.0]
         two = metrics.sweep_audit_files(tmp_path, days=2)
         assert two.task_seconds["parse"] == [2.0, 3.0]
         assert two.files == ["app_2026-09-23.log", "app_2026-09-24.log"]
@@ -240,13 +245,14 @@ class TestMetricsEndpoint:
         assert parse["meets_target"] is False
 
         gen = data["metrics"]["generate"]
-        assert gen["available"] and gen["p95"] == 50.0
-        assert gen["meets_target"] is True, "50s < 60s 的生成目标，应当达标"
+        assert gen["available"] and gen["n"] == 2
+        assert gen["p95"] == 58.0
+        assert gen["meets_target"] is True, "58s < 60s 的生成目标，应当达标"
 
         assert data["metrics"]["http"]["available"] is True
         assert data["metrics"]["svg_render"]["available"] is True
-        assert data["llm_by_agent"]["A-04"]["p95"] == 7000.0
-        assert data["llm_by_agent"]["A-04"]["avg_total_tokens"] == 150
+        assert data["llm_by_agent"]["A-04"]["p95"] == 9000.0
+        assert data["llm_by_agent"]["A-04"]["avg_total_tokens"] == 225
 
     async def test_days超出范围时拒绝(self):
         from tests.test_api import _client

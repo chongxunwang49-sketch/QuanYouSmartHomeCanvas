@@ -253,7 +253,7 @@ const resultLinks = computed(() => [
                 <span>本地隐私模式</span>
               </span>
               <span class="mt-0.5 block text-[11px] leading-relaxed text-wood-muted">
-                开启后图像**绝不出本机**，只走本地 Ollama 模型。代价是识别精度低于云端模型，
+                开启后图像<strong class="font-semibold">绝不出本机</strong>，只走本地 Ollama 模型。代价是识别精度低于云端模型，
                 复杂户型可能只出房间名。
               </span>
             </span>
@@ -291,7 +291,7 @@ const resultLinks = computed(() => [
               图片未通过质量预检
             </h3>
             <p class="mt-1 text-[12px] leading-relaxed text-wood-muted">
-              不合格的图片在**进入模型之前**就被本地拦下了 —— 没有消耗任何模型调用。
+              不合格的图片在<strong class="font-semibold">进入模型之前</strong>就被本地拦下了 —— 没有消耗任何模型调用。
               换一张更清晰的户型图即可。
             </p>
           </div>

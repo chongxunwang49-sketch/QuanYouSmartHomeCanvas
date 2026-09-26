@@ -168,3 +168,76 @@ class TestServersAreSiblings:
                 f"mcp_servers.{module} 的 server.name 是 {mod.server.name!r}，"
                 f"而按约定应当是 {tool!r}"
             )
+
+
+
+class TestParseHouseLayoutValidation:
+    """
+    第三个 Server（`parse_house_layout`）的**入参校验**路径。
+
+    ⚠️ 只测校验、不测解析 —— 后者要真的调一次视觉模型。这里守的是
+    "参数不对时说人话"：它原来抛 `ValueError`/`FileNotFoundError`，
+    被 SDK 当崩溃处理，调用方只看到 `Error executing tool ...`。
+    同一类问题在另外两个 Server 上也出现过，所以三个一起钉住。
+    """
+
+    async def test_两个入参都不给时说清二选一(self):
+        with pytest.raises(MCPToolError) as e:
+            await get_mcp_client().call_tool("parse_house_layout", {})
+        assert "image_path" in str(e.value) and "image_base64" in str(e.value)
+
+    async def test_图像路径不存在时说清是哪个路径(self):
+        with pytest.raises(MCPToolError) as e:
+            await get_mcp_client().call_tool(
+                "parse_house_layout", {"image_path": "C:/nope/没有这张图.png"})
+        assert "没有这张图" in str(e.value), (
+            f"错误信息里没有带上路径，调用方无从排查：{e.value}"
+        )
+
+
+class TestAc30TraceIdPropagation:
+    """
+    AC-30：「同一请求在 API 响应、审计日志、LLM 调用日志中 `trace_id` 一致」。
+
+    ⚠️ **MCP 这一段此前是断的。** `mcp_client.py` 全文没有任何 `trace_id`
+    引用 —— 主链一路带着 trace，到了工具调用这里就没了。子进程里发生的事
+    在链路追踪上完全看不见。
+
+    补法：trace_id 走**子进程环境变量**（`QY_TRACE_ID`），不塞进工具入参 ——
+    塞入参会污染工具自己的 schema，而且参数是要被校验的，多一个字段就是
+    多一处会因校验失败而报错的地方。
+    """
+
+    def test_trace_id_通过环境变量传给子进程(self):
+        from backend.app.core.mcp_client import MCPClient
+
+        c = MCPClient()
+        env = c._server_params("calc_budget", trace_id="abc123").env or {}
+        assert env.get("QY_TRACE_ID") == "abc123", (
+            f"子进程环境里没有 QY_TRACE_ID：{sorted(env)[:8]}…"
+        )
+
+    def test_没有_trace_时不塞这个变量(self):
+        """
+        ⚠️ 空串也要**不设**，而不是设成空串。
+        设成空串的话，Server 侧 `os.environ.get("QY_TRACE_ID")` 拿到的是
+        `""` —— truthy 判断为假、但要判"有没有"就会判成有。
+        """
+        from backend.app.core.mcp_client import MCPClient
+
+        env = MCPClient()._server_params("calc_budget").env or {}
+        assert "QY_TRACE_ID" not in env
+
+    def test_trace_id_不进工具入参(self):
+        """
+        **这条守的是那条取舍本身。** 一旦有人"顺手"把 trace_id 塞进
+        `arguments`，工具的 schema 就得跟着改，而改漏一个 Server 的表现是
+        "那个工具报参数错误" —— 与追踪毫无关系的一个故障。
+        """
+        from backend.app.core.mcp_client import MCPClient
+        import inspect
+
+        src = inspect.getsource(MCPClient.call_tool)
+        assert "arguments[" not in src and "arguments.update" not in src, (
+            "call_tool 往 arguments 里写东西了 —— trace_id 必须走环境变量"
+        )

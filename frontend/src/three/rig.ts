@@ -310,7 +310,7 @@ export class CameraRig {
     // ── 世界位移 → 图纸位移。**只在这里做一次**，两个分支共用（见文件头）──
     //    dx 是 Three 的世界 x，与图纸 x 同向；dz 是世界 z，图纸 y = -世界 z。
     const planDx = dx
-    const planDz = -dz
+    const planDz = dz
 
     if (!this.colliding) {
       // 垂直移动只在自由视角下有效 —— 第一人称是"贴地走"，锁死眼高
@@ -321,15 +321,25 @@ export class CameraRig {
 
       // 自由视角：不做任何碰撞判定，直接位移
       this.px += planDx
-      this.py += planDz
+      this.py += -planDz
       this.syncCamera()
       return false
     }
 
     // ── 行走：子步进 + 分轴滑行 ──
-    const steps = Math.max(1, Math.ceil(Math.hypot(planDx, planDz) / MAX_SUBSTEP_M))
-    const sdx = planDx / steps
-    const sdz = planDz / steps
+    //
+    // ⚠️ **图纸 y 与世界 z 反号**：`coords.ts` 的 `planToEngine` 是 `[x, h, -y]`。
+    //    所以世界位移要先换成**图纸位移**再往 `px/py` 上累加。
+    //
+    //    这里原来漏了那个负号（上面自由视角分支写对了）—— 后果是行走模式下
+    //    按 D 往左走、按 W 斜着走，而**自由视角一切正常**，所以肉眼很难发现。
+    //    `probe/rig_wasd.ts` 把朝向扫了 8 档才钉住它：朝向 37° 时前进方向
+    //    与相机自身朝向差 2×37°，点积恰是 cos74° = 0.2756。
+    const pdx = planDx
+    const pdy = -planDz
+    const steps = Math.max(1, Math.ceil(Math.hypot(pdx, pdy) / MAX_SUBSTEP_M))
+    const sdx = pdx / steps
+    const sdz = pdy / steps
 
     let hit = false
     for (let i = 0; i < steps; i++) {

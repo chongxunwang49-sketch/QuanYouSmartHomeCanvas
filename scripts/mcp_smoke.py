@@ -51,6 +51,25 @@ LAYOUT = {
 }
 
 
+# ⚠️ **必须在任何输出之前**把 stdout 切到 UTF-8。
+#    Windows 控制台默认 GBK，打不出 ❌ / ⚠ 这类字符时会抛
+#    `UnicodeEncodeError: 'gbk' codec can't encode character '\u274c'`——
+#    而**这个异常发生在打印错误信息的路上**，于是真正的报错被它吃掉，
+#    看到的是一个和实际问题无关的编码异常。
+#
+#    2026-09-26 实测就是这么撞上的：修 MCP 的 trace_id 之后跑这个脚本，
+#    屏幕上只有一串 UnicodeEncodeError 的栈，看不出 MCP 到底出了什么事。
+#    本项目在 init_db.py 与 derive_surface_palette.py 都踩过同一个坑 ——
+#    这是第三次，所以这一段现在是**每个带 emoji 输出的脚本的标配**。
+for _s in (sys.stdout, sys.stderr):
+    _rc = getattr(_s, "reconfigure", None)
+    if callable(_rc):
+        try:
+            _rc(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def out(s: str = "") -> None:
     sys.stdout.write(s + "\n")
     sys.stdout.flush()

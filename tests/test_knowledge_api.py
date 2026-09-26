@@ -87,7 +87,11 @@ class TestUploadValidation:
         [
             (KnowledgeUploadRequest(title="   ", text=DOC), "标题"),
             (KnowledgeUploadRequest(title="t", text="   "), "正文"),
-            (KnowledgeUploadRequest(title="t", text=DOC * 200), "上限"),
+            # ⚠️ 必须**真的**超过上限：第一版写 DOC * 200 只有约 7.6 万字符，
+            #    压根没越线，于是这条用例测的是"合法输入"—— 而它照样"失败"了，
+            #    因为报错里没有"上限"两个字。测试数据算错比断言写错更难看出来。
+            (KnowledgeUploadRequest(
+                title="t", text="x" * (chunking.MAX_UPLOAD_CHARS + 1)), "上限"),
             (KnowledgeUploadRequest(title="t", text=DOC, doc_type="乱写"), "doc_type"),
             (KnowledgeUploadRequest(title="t", text="太短"), "chunk"),
         ],
@@ -124,13 +128,16 @@ class TestUploadWiring:
         所以这里断言上传走的是 `chunking.chunk_text`。
         """
         seen: dict = {}
+        # ⚠️ **先把原函数抓出来再 monkeypatch。**
+        #    spy 里再写 `chunking.chunk_text(...)` 的话，那个名字已经被换成
+        #    spy 自己了 —— 无限递归。第一版就是这样报的
+        #    `RecursionError: maximum recursion depth exceeded`。
+        original = chunking.chunk_text
 
         def spy(text, **kw):
             seen.update(kw)
-            return chunking.chunk_text(text, **kw)
+            return original(text, **kw)
 
-        monkeypatch.setattr(routes.chunking if hasattr(routes, "chunking") else chunking,
-                            "chunk_text", spy, raising=False)
         monkeypatch.setattr(chunking, "chunk_text", spy)
         monkeypatch.setattr(store, "embed_texts", lambda texts: [[0.0] * 8 for _ in texts])
         monkeypatch.setattr(store, "upsert_chunks", lambda chunks, **kw: len(chunks))
@@ -171,7 +178,7 @@ class TestUploadWiring:
             f"依赖不可用应当是 5002（与「参数不合法」分开），收到 {e.value.code}"
         )
         assert "没有写入任何内容" in str(e.value), (
-            "报错必须明确说「没写进去」—— 否则用户不知道要不要重试"
+            "报错必须明确说「没写进去」 —— 否则用户不知道要不要重试"
         )
         assert not wrote, "embedding 失败之后仍然调了写库 —— 会留下没有向量的孤儿 chunk"
 
@@ -210,9 +217,14 @@ class TestKnowledgeList:
             def get(self, **kw):
                 seen.update(kw)
                 return {"metadatas": [
-                    {"source": "a.md", "doc_type": "avoid_pit", "tags": "x,y",
+                    # ⚠️ tags 走**真的编码器**（`tags_to_str`）生成。
+                    #    手写 "x,y" 是错的：真正的分隔符是 `|`（见 store.py
+                    #    的说明），而手写的那份不会有人告诉你它不对。
+                    {"source": "a.md", "doc_type": "avoid_pit",
+                     "tags": store.tags_to_str(["x", "y"]),
                      "headings": "H1", "priority": "support"},
-                    {"source": "a.md", "doc_type": "avoid_pit", "tags": "x,y",
+                    {"source": "a.md", "doc_type": "avoid_pit",
+                     "tags": store.tags_to_str(["x", "y"]),
                      "headings": "H2", "priority": "support"},
                     {"source": "b.md", "doc_type": "regulation", "tags": "",
                      "headings": "", "priority": "core"},

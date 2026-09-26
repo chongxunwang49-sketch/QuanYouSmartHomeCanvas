@@ -343,7 +343,7 @@ const checkEntries = computed(() => Object.entries(health.checks))
           <p class="mt-2 text-[10px] leading-relaxed text-wood-muted">
             Token 是<strong class="font-semibold">每 Agent 的平均值</strong>，
             上表的累计数是"平均值 × 调用次数"求和 —— 后端没有直接给总量，
-            按平均值乘出来的数**是估算**，不精确到每一次调用。
+            按平均值乘出来的数是<strong class="font-semibold">估算</strong>，不精确到每一次调用。
           </p>
         </div>
 

@@ -222,3 +222,59 @@ def test_按键表是唯一来源_界面不另存一份():
         f"SceneViewer 里手写了操作文案 {stale} —— 应当由 keys.ts 的"
         f"helpLine() 推出来"
     )
+
+
+
+# ══════════════════════════════════════════════════════════════════
+# 自由视角的起点姿态（2026-09-26 需求方定「自由视角当默认」）
+# ══════════════════════════════════════════════════════════════════
+
+
+def test_自由视角的起点在高处俯视而不是站在地上():
+    """
+    需求方原话：「启动飞行模式就是为了在高处看格局，如果被天花板挡住了
+    就没有任何意义」，并据此把**自由视角定为默认视角**。
+
+    这条要求落在代码上就是**相机的初始位姿** —— 而它极易被静默改掉：
+    `flyHeight` 和 `pitch` 就是构造函数里两个数，谁把 `pitch` 改回 0、
+    或把 `flyHeight` 改回眼高，**编译、类型、其它测试全都不会响**。
+    表现只是"打开之后看到的是一面墙"，而"看着别扭但不报错"的回归
+    最容易活下来。
+
+    所以探针把起点姿态写成可断言的量：自由视角必须**高于天花板且朝下看**，
+    行走必须**在眼高且平视**，`respawn()` 按当前模式回到各自起点，
+    `goToRoom()` 在自由视角下要降到眼高（不然是"在空中看房间"）。
+    """
+    code, report, raw = _run_probe(PROBE_START)
+    assert report is not None, f"起点姿态探针没有输出可用报告：\n{raw}"
+    assert report["total"] >= 8, (
+        f"只跑了 {report['total']} 个用例 —— 起点姿态的用例被删掉的话，"
+        f"这条测试就形同虚设"
+    )
+    assert code == 0 and report["failed"] == 0, (
+        "3D 漫游的起点姿态不符：\n"
+        + "\n".join(
+            f"  {r['case']}：{r['detail']}"
+            + (f" —— {r['note']}" if r.get("note") else "")
+            for r in report["failures"]
+        )
+        + f"\n\n探针原始输出：\n{raw[-1500:]}"
+    )
+
+
+def test_探针报告只在失败时带note():
+    """
+    ⚠️ 探针的 `note` 是"**错了**说明什么"。通过时还挂着它的话，
+    读报告的人会以为出了问题 —— 而 `ok` 全是 true。
+
+    这不是假想：第一版 `rig_start_pose.ts` 就是这样，9 条全过，
+    报告里却躺着「按 R 之后没回到俯瞰位」「切模式把人弹到屋顶之上
+    会很突兀」两句。**报告本身也不能说谎。**
+    """
+    _code, report, _raw = _run_probe(PROBE_START)
+    assert report is not None
+    stray = [r for r in report["rows"] if r.get("ok") and r.get("note")]
+    assert not stray, (
+        "以下用例通过了却仍带着失败说明，读报告的人会以为它们出错了：\n"
+        + "\n".join(f"  {r['case']}：{r['note']}" for r in stray)
+    )

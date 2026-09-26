@@ -154,7 +154,10 @@ async function changeMembership(next: Membership) {
     </div>
 
     <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-      <!-- ══ 左：我的账号 + 权限明细 ══ -->
+      <!-- ══ 左：账号 / 套餐 / 额度 ══
+           顺序：身份 → 能买什么 → 用了多少。
+           两列高度也按这个顺序配过（大致等高），避免左下角留一块空白
+           —— 需求方在意「清新不代表空洞」。 -->
       <div class="flex flex-col gap-4">
         <section class="card p-5">
           <h2 class="mb-4 flex items-center gap-2 font-serif text-[15px] font-semibold text-wood-dark">
@@ -199,38 +202,7 @@ async function changeMembership(next: Membership) {
           </div>
         </section>
 
-        <!-- 权限明细 -->
-        <section class="card p-5">
-          <h2 class="mb-3 flex items-center gap-2 font-serif text-[15px] font-semibold text-wood-dark">
-            <AppIcon name="list-checks" :size="16" class="text-botanical" />
-            <span>我当前的权限</span>
-          </h2>
-          <ul class="space-y-1.5">
-            <li
-              v-for="p in permissions"
-              :key="p.label"
-              class="flex items-center gap-2.5 rounded-lg bg-warm-sidebar/50 px-2.5 py-2"
-            >
-              <AppIcon :name="STATE_STYLE[p.state].icon" :size="14" :class="STATE_STYLE[p.state].cls" />
-              <span class="w-[5.5rem] shrink-0 text-[11px] font-semibold text-wood-dark">
-                {{ p.label }}
-              </span>
-              <span class="min-w-0 flex-1 text-[10px] leading-relaxed text-wood-muted">
-                {{ p.why }}
-              </span>
-            </li>
-          </ul>
-          <p class="mt-2 text-[10px] leading-relaxed text-wood-muted">
-            「需开通」的功能入口仍然可见，只是置灰并说明原因 —— 藏起来会让人不知道有这个能力，
-            也不知道开通能解锁什么。真正的拦截在后端（会返回 4005 权限不足），
-            界面这层只负责说清楚。
-          </p>
-        </section>
-      </div>
-
-      <!-- ══ 右：套餐 + 今日额度 + 登录设备 ══ -->
-      <div class="flex flex-col gap-4">
-        <!-- 我的套餐 -->
+<!-- 我的套餐 -->
         <section class="card p-5">
           <h2 class="mb-3 flex items-center gap-2 font-serif text-[15px] font-semibold text-wood-dark">
             <AppIcon name="star" :size="16" class="text-botanical" />
@@ -270,7 +242,7 @@ async function changeMembership(next: Membership) {
               </button>
             </div>
             <p class="mt-2.5 text-[10px] leading-relaxed text-wood-muted">
-              演示环境，**不会真实扣费**；改动会落盘，重启后仍然有效。
+              演示环境，<strong class="font-semibold">不会真实扣费</strong>；改动会落盘，重启后仍然有效。
               会员解锁的是"能不能用"，每日配额仍然照常计算（防止跑飞）。
             </p>
           </template>
@@ -285,7 +257,7 @@ async function changeMembership(next: Membership) {
           </p>
         </section>
 
-        <!-- 今日额度 -->
+<!-- 今日额度 -->
         <section class="card p-5">
           <h2 class="mb-1 flex items-center gap-2 font-serif text-[15px] font-semibold text-wood-dark">
             <AppIcon name="clock" :size="16" class="text-botanical" />
@@ -343,11 +315,42 @@ async function changeMembership(next: Membership) {
           <p v-else-if="loading" class="text-[12px] text-wood-muted">正在读取额度…</p>
           <p v-else class="text-[12px] text-wood-muted">额度信息暂不可用。</p>
         </section>
+              </div>
 
-        <!-- 登录设备 -->
+      <!-- ══ 右：权限 / 设备 ══ -->
+      <div class="flex flex-col gap-4">
+<!-- 权限明细 -->
+        <section class="card p-5">
+          <h2 class="mb-3 flex items-center gap-2 font-serif text-[15px] font-semibold text-wood-dark">
+            <AppIcon name="list-checks" :size="16" class="text-botanical" />
+            <span>我当前的权限</span>
+          </h2>
+          <ul class="space-y-1.5">
+            <li
+              v-for="p in permissions"
+              :key="p.label"
+              class="flex items-center gap-2.5 rounded-lg bg-warm-sidebar/50 px-2.5 py-2"
+            >
+              <AppIcon :name="STATE_STYLE[p.state].icon" :size="14" :class="STATE_STYLE[p.state].cls" />
+              <span class="w-[5.5rem] shrink-0 text-[11px] font-semibold text-wood-dark">
+                {{ p.label }}
+              </span>
+              <span class="min-w-0 flex-1 text-[10px] leading-relaxed text-wood-muted">
+                {{ p.why }}
+              </span>
+            </li>
+          </ul>
+          <p class="mt-2 text-[10px] leading-relaxed text-wood-muted">
+            「需开通」的功能入口仍然可见，只是置灰并说明原因 —— 藏起来会让人不知道有这个能力，
+            也不知道开通能解锁什么。真正的拦截在后端（会返回 4005 权限不足），
+            界面这层只负责说清楚。
+          </p>
+        </section>
+
+<!-- 登录设备 -->
         <section class="card p-5">
           <h2 class="mb-1 flex items-center gap-2 font-serif text-[15px] font-semibold text-wood-dark">
-            <AppIcon name="cpu" :size="16" class="text-botanical" />
+            <AppIcon name="app-window" :size="16" class="text-botanical" />
             <span>登录设备</span>
           </h2>
           <!-- 免责说明来自后端（`GET /me/devices` 的 note），**原样展示** ——
@@ -365,7 +368,7 @@ async function changeMembership(next: Membership) {
               <span
                 class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-botanical/20 bg-white text-botanical"
               >
-                <AppIcon name="cpu" :size="15" />
+                <AppIcon name="app-window" :size="15" />
               </span>
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
@@ -385,7 +388,7 @@ async function changeMembership(next: Membership) {
             还没有登录记录。下一次登录会在这里留下一条。
           </p>
         </section>
-      </div>
+                              </div>
     </div>
   </main>
 </template>

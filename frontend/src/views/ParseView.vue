@@ -1,1 +1,171 @@
-se,"audioMetadata":{"playTime":0},"financeMetadata":{"sentimentRatings":[{"topic":"wf_sentiment_positive","score":398},{"topic":"wf_sentiment_negative","score":9304},{"topic":"wf_sentiment_neutral","score":297}]},"publishedDateTime":"2025-12-25T02:00:37Z","height":304.0,"wpoId":2,"subCardsCount":0,"isFeatured":false,"images":[{"width":640,"height":360,"url":"https://ts1.tc.mm.bing.net/th?id=ORMS.c5120344a21f6016b370890702cb41a5&pid=Wdp","attribution":"","title":"熊大为了吃到食物，竟然伪造车祸碰瓷游客","caption":"熊大为了吃到食物，竟然伪造车祸碰瓷游客","source":"bing"}],"provider":{"id":"AA1KuixS","name":"虎牙视频/阴阳动画","logoUrl":"https://img-s.msn.cn/tenant/amp/entityid/AA1Sq6vs.img","mainLogoUrl":"https://img-s.msn.cn/tenant/amp/entityid/AA1Sq6vs.img","promotionalUrl":"","profileId":"","feedAllowedFreeItem":0},"category":"news","reactionSummary":{"totalCount":151,"subReactionSummaries":[{"totalCount":102,"type":"downvote"},{"totalCount":49,"type":"upvote"}]},"reactionStatus":"on","commentStatus":"off","relevanceScore":102.000039,"recoDocMetadata":{"ImportantHeadline":"0","ModelScore":"7.401767393444558E-11","IsAtfHighQualityContent":"1"},"cardRankingMetadata":{"pClick":0.008683982,"pRelevance":0.21995102,"recoRankingScore":102.00004,"pDwellTime":0.010743141,"segmentRelevance":0.0,"additionalNumericProperties":{},"additionalProperties":{}},"feed":{"feedName":"news","lastFreActionTimestamp":0,"feedCompositionCategory":"2|13"},"cardId":25,"reasons":[{"type":"cF_U2i","rank":0}],"ri":"332","recoId":"4431cf58-6b00-41b7-9231-ef66ba2cdd63","source":"WebVideo","videoMetadata":{"playTime":89,"viewCount":114,"motionThumbnailUrl":"","channelPageUrl":"","channelTitle":"虎牙视频/阴阳动画","domain":"youtube.com","mediaUniqueId":"","allowEmbed":true,"allowHttpsEmbed":true,"allowMobileEmbed":true},"externalVideoFiles":[{"url":"","width":640,"height":360}],"dedupeIds":{"contentId":["AA1SZVq6"]}},{"id":"AA2cZ6y6","type":"article","title":"避谈曼城问题，TV2：挪威足协将哈兰德移出发布会名单","abstract":"据挪威电视台TV2报道，挪威足协已将哈兰德移出周六新闻发布会的出席名单。 周五早些时候，挪威足协通信主管莫滕-斯荣斯贝格曾通知媒体，哈兰德将与挪威队主帅斯塔勒-索尔巴肯共同出席发布会。但到周五晚间，足协又通知媒体：“我们对明天的新闻发布会作出调整，索尔巴肯、厄尔沙尔和舍尔德鲁普将出席。”哈兰德的名字不再出现在名单中。 此前，The Athletic报道称，一个独立委员会认定曼城在2009年至2018年期间违反财务公平竞赛规则，115项指控中有114项成立。TV2体育评论员米娜-芬斯塔德-贝格表示：“如果他们除一项外的所有指控都被认定有罪，那将是一场地震。” 曼城已经确认将对裁决提起上诉，相关程序仍在进行。TV2称，挪威足协调整发布会安排，是为了避免哈兰德被问及这一事件。","readTimeMin":0,"url":"https://www.msn.cn/zh-cn/sports/soccer/避谈曼城问题-tv2-挪威足协将哈兰德移出发布会名单/ar-AA2cZ6y6","locale":"zh-cn","isLocalContent":false,"financeMetadata":{"sentimentRatings":[{"topic":"wf_sentiment_positive","score":592},{"topic":"wf_sentiment_negative","score":2247},{"topic":"wf_sentiment_neutral","score":7160}]},"publishedDateTime":"2026-09-25T21:41:49Z","height":304.0,"wpoId":3,"subCardsCount":0,"isFeatured":false,"images":[{"width":1400,"height":788,"quality":84,"url":"https://img-s.msn.cn/tenant/amp/entityid/AA2cZAKa.img","title":"避谈曼城问题，TV2：挪威足协将哈兰德移出发布会名单","caption":"","focalRegion":{"x1":477,"x2":653,"y1":137,"y2":313},"source":"msn"}],"provider":{"id":"AA1klQ44","name":"懂球帝","logoUrl":"https://img-s.msn.cn/tenant/amp/entityid/AA1RYfL1.img","mainLogoUrl":"https://img-s.msn.cn/tenant/amp/entityid/AA1RYfL1.img","promotionalUrl":"https://www.dongqiudi.com/","profileId":"cid-d06940aea502bcf1","lightThemeSVGLogo":{"width":0,"height":0,"url":""},"darkThemeSVGLogo":{"width":0,"height":0,"url":""},"feedAllowedFreeItem":0,"lightSquareLogo":{"width":512,"height":512,"url":"https://img-s-msn-com.akamaized.net/tenant/amp/entityid/AA1RYtX1.img","source":"msn"},"darkSquareLogo":{"width":512,"height":512,"url":"https://img-s-msn-com.akamaized.net/tenant/amp/entityid/AA1RYfL8.img","source":"msn"},"lightFullLogo":{"width":1080,"height":278,"url":"https://img-s-msn-com.akamaized.net/tenant/amp/entityid/AA1RYweQ.img","source":"msn"},"darkFullLogo":{"width":1080,"height":278,"url":"https://img-s-msn-com.akamaized.net/tenant/amp/entityid/AA1RYGgU.img","source":"msn"}},"category":"news","reactionSummary":{"totalCount":14,"subReactionSummaries":[{"totalCount":8,"type":"downvote"},{"totalCount":6,"type":"upvote"}]},"reactionStatus":"on","commentStatus":"off","relevanceScore":101.000039,"recoDocMetadata":{"ImportantHeadline":"0","ModelScore":"7.45003989055526E-11","IsAtfHighQualityContent":"1","VideoYtChannelSubscriberCount":"0","VideoTubularCreatorFollowCount":"0"},"cardRankingMetadata":{"pClick":0.004683796,"pRelevance":0.22025079,"recoRankingScore":101.00004,"pDwellTime":0.0035619736,"segmentRelevance":0.0,"additionalNumericProperties":{},"additionalProperties":{}},"feed":{"feedName":"news","lastFreActionTimestamp":0,"feedCompositionCategory":"1|4"},"cardId":26,"reasons":[{"type":"explore","rank":0,"follow":{"id":"","name":"体育","time":""}}],"ri":"313","recoId":"4431cf58-6b00-41b7-9231-ef66ba2cdd63","newsClusterIdV6":"1895886037","source":"msn","dedupeIds":{"newsClusterV6Hash":["1895886037"],"newsClusterV7Hash":["-1395298406"],"newsClusterV8Hash":["1038209568"],"contentId":["AA2cZ6y6"]}},{"id":"AA2cUbgR","type":"article","title":"游本昌今晨去世! 30年演79个龙套，52岁出演“济公”走红，女儿透露最后时刻：“没有任何病痛，睡着就去了”","abstract":"作者：富叔&香克斯 2026年9月24日晨，游本昌在北京去世，享年93岁。 女儿游思涵向外界确认了消息。她转述父亲最后的状态时，语气平静，没有悲伤的修饰，只有一句“我很舒服”。 这三个字，像他演了一辈子的那些角色一样，不张扬，不解释，但听完心里会安静下来。 提起游本昌，大多数人脑子里会蹦出两个画面。一个是摇着破蒲扇、趿拉着鞋、疯疯癫癫的济公，那是1985年的...","readTimeMin":8,"url":"https://www.msn.cn/zh-cn/entertainment/名人/游本昌今晨去世-30年演79个龙套-52岁出演-济公-走红-女儿透露最后时刻-没有任何病痛-睡着就去了/ar-AA2cUbgR","locale":"zh-cn","isLocalContent":false,"financeMetadata":{"sentimentRatings":[{"topic":"wf_sentiment_positive","score":933},{"topic":"wf_sentiment_negative","score":2522},{"topic":"wf_sentiment_neutral","score":6543}]},"publishedDateTime":"2026-09-24T10:50:22Z","height":304.0,"wpoId":4,"subCardsCount":0,"isFeatured":false,"images":[{"width":1022,"height":680,"url":"https://ts1.tc.mm.bing.net/th?id=ORMS.41185eeac2f08855903c6f7d928c9b0c&pid=Wdp","attribution":"","title":"游本昌今晨去世！30年演79个龙套，52岁出演“济公”走红，女儿透露最后时刻：“没有任何病�
+<script setup lang="ts">
+import { computed } from 'vue'
+import { RouterView, useRoute } from 'vue-router'
+
+import AppIcon from '@/components/AppIcon.vue'
+import DegradedNotice from '@/components/DegradedNotice.vue'
+import PageHeader from '@/components/PageHeader.vue'
+import PhaseProgress from '@/components/PhaseProgress.vue'
+import TaskCancelButton from '@/components/TaskCancelButton.vue'
+import { statusHeadline } from '@/api/types'
+import { NAV, isNavActive } from '@/config/nav'
+import { provideParseSession } from '@/composables/useParseSession'
+import { useTaskStore } from '@/stores/task'
+
+/**
+ * 户型解析 —— **模块外壳**（父路由组件）。
+ *
+ * ══════════════════════════════════════════════════════════════════
+ * 这一层负责三件事，都不是"顺手放的"
+ * ══════════════════════════════════════════════════════════════════
+ *
+ * ① **持有解析会话。** `provideParseSession()` 在这里创建轮询，
+ *    子路由之间怎么切它都不会被掐断（原因见 useParseSession 文件头）。
+ *
+ * ② **降级提示挂在这一层，而不是子页里。**
+ *    `DegradedNotice` 的注释写着它"不提供关闭按钮、也不做成可折叠的"，
+ *    理由是"一个能被点掉的警告，在演示和真用的时候都会被第一批点掉"。
+ *    如果把它放进某个子页，用户切到另一个子页就看不见了 ——
+ *    那和"点掉"是同一种效果，只是换了个方式。所以它必须在**所有子页
+ *    之上**。`degraded_basic` 那条红条同理（需求文档 2.2.4 的强制呈现）。
+ *
+ * ③ **页面头只在这里渲染一次。** 子页不再各自带 `<PageHeader>` ——
+ *    嵌套的 `RouterView` 里再放一个会变成双标题，而且解析状态胶囊
+ *    （phase_text / trace_id）是最该始终可见的东西，放子页里就跟着切走了。
+ *
+ * 内容区拆成 5 个子路由：上传解析 / 识别总览 / 户型矢量图 / 3D 漫游 /
+ * 户型诊断。动因是纵向长度 —— 全部平铺时超过 3000px，用户要一直滚。
+ */
+const route = useRoute()
+const s = provideParseSession()
+const tasks = useTaskStore()
+
+const parseNav = NAV.find((n) => n.to === '/parse')
+
+/** 是不是停在模块首页（上传页）。子页的判定要与它区分开。 */
+const isIndex = computed(() => route.path === '/parse')
+
+/**
+ * 当前所在的子页。
+ *
+ * ⚠️ 这里用 `isNavActive(..., exact=true)` 精确匹配。子项里「上传解析」
+ * 的路径就是 `/parse`，它是 `/parse/overview` 等所有子路由的前缀 ——
+ * 用 startsWith 的话在上传页会同时匹配到它和别的项（详见 config/nav 文件头）。
+ */
+const currentChild = computed(() =>
+  isIndex.value
+    ? null
+    : (parseNav?.children?.find((c) => isNavActive(route.path, c.to, true)) ?? null),
+)
+
+const breadcrumb = computed(() =>
+  isIndex.value
+    ? ['全友·智绘家', '户型解析']
+    : ['全友·智绘家', '户型解析', currentChild.value?.label ?? ''],
+)
+
+const title = computed(() => (isIndex.value ? '户型图解析与重建' : (currentChild.value?.label ?? '')))
+
+const headerStatus = computed(() => {
+  const snap = s.status.value
+  if (!snap) return { icon: 'blueprint', text: '等待上传', tone: 'wood' as const }
+  // ⚠️ 不能直接展示 `phase_text`：中断之后 phase 停在断点上，
+  //    会一直说"正在分析图片…"。见 statusHeadline 的说明。
+  return {
+    icon: snap.cancelled ? 'x-circle' : 'spinner',
+    text: statusHeadline(snap),
+    tone: (snap.cancelled ? 'wood' : 'botanical') as 'wood' | 'botanical',
+  }
+})
+
+/**
+ * 用户按了「中断」：停掉轮询，并立刻补拉一次状态。
+ *
+ * 放在外壳层而不是上传页里 —— 进度卡是外壳渲染的，用户在任意子页
+ * 都能按下这个按钮，处理逻辑就该跟它在一起。
+ */
+async function afterCancel() {
+  s.poll.stop()
+  const snap = await s.poll.refreshOnce()
+  if (snap && snap.cancelled) {
+    tasks.update(snap.task_id, {
+      status: snap.status, phaseText: snap.phase_text, summary: '已中断',
+    })
+  }
+}
+
+const traceCode = computed(() =>
+  s.status.value ? `TRACE: ${s.status.value.trace_id.slice(0, 12)}` : '',
+)
+</script>
+
+<template>
+  <main class="mx-auto flex w-full max-w-[1760px] flex-1 flex-col gap-4 overflow-y-auto scroll-thin p-6 surface-grid">
+    <PageHeader
+      :breadcrumb="breadcrumb"
+      :title="title"
+      :status="headerStatus"
+      :code="traceCode"
+    />
+
+    <!--
+      ── 降级提示：故意放在子路由**之上**，切页也在 ──
+      见文件头 ②。它不折叠、不可关闭，这是刻意继承的约束。
+    -->
+    <DegradedNotice v-if="s.result.value?.degraded" :reasons="s.result.value.degrade_reasons" />
+
+    <!--
+      ── `degraded_basic` 的强制呈现（需求文档 2.2.4）──
+      只识别出房间名时，结构字段全空，后面每个子页都会是空的。
+      这条红条必须比子页先被看到，否则用户会以为是页面坏了。
+    -->
+    <div
+      v-if="s.isDegradedBasic.value"
+      class="rounded-xl border border-accent-red/30 bg-accent-red/5 p-3.5"
+    >
+      <div class="flex items-start gap-2.5">
+        <AppIcon name="warning-circle" :size="20" class="mt-0.5 shrink-0 text-accent-red" />
+        <div class="min-w-0">
+          <p class="text-[13px] font-bold text-wood-dark">
+            仅识别出房间名，其余结构字段为空 —— 需人工复核
+          </p>
+          <p class="mt-1 text-[11px] leading-relaxed text-wood-muted">
+            {{
+              s.layout.value?.safety_notice ||
+              '本地兜底模型只输出了房间名称，墙体、门窗、尺寸与面积均不可用。所有依赖这些数据的后续操作已被禁用。'
+            }}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 子页 ── -->
+    <RouterView />
+
+    <!--
+      进度卡放在外壳层，**每个子页下面都能看到**。
+      解析要跑 40 秒以上，这期间用户可能已经切到「识别总览」去看
+      （那里此刻还是空的）—— 进度必须跟着他。
+    -->
+    <PhaseProgress
+      v-if="s.status.value"
+      :text="s.status.value.phase_text"
+      :progress="s.status.value.progress"
+      :elapsed-ms="s.poll.elapsedMs.value"
+      :eta-seconds="s.poll.etaSeconds.value"
+      :overrun="s.poll.overrun.value"
+      :log="s.poll.phaseLog.value"
+      :status="s.status.value.status"
+      :error="s.status.value.error ?? ''"
+      :cancelled="s.status.value.cancelled"
+    >
+      <template #actions>
+        <TaskCancelButton
+          v-if="s.poll.running.value"
+          :task-id="s.poll.activeTaskId.value"
+          @settled="afterCancel"
+        />
+      </template>
+    </PhaseProgress>
+  </main>
+</template>

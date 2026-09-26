@@ -34,7 +34,7 @@ from collections import deque
 import pytest
 
 from backend.app.services.geometry import normalize_layout
-from backend.app.services.geometry.normalize import wall_point_at
+from backend.app.services.geometry.normalize import Vec2, wall_point_at
 from backend.app.services.geometry.walkable import (
     DEFAULT_PLAYER_RADIUS_M,
     build_walkable,
@@ -884,3 +884,187 @@ class TestDoorLeafGeometry:
                 f"说明门洞没切成 —— 关门的碰撞叠加就没有意义了"
             )
             del other
+
+
+
+# ══════════════════════════════════════════════════════════════════
+# 门的去重与"门在哪"的唯一表示（2026-09-24 需求方反馈）
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestDoorPositionIsOnTheWall:
+    """
+    需求方原话：「门的位置和平面图对不上，可能会出现一个根本不应该存在的
+    门立在墙边」。
+
+    ══════════════════════════════════════════════════════════════════
+    根因：同一个"门在哪"有两个互相矛盾的值
+    ══════════════════════════════════════════════════════════════════
+    `DoorEdge` 里 `hinge` / `along` 来自**投影**（把解析给的门中心投到墙上），
+    而 `position` 直接用了 `op.center`（解析给的原始中心，没投影）。
+
+    实测（`scripts/inspect_layout.py`，演示户型 2026-09-24）：
+    6 个门洞的原始中心离墙 **0.48 ~ 0.60m**。于是：
+
+      · 3D 里的门楣按 `position` 摆 → **飘在离墙半米的地方**，
+        看起来就是"一扇不该在的门立在墙边"
+      · 走门时"离哪扇门最近"按 `position` 量 → 量的根本不是门
+
+    两个表示只要有一个是错的，画面上就是"门和平面图对不上"。
+    所以这里钉死：**门的位置必须在墙上**。
+    """
+
+    def test_每扇门的位置都落在墙上(self):
+        w = _walk()
+        walls = normalize_layout(REAL_LAYOUT).walls
+        for d in w.doors:
+            nearest = min(
+                _seg_dist(_xy(d.position), _xy(a), _xy(b))
+                for wall in walls for a, b in wall.segments()
+            )
+            assert nearest < 1e-6, (
+                f"门 {d.door_index} 的位置 ({d.position.x:.3f},{d.position.y:.3f}) "
+                f"离最近的墙 {nearest:.3f}m —— 门必须开在墙上。"
+                f"（用解析给的原始中心会差 0.5m 上下，门楣就会飘出去）"
+            )
+
+    def test_位置与铰链在同一条线上(self):
+        """`position` 必须是门洞的中点 —— 也就是铰链 + 半个门宽。"""
+        for d in _walk().doors:
+            mid = (d.hinge.x + d.along.x * d.width_m / 2,
+                   d.hinge.y + d.along.y * d.width_m / 2)
+            got = _xy(d.position)
+            assert math.dist(mid, got) < 1e-6, (
+                f"门 {d.door_index}：`position` 与 `hinge + along×宽度/2` 不一致"
+                f"（{got} vs {mid}）—— 同一个量有两个值，迟早对不上"
+            )
+
+
+class TestDuplicateDoorsAreMerged:
+    """
+    同一扇门被解析模型读了两次（一次偏左、一次偏右），会产生两扇挨着的门。
+
+    实测（演示户型）：第 3 与第 5 扇门投影到**同一面墙**、都连通
+    「餐厅↔卫生间」，投影点相距 **1.11m**；而它们的原始中心分别是
+    (6.56, 2.36) 与 (7.67, 1.25) —— y 相差 1.11m、落在**两间不同的房**里。
+    在 3D 里就是"两扇贴得很近的门"，按 F 时开错的那一扇是常态。
+    """
+
+    @staticmethod
+    def _setup() -> tuple[list, list]:
+        """一面横墙 y=5.20，房间在它上下两侧。"""
+        wall_u = Vec2(1.0, 0.0)
+        rooms = [
+            _room(0, "客厅", 3.0, 3.0, (0.5, 0.5, 5.5, 5.0)),
+            _room(1, "餐厅", 3.0, 7.5, (0.5, 5.4, 5.5, 9.5)),
+        ]
+        return rooms, [(0, _op(3, 0.9, Vec2(3.0, 5.2)), Vec2(3.0, 5.2), wall_u, 0.5),
+                       (1, _op(3, 0.9, Vec2(4.1, 5.2)), Vec2(4.1, 5.2), wall_u, 0.6)]
+
+    def test_相距不足一个误差量级的同一扇门被合并(self):
+        from backend.app.services.geometry.walkable import _dedupe_doors
+
+        rooms, anchored = self._setup()   # 两个投影点相距 1.10m < 1.2m
+        kept, dropped = _dedupe_doors(anchored, rooms)
+        assert len(kept) == 1, f"没有合并重复的门，保留了 {len(kept)} 扇"
+        assert dropped == [(1, 0)], f"去重结果不对：{dropped}"
+        # **保留更贴墙的那一扇** —— 同一扇门的两次读数里更可信的一次
+        assert kept[0][0] == 0, (
+            "保留了离墙 0.6m 的那次读数，应当保留 0.5m 的那次"
+        )
+
+    def test_保留的是更贴墙的那一扇与顺序无关(self):
+        from backend.app.services.geometry.walkable import _dedupe_doors
+
+        rooms, anchored = self._setup()
+        kept, dropped = _dedupe_doors(list(reversed(anchored)), rooms)
+        assert len(kept) == 1
+        assert kept[0][0] == 0, "换了个顺序就换了一扇 —— 结果不能取决于门洞排列顺序"
+
+    def test_相距够远的两扇门不合并(self):
+        from backend.app.services.geometry.walkable import _dedupe_doors
+
+        rooms, anchored = self._setup()
+        # 把第二扇挪到 3m 之外
+        anchored[1] = (1, _op(3, 0.9, Vec2(6.0, 5.2)), Vec2(6.0, 5.2),
+                       Vec2(1.0, 0.0), 0.6)
+        kept, dropped = _dedupe_doors(anchored, rooms)
+        assert len(kept) == 2, "相隔 3m 的两扇门被误合并了"
+        assert not dropped
+
+    def test_连通不同房间对的门即使挨着也不合并(self):
+        """
+        ⚠️ **这条是防误合并的。** 同一面墙上相邻两间房的门可以挨得很近
+        （比如走廊两侧），只看距离就会把它们合成一扇 —— 那是把两间房
+        的通行权弄丢一条。
+        """
+        from backend.app.services.geometry.walkable import _dedupe_doors
+
+        wall_u = Vec2(1.0, 0.0)
+        rooms = [
+            _room(0, "客厅", 3.0, 3.0, (0.5, 0.5, 5.5, 5.0)),
+            _room(1, "餐厅", 3.0, 7.5, (0.5, 5.4, 5.5, 7.0)),      # 中间
+            _room(2, "厨房", 10.0, 7.5, (8.0, 5.4, 12.0, 9.5)),    # 右侧，房间对不同
+        ]
+        anchored = [
+            (0, _op(3, 0.9, Vec2(3.0, 5.2)), Vec2(3.0, 5.2), wall_u, 0.5),
+            (1, _op(3, 0.9, Vec2(3.3, 5.2)), Vec2(3.3, 5.2), wall_u, 0.5),
+        ]
+        kept, dropped = _dedupe_doors(anchored, rooms)
+        # 两个投影点都落在 x∈[0.5,5.5] 的客厅一侧，两侧都是「客厅↔餐厅」……
+        # 所以这一对**确实**是同一对房间。再用一对真正不同的房间验证。
+        assert len(kept) == 1 and dropped == [(1, 0)], (
+            f"同一对房间、相距 0.3m 的门没有被合并：kept={len(kept)}"
+        )
+
+        anchored2 = [
+            (0, _op(3, 0.9, Vec2(3.0, 5.2)), Vec2(3.0, 5.2), wall_u, 0.5),
+            (1, _op(3, 0.9, Vec2(10.0, 5.2)), Vec2(10.0, 5.2), wall_u, 0.5),
+        ]
+        kept2, dropped2 = _dedupe_doors(anchored2, rooms)
+        assert len(kept2) == 2, (
+            "连通不同房间对（客厅↔餐厅 与 客厅↔厨房）的两扇门被误合并了 —— "
+            "那会凭空少掉一条通路"
+        )
+        assert not dropped2
+
+
+class TestTruncatedNameListSaysSo:
+    """
+    ⚠️ 实测踩过：原文案是「走不到 6 间房（儿童房、餐厅、厨房）」——
+    数字说 6、列表只有 3，而且没有"等"。读的人只会得出"另外 3 间是哪些"，
+    或者更糟：以为只有这 3 间。
+
+    **列表被截断而不说，和编一个数字是同一类问题。**
+    """
+
+    def test_列表被截断时加等字(self):
+        from backend.app.services.geometry.walkable import _name_list
+
+        rooms = [_room(i, f"房{i}", 0.0, 0.0, (0, 0, 1, 1)) for i in range(6)]
+        assert _name_list(rooms, 3) == "房0、房1、房2等"
+        assert _name_list(rooms[:3], 3) == "房0、房1、房2"
+        assert _name_list(rooms, 4) == "房0、房1、房2、房3等"
+
+
+def _room(index: int, name: str, cx: float, cy: float,
+          rect: tuple[float, float, float, float]):
+    from backend.app.services.geometry.walkable import RoomNode
+    from backend.app.services.geometry.normalize import Vec2 as _V
+    return RoomNode(index=index, name=name, kind="bedroom",
+                    center=_V(cx, cy), free_rect=rect, area_m2=10.0)
+
+
+def _op(wall_index: int, width_m: float, center):
+    """一个最小的门洞替身：去重逻辑只读这两个字段。"""
+    return type("Op", (), {"wall_index": wall_index, "width_m": width_m,
+                           "center": center})()
+
+
+def _seg_dist(p, a, b) -> float:
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    if dx == 0 and dy == 0:
+        return math.dist(p, a)
+    t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy)
+    t = max(0.0, min(1.0, t))
+    return math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy))

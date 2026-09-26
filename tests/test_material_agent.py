@@ -534,3 +534,158 @@ class TestCrossCutting:
         index = catalog.by_id()
         for item in m["items"]:
             assert "economy" in index[item["id"]].budget_grade
+
+
+
+# ══════════════════════════════════════════════════════════════════
+# AC-19：材料偏好过滤
+# ══════════════════════════════════════════════════════════════════
+
+
+#: 没有卫生间的户型。用来验"该不该买洁具由房间决定"。
+LAYOUT_NO_BATH = {
+    **LAYOUT,
+    "rooms": [
+        {"name": "客厅", "type": "living_room", "area": 28.5, "bbox": [120, 80, 420, 360]},
+        {"name": "主卧", "type": "bedroom", "area": 16.2, "bbox": [440, 80, 680, 300]},
+    ],
+}
+
+
+def _brands(m: dict) -> set[str]:
+    return {it["brand"] for it in m["items"]}
+
+
+class TestMaterialFilters:
+    """
+    AC-19。守两条：
+
+      ① 排除是**硬的** —— 被排除的品牌/品类不会以任何方式出现在产物里，
+         包括模型硬要选、以及 AC-18 的**代码兜底**那一轮。
+      ② 「用户排除」与「没有候选」是两件事 —— 前者不该被当成数据缺口反复道歉。
+    """
+
+    def test_排除的品牌被模型选中时按幻觉剔除(self):
+        """
+        提示词里已经不含被排除的商品，模型本不该选它。
+        真选了说明模型没照做 —— 按"不在候选清单里"处理（纪律 1），
+        与编造型号走同一条路，而不是额外加一处特判。
+        """
+        m = _mat(_run(
+            _FakeLLM(["QY-FL-101", "XY-FL-301"]),          # 第二个是被排除的品牌
+            material_filters={"excluded_brands": ["圣象"]},
+        ))
+        assert "圣象" not in _brands(m)
+        assert any("XY-FL-301" in s for s in m["invented_products"])
+
+    def test_被排除的品牌不出现在提示词里(self):
+        llm = _FakeLLM(["QY-FL-101"])
+        _run(llm, material_filters={"excluded_brands": ["圣象"]})
+        assert "圣象" not in llm.prompts[0]
+
+    def test_排除品类后该品类不进候选(self):
+        m = _mat(_run(
+            _FakeLLM(["QY-FL-101", "QY-LT-101"]),
+            material_filters={"excluded_categories": ["lighting"]},
+        ))
+        assert all(it["category"] != "lighting" for it in m["items"])
+
+    def test_用户排除的品类不进数据缺口(self):
+        """
+        「数据缺口」的意思是"我们想要但拿不到"。用户主动排除的东西不属于它。
+        混在一起的话，用户会看到系统为他本人要求的事道歉，还会反复"建议补充"。
+        """
+        m = _mat(_run(
+            _FakeLLM(["QY-FL-101"]),
+            material_filters={"excluded_categories": ["lighting"]},
+        ))
+        assert not any("灯具" in g for g in m["data_gaps"])
+        assert any(c["key"] == "lighting" for c in m["excluded_by_user"])
+        assert not any(c["key"] == "lighting" for c in m["offered_categories"])
+
+    def test_过滤依据写进产物(self):
+        """
+        前端不重新推导"哪些品类被排除了" —— 让它自己算等于把同一条规则
+        实现两遍，迟早两边不一致。所以后端把依据一起带上。
+        """
+        m = _mat(_run(
+            _FakeLLM(["QY-FL-101"]),
+            material_filters={"excluded_categories": ["lighting"],
+                              "excluded_brands": ["立邦"]},
+        ))
+        basis = "；".join(m["filter_basis"])
+        assert "灯具" in basis and "立邦" in basis
+
+    def test_没有卫生间的户型不选洁具(self):
+        """
+        `capabilities.py` 给 `select_materials` 定门槛时就写了
+        「有卫生间才需要瓷砖与洁具」，但那句意图一直没实现 ——
+        A-05 无条件遍历全部 7 个品类，没有卫生间的户型也买一套洁具。
+
+        ⚠️ 假 LLM 必须**真的尝试选洁具**（`QY-SA-101`），否则这条测试
+        什么都不测：模型没试过的东西，"没出现"是理所当然的。
+        这条断言的价值全在"模型选了、系统把它拦下来"。
+        """
+        m = _mat(_run(_FakeLLM(["QY-FL-101", "QY-SA-101"]), layout=LAYOUT_NO_BATH))
+        assert all(it["category"] != "sanitary" for it in m["items"])
+        assert not any(c["key"] == "sanitary" for c in m["offered_categories"])
+        assert any("QY-SA-101" in s for s in m["invented_products"])
+
+    def test_这不是用户排除_所以不该记成用户排除(self):
+        """控制项：没买洁具是户型决定的，不是用户要求的，两者要分得开。"""
+        m = _mat(_run(_FakeLLM(["QY-FL-101"]), layout=LAYOUT_NO_BATH))
+        assert m["excluded_by_user"] == []
+
+    def test_有卫生间的户型照常选洁具(self):
+        """控制项的另一半：别把门槛砍过头。"""
+        m = _mat(_run(_FakeLLM(["QY-SA-101"])))
+        assert any(it["category"] == "sanitary" for it in m["items"])
+
+    def test_关闭全友优先后AC18仍然达标(self):
+        """
+        这是那个死开关修好之后**最重要**的一条断言：
+        开关能改变池子的排序，但**不能**让 AC-18 的 60% 底线失效。
+        能被用户关掉的验收指标是测不了的。
+        """
+        m = _mat(_run(
+            _FakeLLM(["XY-FL-301", "LB-PT-201"]),          # 两个竞品
+            material_filters={"quanyou_priority": False},
+        ))
+        assert m["quanyou_coverage"] >= catalog.MIN_QUANYOU_COVERAGE
+        assert m["quanyou_met"] is True
+        assert m["auto_substitutions"], "覆盖率靠兜底补上，应记录每一次替换"
+
+    def test_排除全友时宁可覆盖不达标_也不违反用户排除(self):
+        """
+        请求期校验会拒掉"排除全友"，这里是**绕过校验**时的行为。
+
+        正确行为是：如实报告覆盖率不达标（`quanyou_met=False`），
+        而不是偷偷换一个用户明确排除的品牌回来。
+        诚实优先于达标 —— 与 AC-18 兜底"不为了凑指标换规格不符的东西"同一条。
+        """
+        m = _mat(_run(
+            _FakeLLM(["XY-FL-301", "LB-PT-201"]),
+            material_filters={"excluded_brands": ["全友"]},
+        ))
+        assert "全友" not in _brands(m)
+        assert m["auto_substitutions"] == []
+        assert m["quanyou_met"] is False
+
+    def test_缺省时行为与不带偏好完全一致(self):
+        """回归护栏：没有 material_filters 时，产物字段一个都不该变。"""
+        a = _mat(_run(_FakeLLM(["QY-FL-101"])))
+        b = _mat(_run(_FakeLLM(["QY-FL-101"]), material_filters={}))
+        assert a["product_ids"] == b["product_ids"]
+        assert a["quanyou_coverage"] == b["quanyou_coverage"]
+        assert a["filter_basis"] == []
+
+    def test_只有quanyou_priority的老式调用仍然生效(self):
+        """
+        `material_filters` 是随 AC-19 新加的，`quanyou_priority` 在 state 里
+        存在已久。只设老字段的既有调用方不该静默改变行为（见 _filter_payload）。
+        """
+        m = _mat(_run(
+            _FakeLLM(["XY-FL-301", "LB-PT-201"]),
+            quanyou_priority=False,
+        ))
+        assert m["quanyou_priority"] is False

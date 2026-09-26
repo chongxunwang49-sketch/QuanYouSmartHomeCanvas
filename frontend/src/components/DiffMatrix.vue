@@ -142,7 +142,7 @@ function cell(r: Record<string, unknown>, key: string): string {
             <div class="flex items-start gap-1.5">
               <AppIcon name="info" :size="13" class="mt-0.5 shrink-0" />
               <span>
-                着色的是**各方案之间有差异**的项；灰字表示三项取值相同、不构成区分。
+                着色的是<strong class="font-semibold">各方案之间有差异</strong>的项；灰字表示三项取值相同、不构成区分。
               </span>
             </div>
             <button

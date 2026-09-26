@@ -135,22 +135,50 @@ services:
       #    漏了 Ollama —— 这里一并补上。
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
 
-      # ⚠️ **显式关掉 Redis checkpointer，这是本次刻意的一个决定。**
-      #    实测 langgraph-checkpoint-redis **在本机从未安装过**
-      #    （pip show 查无此包，import 报 ModuleNotFoundError），
-      #    也就是说 workflow.py 的 RedisSaver 分支**从未真正跑过**，
-      #    ENABLE_REDIS_CHECKPOINTER=true 一直是纸面配置、靠异常兜底
-      #    降到 InMemorySaver 在撑。
-      #    现在打开它 = 在验收 Docker 拓扑的同时**首次激活一条未验证的路径**。
-      #    验收 AC-16 不该同时引入未测变量 —— 保持与今天 dev 完全一致的行为。
-      #    AC-12（Redis 会话恢复）要做的时候再单独开、单独测。
-      ENABLE_REDIS_CHECKPOINTER: "false"
+      # ── AC-12：检查点改存 PostgreSQL，**已在容器里验证过** ──
+      # 2026-09-24 变更（取代原来的 ENABLE_REDIS_CHECKPOINTER）：
+      #   langgraph-checkpoint-redis 依赖 RediSearch，启动要发 FT.INFO，
+      #   而本文件钉死的 redis:7-alpine **没有任何模块**：
+      #       redisvl.exceptions.RedisSearchError: unknown command 'FT.INFO'
+      #   换 redis-stack 能解但镜像明显更重，而本机内存余量本就紧张。
+      #   改用它旁边这个一直在跑、**完全空闲**的 qy-postgres。
+      #   ⚠️ 是对 AC-12「Redis 会话恢复」字面口径的偏离，语义未变，
+      #      已在需求文档记 V2.4 修订。
+      ENABLE_CHECKPOINTER: "true"
+      # POSTGRES_HOST 在上面「服务发现」那段已经设过了（qy-postgres），
+      # 检查点复用它，不在这里重复定义。
+
+      # ── 业务数据落库（2026-09-24）：户型 / 方案 / 审计 ──
+      #
+      # ⚠️ **建表不在容器里做。** `scripts/` 不 COPY 进镜像（见
+      #    deploy/Dockerfile 的说明），所以容器里没有 init_db.py ——
+      #    这是刻意的：应用容器不该有 DDL 能力。
+      #    首次部署（或加了新迁移之后）**在宿主机**跑一次：
+      #
+      #         python scripts/init_db.py
+      #
+      #    PG 端口映射在 127.0.0.1:5432，宿主机脚本直接连得上。
+      #    没建表时服务照常启动，只是在日志里告警、并把户型与方案
+      #    退回内存 + Redis（行为与落库之前一致）—— 见 db/pool.py 的立场。
+      ENABLE_DB: "true"
 
       # ── 数据落盘：E: 盘 bind mount 到 /data/quanyou ──
       # 与 .env.example 的路径一一对应，只是换了容器内的前缀。
       CHROMA_PATH: "/data/quanyou/data/chroma"
       UPLOAD_DIR:  "/data/quanyou/uploads"
       OUTPUT_DIR:  "/data/quanyou/outputs"
+
+      # ⚠️ 审计日志也要落盘，**这是实测补上的**（2026-09-24）。
+      #    在此之前 `LOG_DIR` 用的是容器内的 `/app/logs` —— 没有挂载，
+      #    于是审计文件活在容器的可写层里：
+      #      · `docker restart` 之后还在（同一个容器）
+      #      · `docker compose up --build` 之后就**没了**（换了个容器）
+      #    而 AC-14 声明的保留期是 180 天。每次重建都清空，等于那句话
+      #    在 compose 模式下不成立。
+      #    绑到宿主同一目录还带来一个好处：dev 模式（uvicorn 直跑）与
+      #    compose 模式写的是**同一份**审计文件，两边的性能数据在
+      #    `/system/metrics` 里能一起看到，不必分两处查。
+      LOG_DIR: "/app/logs"
 
       # ── Rerank：留空即关闭 ──
       # 实测 .env 不存在 ⇒ RERANK_URL 一直是默认空值 ⇒ rerank_enabled=False。
@@ -171,11 +199,14 @@ services:
       #    正是本项目最防的那类"看起来成功、实际什么都没做"。
       #    上限已实测：DeepSeek /v1 接受到 max_tokens=65536（HTTP 200），
       #    所以有充分余量。取 32000（4 倍），既不撞上限，也不会放任跑飞。
-      # ⚠️ 这里只在 compose 里改，**没有动 config.py 的默认值** ——
-      #    那样才能对比 dev 模式与 compose 模式的行为差异。
-      #    dev 侧要不要一起调，需要单独定（config.py 的注释原本写的是
-      #    「不要低于 2000」，说明 8000 当时被认为很宽裕）。
-      LLM_MAX_TOKENS: "32000"
+      # ⚠️ **2026-09-24：这行覆盖已删除，值统一由 config.py 的默认值给。**
+      #    当时的立场是"只在 compose 里改，留着差异好对比两种模式"。
+      #    对比结果出来了：dev 侧（8000）**在真实演示图上每次都降级** ——
+      #    "本机跑一直降级、容器里跑正常"，方向恰好是最坏的那种
+      #    （本机是开发时看得最多的那个）。
+      #    两个地方定义同一个值迟早漂移，所以只留 config.py 一处，
+      #    完整证据与上限实测写在那里。
+      LLM_MAX_TOKENS: "${LLM_MAX_TOKENS:-32000}"
 
       # ── 出图：容器内没有 GPU 直通，只能是 vector ──
       # 与 Dockerfile 里「不装 torch」的决定配套。
@@ -192,6 +223,11 @@ services:
       #    而界面只会显示「无来源」，**看起来像模型不引用，其实是没数据**。
       #    实测宿主机 E:/quanyou 存在，chroma 有 4.8 MB 真实数据（419 条 chunk）。
       - "E:/quanyou:/data/quanyou"
+      # 审计日志（AC-14）。见上面 LOG_DIR 那段说明：不挂的话，
+      # 每次 `up --build` 换容器就把审计历史丢了，而声明的保留期是 180 天。
+      # 绑到宿主同一目录还有个好处：dev 模式与 compose 模式写同一份文件，
+      # `/system/metrics` 能一起看到两边的性能数据。
+      - "./logs:/app/logs"
     # host.docker.internal 在 Docker Desktop for Windows 上自带，
     # 但在 Linux 上需要显式声明。写上它让这份 compose 不依赖宿主平台
     # —— 上面 OLLAMA_BASE_URL 依赖这个名字能解析，不能靠"本机恰好有"。

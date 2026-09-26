@@ -266,7 +266,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
               <p
                 class="rounded-xl border border-warm-border bg-warm-sidebar/50 p-2.5 text-[10px] leading-relaxed text-wood-muted"
               >
-                金额全部由后端规则引擎按户型面积与地区系数算出，**不经过大模型**（ADR-07）。
+                金额全部由后端规则引擎按户型面积与地区系数算出，<strong class="font-semibold">不经过大模型</strong>。
                 模型只负责上面那段文字解读。
               </p>
             </template>
@@ -346,7 +346,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
                   v-else
                   class="mt-2 rounded-lg border border-accent-gold/30 bg-wood-light/50 px-2 py-1.5 text-[10px] leading-relaxed text-wood"
                 >
-                  这一项**没有找到可引用的依据**——它是模型的判断，请人工复核后再采纳。
+                  这一项<strong class="font-semibold">没有找到可引用的依据</strong>——它是模型的判断，请人工复核后再采纳。
                 </p>
               </div>
 
@@ -464,7 +464,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
               <p
                 class="rounded-xl border border-accent-gold/30 bg-wood-light/40 p-2.5 text-[10px] leading-relaxed text-wood"
               >
-                ⚠️ 价格来自演示用种子数据集，**不是真实市场报价**，仅供流程演示。
+                ⚠️ 价格来自演示用种子数据集，<strong class="font-semibold">不是真实市场报价</strong>，仅供流程演示。
                 实际价格以门店与官网为准。
               </p>
             </template>
@@ -473,6 +473,60 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
               该方案没有产出材料选型
             </p>
           </template>
+
+          <!-- ══ 室内环境风险（AC-20）══ -->
+          <section v-if="plan.environment" class="card p-4">
+            <h3 class="flex items-center gap-2 font-serif text-[14px] font-semibold text-wood-dark">
+              <AppIcon name="leaf" :size="15" class="text-botanical" />
+              <span>室内环境风险</span>
+            </h3>
+
+            <div class="mt-3 space-y-3">
+              <div
+                v-for="h in [
+                  { key: 'formaldehyde', label: '甲醛', item: plan.environment.formaldehyde },
+                  { key: 'tvoc', label: 'TVOC', item: plan.environment.tvoc },
+                ]"
+                :key="h.key"
+                class="flex items-start gap-3"
+              >
+                <span
+                  class="mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                  :class="riskTone(h.item)"
+                >
+                  {{ riskLabel(h.item) }}
+                </span>
+                <div class="min-w-0">
+                  <div class="text-[12px] font-semibold text-wood-dark">{{ h.label }}</div>
+                  <ul class="mt-0.5 space-y-0.5">
+                    <li
+                      v-for="(b, i) in h.item.basis"
+                      :key="i"
+                      class="flex items-start gap-1.5 text-[11px] leading-relaxed text-wood-muted"
+                    >
+                      <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-warm-border" />
+                      <span>{{ b }}</span>
+                    </li>
+                  </ul>
+                  <p v-if="h.item.note" class="mt-1 text-[10px] leading-relaxed text-wood-muted">
+                    {{ h.item.note }}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!--
+              ⚠️ 免责声明**不可省略、不可折叠**。
+              上面那两档是**推出来的风险等级**，不是浓度检测值；
+              缺了这句话，用户会把"低"读成"检测合格"。
+              （与 DegradedNotice 同一个立场：能被点掉的警告等于没有。）
+            -->
+            <p
+              class="mt-3 rounded-xl border border-accent-gold/30 bg-wood-light/40 p-2.5 text-[10px] leading-relaxed text-wood"
+            >
+              {{ plan.environment.disclaimer }}
+            </p>
+          </section>
 
           <!-- 降级提示：放在抽屉底部，三个标签都看得见 -->
           <DegradedNotice

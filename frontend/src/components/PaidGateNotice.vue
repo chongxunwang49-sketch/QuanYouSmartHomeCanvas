@@ -86,7 +86,9 @@ const visible = computed(() => Boolean(auth.user) && !auth.canUsePaid)
       </p>
     </div>
 
-    <button class="btn-soft shrink-0 px-3 py-1.5" type="button" @click="router.push('/users')">
+    <!-- 指向**个人中心**而不是账号管理 —— 后者只有管理员能进，
+         把免费用户指过去等于指向一扇进不去的门（`deps.UPGRADE_HINT` 同此口径） -->
+    <button class="btn-soft shrink-0 px-3 py-1.5" type="button" @click="router.push('/me')">
       <AppIcon name="arrow-right" :size="14" weight="bold" />
       <span>去开通</span>
     </button>

@@ -8,11 +8,12 @@ import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import PaidGateNotice from '@/components/PaidGateNotice.vue'
 import PhaseProgress from '@/components/PhaseProgress.vue'
+import TaskCancelButton from '@/components/TaskCancelButton.vue'
 import { avoidPitReview } from '@/api'
 import { toast } from '@/utils/toast'
 import { messageOf } from '@/api/client'
 import type { ReviewResult } from '@/api/types'
-import { SEVERITY_LABEL, label } from '@/api/types'
+import { SEVERITY_LABEL, label, statusHeadline } from '@/api/types'
 import { useTaskPolling } from '@/composables/useTaskPolling'
 import { useAuthStore } from '@/stores/auth'
 import { useTaskStore } from '@/stores/task'
@@ -123,6 +124,22 @@ async function submit() {
   }
 }
 
+/**
+ * 用户按了「中断」：停掉轮询，并立刻补拉一次状态。
+ *
+ * 顺序不能反 —— 先 `stop()` 再拉，否则补拉回来的那一拍会被
+ * 还在跑的轮询循环覆盖掉。
+ */
+async function afterCancel() {
+  poll.stop()
+  const snap = await poll.refreshOnce()
+  if (snap && snap.cancelled) {
+    tasks.update(snap.task_id, {
+      status: snap.status, phaseText: snap.phase_text, summary: '已中断',
+    })
+  }
+}
+
 onMounted(async () => {
   const taskId = String(route.query.task || '')
   if (!taskId) return
@@ -144,7 +161,7 @@ onMounted(async () => {
       title="报价单与合同审查"
       :status="
         poll.status.value
-          ? { icon: 'shield-check', text: poll.status.value.phase_text }
+          ? { icon: 'shield-check', text: statusHeadline(poll.status.value) }
           : { icon: 'shield-check', text: '等待提交', tone: 'wood' }
       "
     />
@@ -203,7 +220,16 @@ onMounted(async () => {
           :overrun="poll.overrun.value"
           :log="poll.phaseLog.value"
           :status="poll.status.value.status"
-        />
+          :cancelled="poll.status.value.cancelled"
+        >
+          <template #actions>
+            <TaskCancelButton
+              v-if="poll.running.value"
+              :task-id="poll.activeTaskId.value"
+              @settled="afterCancel"
+            />
+          </template>
+        </PhaseProgress>
 
         <div class="card p-4">
           <p class="flex items-center gap-1.5 text-[12px] font-semibold text-wood-dark">
@@ -227,7 +253,7 @@ onMounted(async () => {
             </li>
           </ul>
           <p class="mt-2.5 rounded-lg border border-warm-border bg-warm-sidebar/60 p-2 text-[10px] leading-relaxed text-wood-muted">
-            审查结论由 RAG 检索 + 模型判断给出，**每条风险都必须带可溯源的引用**。
+            审查结论由 RAG 检索 + 模型判断给出，<strong class="font-semibold">每条风险都必须带可溯源的引用</strong>。
             找不到依据的结论会被标成"无引用"，模型编造的引用会被剔除并单列。
           </p>
         </div>
@@ -342,7 +368,7 @@ onMounted(async () => {
               v-else
               class="mt-2.5 rounded-lg border border-accent-gold/30 bg-wood-light/50 px-2.5 py-1.5 text-[10px] leading-relaxed text-wood"
             >
-              这一项**没有检索到可引用的依据**，属于模型的判断。建议人工复核后再采纳。
+              这一项<strong class="font-semibold">没有检索到可引用的依据</strong>，属于模型的判断。建议人工复核后再采纳。
             </p>
           </div>
 
@@ -357,7 +383,7 @@ onMounted(async () => {
             </p>
             <p class="mt-0.5 text-[11px] leading-relaxed text-wood-muted">
               模型在结论中引用了下列文献，但它们在知识库中并不存在。这些引用已被剔除，
-              未参与上面的任何结论——**这一块存在的意义是证明系统在拦模型胡说**。
+              未参与上面的任何结论——<strong class="font-semibold">这一块存在的意义是证明系统在拦模型胡说</strong>。
             </p>
             <ul class="mt-1.5 space-y-1">
               <li

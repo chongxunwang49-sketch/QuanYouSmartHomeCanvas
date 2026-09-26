@@ -195,7 +195,7 @@ const sessionStats = computed(() => ({
                 </p>
                 <hr class="my-2 border-warm-border" />
                 <p class="text-wood-muted">
-                  素材：图标 Iconify（MIT）· 插画 unDraw（开放许可，**已按项目色板重上色**）·
+                  素材：图标 Iconify（MIT）· 插画 unDraw（开放许可，<strong class="font-semibold">已按项目色板重上色</strong>）·
                   照片 Pexels（免费商用）· 实景图来自全友官网（版权归全友家居所有，仅作演示）。
                 </p>
               </div>

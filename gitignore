@@ -1,0 +1,7 @@
+
+
+# 无头/可见浏览器验证时用的临时 profile（一次性，含缓存与 Cookie）
+# ⚠️ 不加这条的话 `git add -A` 会把一整个浏览器 profile 提进去。
+.edge-view/
+.edge-profile-*/
+.edge3d/
