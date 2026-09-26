@@ -3,8 +3,9 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppIcon from './AppIcon.vue'
-import { flattenNav } from '@/config/nav'
+import { flattenNavForRole } from '@/config/nav'
 import { useInfoPanel } from '@/composables/useInfoPanel'
+import { useAuthStore } from '@/stores/auth'
 import { useTaskStore } from '@/stores/task'
 
 /**
@@ -16,12 +17,57 @@ import { useTaskStore } from '@/stores/task'
  */
 const router = useRouter()
 const tasks = useTaskStore()
+const auth = useAuthStore()
 const { show: showInfo } = useInfoPanel()
 
 const paletteOpen = ref(false)
 const query = ref('')
 const cursor = ref(0)
 const inputRef = ref<HTMLInputElement | null>(null)
+
+// ── 账号菜单 ────────────────────────────────────────────
+const menuOpen = ref(false)
+const accountRef = ref<HTMLElement | null>(null)
+
+function go(path: string) {
+  menuOpen.value = false
+  router.push(path)
+}
+
+/**
+ * 打开「系统信息」面板。
+ *
+ * ⚠️ 这一项原来写的是 `@click="go('/')"` —— 点了**什么都不发生**
+ * （本来就在工作台，`push('/')` 等于原地不动），而它旁边还写着
+ * 「连接与依赖」四个字。这正是 AppSidebar 那次踩过的同一个坑：
+ * **承诺了交互却不给**，比不画这个入口更糟。
+ * 现在它真的打开那个面板（与侧栏用户卡同一个），并先收起菜单。
+ */
+function openSystemInfo() {
+  menuOpen.value = false
+  showInfo()
+}
+
+async function logout() {
+  menuOpen.value = false
+  auth.logout()
+  await router.replace({ name: 'login' })
+}
+
+/**
+ * 点外面关掉菜单（`mousedown` 而不是 `click`）。
+ *
+ * 用 `mousedown` 是因为 `click` 在"按下按钮 → 拖动到外面 → 松手"时
+ * **不触发**在按钮上，于是菜单不会关；而 `mousedown` 只要按下就在外面了。
+ * 这个差别在手快的时候很明显。
+ */
+function onDocMouseDown(e: MouseEvent) {
+  if (!menuOpen.value) return
+  if (!accountRef.value?.contains(e.target as Node)) menuOpen.value = false
+}
+
+// 路由一变就关。否则"点用户管理跳过去了、菜单还挂在右上角"
+watch(() => router.currentRoute.value.fullPath, () => (menuOpen.value = false))
 
 interface Entry {
   label: string
@@ -38,14 +84,18 @@ interface Entry {
  * 还能撑，加了子列表之后必定漏 —— 表现是"侧栏里有这个页面，⌘K 搜不到"，
  * 而用户只会觉得是 bug。
  *
- * `flattenNav()` 展开顶层 + 全部子项，所以子页面也能被搜到。
+ * `flattenNavForRole()` 展开顶层 + 全部子项**并按当前角色过滤** ——
+ * 不过滤的话 ⌘K 会搜出一个守卫不让进的页面（`/knowledge`），
+ * 点进去被弹回来，用户只会觉得是 bug。
  */
-const routes: Entry[] = flattenNav().map((leaf) => ({
-  label: leaf.label,
-  hint: leaf.hint,
-  icon: leaf.icon,
-  run: () => router.push(leaf.to),
-}))
+const routes = computed<Entry[]>(() =>
+  flattenNavForRole(auth.role).map((leaf) => ({
+    label: leaf.label,
+    hint: leaf.hint,
+    icon: leaf.icon,
+    run: () => router.push(leaf.to),
+  })),
+)
 
 const entries = computed<Entry[]>(() => {
   const q = query.value.trim().toLowerCase()
@@ -55,7 +105,7 @@ const entries = computed<Entry[]>(() => {
     icon: 'clock',
     run: () => router.push(t.route),
   }))
-  const all = [...routes, ...recent]
+  const all = [...routes.value, ...recent]
   if (!q) return all
   return all.filter(
     (e) => e.label.toLowerCase().includes(q) || e.hint.toLowerCase().includes(q),
@@ -106,8 +156,14 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+  document.addEventListener('mousedown', onDocMouseDown)
+})
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('mousedown', onDocMouseDown)
+})
 </script>
 
 <template>
@@ -168,23 +224,91 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         </span>
       </button>
 
-      <!-- 头像下拉 → 打开「系统信息」面板。
-           设计稿这里是个人菜单，但 M1 认证是主动跳过的（见 UsersView），
-           做不出真的账号菜单。与其摆一个假的"退出登录"，不如让这个
-           交互指向一个真有内容的东西。 -->
-      <button
-        class="flex items-center gap-2 rounded-xl border border-transparent py-1 pl-2 pr-1.5 transition-colors hover:border-warm-border hover:bg-white"
-        type="button"
-        title="系统信息"
-        @click="showInfo()"
-      >
-        <span
-          class="flex h-8 w-8 items-center justify-center rounded-full bg-botanical-light text-[11px] font-bold text-botanical ring-1 ring-warm-border"
+      <!-- 头像 → 「我的账号」下拉。
+           ⚠️ 这段注释原来是「M1 认证是主动跳过的，做不出真的账号菜单」——
+           那个决定已于 2026-09-23 反转（见需求文档 V2.4 修订说明第一节），
+           现在这里是真的账号菜单：显示身份、进用户管理、退出登录。 -->
+      <div ref="accountRef" class="relative">
+        <button
+          class="flex items-center gap-2 rounded-xl border border-transparent py-1 pl-2 pr-1.5 transition-colors hover:border-warm-border hover:bg-white"
+          type="button"
+          :title="auth.displayName || '账号'"
+          :aria-expanded="menuOpen"
+          @click="menuOpen = !menuOpen"
         >
-          QY
-        </span>
-        <AppIcon name="caret-down" :size="18" class="text-wood-muted" />
-      </button>
+          <span
+            class="flex h-8 w-8 items-center justify-center rounded-full bg-botanical-light text-[12px] font-bold text-botanical ring-1 ring-warm-border"
+          >
+            {{ auth.user?.avatar_text || 'QY' }}
+          </span>
+          <AppIcon name="caret-down" :size="18" class="text-wood-muted" />
+        </button>
+
+        <div
+          v-if="menuOpen"
+          class="absolute right-0 top-[calc(100%+6px)] z-50 w-60 overflow-hidden rounded-xl border border-warm-border bg-white shadow-lg"
+        >
+          <div class="border-b border-warm-border bg-warm-sidebar/60 px-3.5 py-3">
+            <div class="truncate text-[13px] font-semibold text-wood-dark">
+              {{ auth.displayName }}
+            </div>
+            <div class="mt-0.5 truncate text-[11px] text-wood-muted">
+              {{ auth.user?.title }} · {{ auth.user?.role_label }}
+              <template v-if="auth.user && !auth.isUnlimited">
+                · {{ auth.membership === 'paid' ? '会员' : '免费版' }}
+              </template>
+              <template v-else> · 不限量</template>
+            </div>
+          </div>
+
+          <div class="p-1.5">
+            <!--
+              ⚠️ 菜单里这两项的可见性与侧栏一致（`config/nav.ts` 是唯一真源）：
+              **账号管理只有管理员有，个人中心人人都有**。
+              这里省略 nav 的过滤逻辑直接写 `auth.isAdmin` 是可以的 ——
+              但两项的 label/icon 必须与 nav.ts 对齐，否则同一个页面在
+              侧栏叫一个名字、在头像菜单里叫另一个名字。
+            -->
+            <button
+              v-if="auth.isAdmin"
+              class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] font-medium text-wood-dark transition-colors hover:bg-botanical-light/60"
+              type="button"
+              @click="go('/admin/users')"
+            >
+              <AppIcon name="users" :size="16" class="text-wood-muted" />
+              账号管理
+              <span class="ml-auto text-[10px] text-wood-muted/70">仅管理员</span>
+            </button>
+            <button
+              class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] font-medium text-wood-dark transition-colors hover:bg-botanical-light/60"
+              type="button"
+              @click="go('/me')"
+            >
+              <AppIcon name="user-circle" :size="16" class="text-wood-muted" />
+              个人中心
+              <span class="ml-auto text-[10px] text-wood-muted/70">我的套餐与设备</span>
+            </button>
+            <button
+              class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] font-medium text-wood-dark transition-colors hover:bg-botanical-light/60"
+              type="button"
+              @click="openSystemInfo"
+            >
+              <AppIcon name="info" :size="16" class="text-wood-muted" />
+              系统信息
+              <span class="ml-auto text-[10px] text-wood-muted/70">连接与依赖</span>
+            </button>
+            <div class="my-1.5 h-px bg-warm-border" />
+            <button
+              class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] font-medium text-accent-red transition-colors hover:bg-accent-red/5"
+              type="button"
+              @click="logout"
+            >
+              <AppIcon name="arrow-left" :size="16" />
+              退出登录
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ── ⌘K 面板 ── -->

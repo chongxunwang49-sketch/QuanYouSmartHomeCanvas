@@ -25,6 +25,7 @@ import pytest
 
 from backend.app.api import store as layout_store
 from backend.app.api.tasks import get_task_manager, reset_task_manager
+from backend.app.core import auth
 from backend.app.graph import workflow
 from backend.app.main import create_app
 
@@ -268,6 +269,133 @@ class TestBusinessErrors:
         assert body["code"] == 4001
         assert "cheap" in body["msg"]
         assert "economy" in body["data"]["allowed_budget_grades"]
+
+
+# ══════════════════════════════════════════════════════════════════
+# AC-19 材料偏好
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestMaterialPreferences:
+    """
+    材料偏好的**请求期**校验。
+
+    这批用例守的不是"能不能拒绝"，而是**拒绝得够不够早**：
+    材料目录里 `door` / `cabinet` 在 economy 档只有一件全友商品、没有竞品，
+    所以"排除全友"会让那一档的两个品类无货可挑。晚一步发现的话，
+    要么任务已经跑完 A-02 诊断与九路并发（40 秒 + 一次额度）才炸，
+    要么更糟 —— 那套方案照出，只是静默少一行。
+    """
+
+    async def test_排除全友被拒且不消耗额度(self):
+        """
+        ⚠️ 这条的重点是**额度**。
+
+        `consume_quota` 在原来的实现里排在参数校验之后；把材料偏好校验
+        插到它**后面**，用户就会为一个注定失败的请求付出一次额度。
+        所以这里直接读 Redis 里的原始计数来断言"没扣"。
+        """
+        await _reset_quota("vip")
+        await layout_store.save("layout_ok", FULL_LAYOUT)
+        vip = next(u for u in auth.users() if u.username == "vip")
+        before = await _quota_counter(vip.id)
+
+        async with await _client_with("vip") as c:
+            body = (await c.post("/api/v1/design/generate", json={
+                "layout_id": "layout_ok", "excluded_brands": ["全友"],
+            })).json()
+
+        assert body["code"] == 4001
+        codes = {p["code"] for p in body["data"]["problems"]}
+        assert "quanyou_excluded" in codes
+        # 拒绝必须可操作：告诉用户允许哪些品牌，以及替代做法
+        assert "全友" in body["data"]["allowed_brands"]
+        assert "preferred_brands" in body["msg"]
+
+        after = await _quota_counter(vip.id)
+        if before is not None and after is not None:
+            assert after == before, (
+                f"被 4001 拒绝的请求不该消耗额度：{before} → {after}"
+            )
+
+    async def test_排除到某档位无货可挑被拒(self):
+        """
+        `door` / `cabinet` 在经济档只有一件全友商品。排除全友之后
+        那一档两个品类全空 —— 而这**只在 economy 档发生**，
+        medium 档每个品类都还有竞品。这种"只有一套方案不对"最难发现，
+        所以消息里必须带上档位。
+        """
+        await layout_store.save("layout_ok", FULL_LAYOUT)
+        async with await _client() as c:
+            body = (await c.post("/api/v1/design/generate", json={
+                "layout_id": "layout_ok", "excluded_brands": ["全友"],
+            })).json()
+        empty = next(p for p in body["data"]["problems"] if p["code"] == "empty_pool")
+        assert "economy 档" in empty["message"]
+
+    async def test_未知品类被拒并列出允许值(self):
+        await layout_store.save("layout_ok", FULL_LAYOUT)
+        async with await _client() as c:
+            body = (await c.post("/api/v1/design/generate", json={
+                "layout_id": "layout_ok", "excluded_categories": ["ceiling"],
+            })).json()
+        assert body["code"] == 4001
+        assert body["data"]["problems"][0]["code"] == "unknown_category"
+        assert {c["key"] for c in body["data"]["allowed_categories"]} >= {"floor", "tile"}
+
+    async def test_自相矛盾的偏好被拒(self):
+        await layout_store.save("layout_ok", FULL_LAYOUT)
+        async with await _client() as c:
+            body = (await c.post("/api/v1/design/generate", json={
+                "layout_id": "layout_ok",
+                "excluded_brands": ["立邦"], "preferred_brands": ["立邦"],
+            })).json()
+        assert body["code"] == 4001
+        assert body["data"]["problems"][0]["code"] == "contradictory_brand"
+
+    async def test_合法偏好能建任务(self):
+        """控制项：校验不能把正常的偏好也拦掉。"""
+        await _reset_quota("vip")
+        await layout_store.save("layout_ok", FULL_LAYOUT)
+        async with await _client_with("vip") as c:
+            body = (await c.post("/api/v1/design/generate", json={
+                "layout_id": "layout_ok",
+                "excluded_categories": ["lighting"],
+                "excluded_brands": ["立邦"],
+                "preferred_brands": ["东鹏"],
+            })).json()
+        assert body["code"] == 0, body
+        assert body["data"]["task_id"]
+
+
+class TestMaterialOptions:
+    async def test_返回目录里的品类与品牌(self):
+        """
+        前端**不硬编码**清单，所以这个接口是它的唯一来源。
+        两边对不上就会导致"界面显示一个后端不认的品类，勾了被 4001 退回"。
+        """
+        from backend.app.services.material import catalog
+
+        async with await _client() as c:
+            body = (await c.get("/api/v1/material/options")).json()
+        assert body["code"] == 0
+        d = body["data"]
+
+        assert [x["key"] for x in d["categories"]] == [
+            x["key"] for x in catalog.categories()
+        ]
+        assert d["brands"] == sorted({p.brand for p in catalog.all_products()})
+        assert d["quanyou_brand"] == "全友"
+
+    async def test_常量与代码同源(self):
+        """界面上的 60% 底线不能写死 —— 后端调门槛时界面要跟着动。"""
+        from backend.app.services.material import catalog
+
+        async with await _client() as c:
+            d = (await c.get("/api/v1/material/options")).json()["data"]
+        assert d["constants"]["min_quanyou_coverage"] == catalog.MIN_QUANYOU_COVERAGE
+        assert d["constants"]["quanyou_preference_bonus"] == catalog.QUANYOU_PREFERENCE_BONUS
+        assert d["constants"]["preferred_brand_bonus"] == catalog.PREFERRED_BRAND_BONUS
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -523,43 +651,153 @@ class TestBackgroundExecution:
 
 
 class TestGracefulShutdown:
-    async def test_停机取消在飞任务(self):
-        """ADR-13：停机时要能取消在飞任务，且任务落到终态而非悬着。"""
-        tm = get_task_manager()
+    """
+    ⚠️ **这组在 2026-09-24 按 AC-31 的新口径重写过。**
 
-        class _SlowGraph:
+    原口径是 ADR-13 的"停机时取消在飞任务"，断言 `rec.status == "failed"`。
+    实测证明那个口径会留下 `processing` 的悬挂记录（`_run` 的 CancelledError
+    分支当时不写 Redis），于是口径反转成：**停机不打断任何任务，
+    等它们自然跑完，超期的写入终态后退出。**
+
+    所以下面第一条断言的**方向是反的**：以前要求"被取消成 failed"，
+    现在要求"跑完并正常交付"。这不是把测试改松，是把测试改成对着
+    新契约。
+    """
+
+    @staticmethod
+    def _install_graph(monkeypatch, *, seconds: float, final: dict | None = None):
+        """装一个"跑 seconds 秒后正常结束"的假图。"""
+        import backend.app.api.tasks as tasks_mod
+
+        class _Graph:
             async def astream_events(self, state, cfg, version=None):
-                await asyncio.sleep(30)   # 模拟长跑
+                await asyncio.sleep(seconds)
                 yield {"event": "on_chain_start", "name": "parse_layout"}
 
             async def aget_state(self, cfg):
                 class _S:
-                    values: dict = {}
+                    values = final or {}
                 return _S()
 
-        import backend.app.api.tasks as tasks_mod
+        monkeypatch.setattr(tasks_mod, "get_compiled_graph", lambda stages: _Graph())
 
-        original = tasks_mod.get_compiled_graph
-        tasks_mod.get_compiled_graph = lambda stages: _SlowGraph()  # type: ignore
-        try:
-            rec = tm.create("parse")
-            from backend.app.graph.state import initial_state
+    async def test_停机等任务自然跑完并正常交付(self, monkeypatch):
+        """
+        AC-31 的验收本体：**收到停机信号时，在飞任务不被打断。**
 
-            tm.start(rec, initial_state(task_id=rec.task_id), stages="parse")
-            await asyncio.sleep(0.05)
-            assert tm.list_running() == [rec.task_id]
+        假图 0.3 秒跑完，停机上限给 5 秒 —— 结果必须是 `completed`，
+        而不是"被取消"。这就是"150s 内跑完则正常交付"那条的小尺寸版本。
+        """
+        from backend.app.graph.state import initial_state
 
-            await tm.shutdown(timeout=3)
-            assert tm.list_running() == []
-            assert rec.status == "failed"
-        finally:
-            tasks_mod.get_compiled_graph = original  # type: ignore
+        tm = get_task_manager()
+        self._install_graph(monkeypatch, seconds=0.3,
+                            final={"layout_id": "layout_stop", "degraded": False})
+
+        rec = tm.create("parse", user_id=1)
+        tm.start(rec, initial_state(task_id=rec.task_id), stages="parse")
+        await asyncio.sleep(0.05)
+        assert tm.list_running() == [rec.task_id], "任务应当已经在跑"
+
+        await tm.shutdown(timeout=5)
+
+        assert rec.status == "completed", (
+            f"停机把在飞任务打断了（status={rec.status}）—— "
+            f"新口径是「等在飞任务自然结束」，不是取消它"
+        )
+        assert rec.cancelled is False
+        assert tm.list_running() == []
+
+    async def test_超期未完成的任务写入终态后再退出(self, monkeypatch):
+        """
+        150s 到点仍没跑完的：**先记账，再退出。**
+
+        这不是替用户做决定，是进程退出前的记账义务 ——
+        退出时不允许存在 `processing` 的悬挂记录（AC-31 原文）。
+        """
+        from backend.app.graph.state import initial_state
+
+        tm = get_task_manager()
+        self._install_graph(monkeypatch, seconds=30)   # 远超过期限
+
+        rec = tm.create("parse", user_id=1)
+        tm.start(rec, initial_state(task_id=rec.task_id), stages="parse")
+        await asyncio.sleep(0.05)
+
+        await tm.shutdown(timeout=1)
+
+        assert rec.status == "failed"
+        assert rec.cancelled is False, "停机不是用户中断，措辞不能混"
+        assert "停机" in rec.error, f"停机原因要写清，实际是 {rec.error!r}"
+        # 关键：阶段停在断点上，不是"done"（done 的文案是"完成"）
+        assert rec.phase != "done"
+        assert tm.list_running() == []
+
+    async def test_停机后不留pending状态的记录(self, monkeypatch):
+        """退出前不允许存在 processing 的悬挂记录 —— 逐条查一遍。"""
+        from backend.app.graph.state import initial_state
+
+        tm = get_task_manager()
+        self._install_graph(monkeypatch, seconds=30)
+        recs = [tm.create("parse", user_id=1) for _ in range(3)]
+        for r in recs:
+            tm.start(r, initial_state(task_id=r.task_id), stages="parse")
+        await asyncio.sleep(0.05)
+
+        await tm.shutdown(timeout=1)
+
+        hanging = [r.task_id for r in recs if r.status in ("pending", "processing")]
+        assert not hanging, f"这些记录悬着没落终态：{hanging}"
 
     async def test_停机后拒绝新任务(self):
         tm = get_task_manager()
         await tm.shutdown(timeout=1)
         with pytest.raises(RuntimeError, match="停机"):
             tm.create("parse")
+
+    async def test_终态已记过时done回调不再改写(self):
+        """
+        ⚠️ **`_on_done` 在"任务被取消"时也会触发** —— 而取消的两种来路
+        （用户按中断 / 停机超期）都已经由 `_finalize` 写好了措辞更有信息量的
+        原因。这个回调原来会无条件把它覆盖成笼统的"任务被取消（服务停机）"，
+        而且**它不写 Redis** —— 内存与 Redis 的 `error` 当场就不一致，
+        界面显示哪一句取决于 Redis 在不在。
+
+        实测就是靠这条发现的：`shutdown` 那条路径的措辞在测试里看到的是
+        `_finalize` 写的，加一条日志才发现中间被覆盖过一次。
+
+        ⚠️ **预置的原因必须与 `_on_done` 会写的那句不同**，否则这条测试
+        分辨不出来 —— 第一版用的是 `CANCEL_REASON_SHUTDOWN`，而回调在
+        取消态下写的恰好也是它，于是去掉保护照样绿（变异测试发现的）。
+        这里用"用户中断"：那正是真实路径上会被覆盖掉的那一句。
+        """
+        import contextlib
+
+        from backend.app.api.tasks import CANCEL_REASON_USER
+
+        async def _sleeper():
+            await asyncio.sleep(10)
+
+        handle = asyncio.create_task(_sleeper())
+        await asyncio.sleep(0)
+        handle.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await handle
+        assert handle.cancelled(), "测试前提：这个 handle 得是取消态"
+
+        tm = get_task_manager()
+        rec = tm.create("parse", user_id=1)
+        rec.status = "failed"
+        rec.error = CANCEL_REASON_USER
+        rec.phase = "analyzing"
+
+        tm._on_done(rec, handle)
+
+        assert rec.error == CANCEL_REASON_USER, (
+            f"原因被 done 回调覆盖成了 {rec.error!r} —— "
+            f"用户自己按的中断会被说成服务停机，而且内存与 Redis 各说一句"
+        )
+        assert rec.phase == "analyzing", "阶段要停在断点上"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -634,14 +872,25 @@ class TestPhaseWording:
         # 最关键的一条：不能说"在生成方案"
         assert "方案" not in PHASE_TEXT[phase]
 
-    def test_方案链内的审查仍然说生成方案(self):
-        """同一个节点在 generate 语境下不该被改成"审查报价单"。"""
+    def test_方案链内的审查是复核方案而不是生成方案(self):
+        """
+        同一个节点在 generate 语境下要说"正在复核方案风险…"。
+
+        ⚠️ 它曾经也映射到 `planning`（"正在生成装修方案…"）。合并的后果不是
+        文案不准，而是**进度模型没法给两段工作不同的权重** —— 方案链上
+        `planning` 这一段里既有九路并发出方案（21 秒），又有 A-06 复核风险
+        （82 秒），合成一个阶段名之后那 82 秒在进度条上无处安放。
+        拆开是 2026-09-24 做的，起因是用户反馈"进度条不说明问题，
+        我只看到已等待时间"。
+        """
         from backend.app.api.tasks import _phase_for
         from backend.app.core.redis_client import PHASE_TEXT
 
         phase = _phase_for("review_risks", "generate")
-        assert phase == "planning"
-        assert PHASE_TEXT[phase] == "正在生成装修方案…"
+        assert phase == "checking_risks"
+        assert PHASE_TEXT[phase] == "正在复核方案风险…"
+        # 也不能被改成"审查报价单" —— 用户面前没有报价单
+        assert "报价单" not in PHASE_TEXT[phase]
 
     def test_每个节点的每个任务类型都有文案(self):
         """
@@ -649,23 +898,78 @@ class TestPhaseWording:
         那种情况下 `PHASE_TEXT.get(phase, phase)` 会把英文 key 原样吐给前端，
         而需求文档明确告诉前端"不必自己维护映射表"，前端没有任何机会发现。
         """
-        from backend.app.api.tasks import _NODE_PHASE, _phase_for
+        from backend.app.api.tasks import _NODE_PHASE, _REVIEW_PHASE, _phase_for
         from backend.app.core.redis_client import PHASE_TEXT
 
-        for node in _NODE_PHASE:
-            for kind in ("parse", "generate", "review"):
+        nodes = set(_NODE_PHASE) | {"review_risks"}
+        for node in nodes:
+            for kind in set(_REVIEW_PHASE) | {"parse", "generate", "review"}:
                 phase = _phase_for(node, kind)  # type: ignore[arg-type]
                 if phase is None:
                     continue
                 assert phase in PHASE_TEXT, f"{node}/{kind} -> 未登记阶段 {phase!r}"
                 assert PHASE_TEXT[phase].strip(), f"{phase} 文案为空"
 
-    def test_阶段都有进度参考值(self):
-        """`PHASE_PROGRESS` 缺项时前端进度条会跳回 0，比不动更让人困惑。"""
-        from backend.app.core.redis_client import PHASE_PROGRESS, PHASE_TEXT
+    def test_每个任务类型的每个阶段都算得出进度(self):
+        """
+        ⚠️ 这条守的是用户 2026-09-24 报的那个问题：**方案链的进度条会倒着走。**
 
-        missing = [p for p in PHASE_TEXT if p not in PHASE_PROGRESS]
-        assert not missing, f"以下阶段没有 progress 参考值：{missing}"
+        原来只有一张全局 `PHASE_PROGRESS`，它是照解析链路写的。而方案链的
+        第一个节点映射到 `diagnosing` = 85 —— 于是界面一上来冲到 85%，
+        然后倒回 `planning` 的 60%，再爬到 95%。用户看到进度条先涨后退，
+        得出的结论是"这进度是假的"，之后就不再看了。
+
+        所以这里**按任务类型**把整条链走一遍，断言单调不回退。
+        """
+        from backend.app.api.tasks import _NODE_PHASE, _phase_for
+        from backend.app.core.progress import STEPS, progress_at
+
+        for kind, steps in STEPS.items():
+            seen: list[tuple[str, int]] = []
+            for node in _NODE_PHASE:
+                phase = _phase_for(node, kind)  # type: ignore[arg-type]
+                if phase is None or not any(s.phase == phase for s in steps):
+                    continue
+                value = progress_at(kind, phase)
+                assert value is not None, f"{kind}/{phase} 算不出进度"
+                if seen and seen[-1][0] == phase:
+                    continue          # 同一阶段被多个节点触发，跳过重复
+                seen.append((phase, value))
+
+            values = [v for _, v in seen]
+            assert values == sorted(values), (
+                f"{kind} 链路的进度回退了：{seen} —— "
+                f"用户会看到进度条先涨后退，然后不再相信它"
+            )
+
+    def test_没有只活在词汇表里的阶段(self):
+        """
+        ⚠️ **每个阶段都必须被某条链真的用到。**
+
+        这条守的是一个真实存在过的谎：`PHASE_TEXT` 里有
+        `detecting_rooms`（"正在识别房间…"，progress 40）和
+        `extracting_dimensions`（"正在提取尺寸与朝向…"，progress 65），
+        需求文档 2.2.4 的表格里也列着 —— 但**没有任何代码产出过它们**。
+        它们描述的"边解析边吐子阶段"从来没被实现，A-01 是一次调用返回整份户型。
+
+        留在词汇表里的代价是实打实的：进度模型必须为两个永不发生的阶段
+        留位置，而"某个阶段没有进度值"这件事在界面上表现为进度条跳回 0。
+        2026-09-24 连同文档的表格一起删掉了。
+        """
+        from backend.app.core.progress import PHASE_TEXT, STEPS, progress_at
+
+        used = {s.phase for steps in STEPS.values() for s in steps}
+        # done / degraded 是终态，由 runner 直接写，不属于任何一条阶段序列
+        used |= {"done", "degraded"}
+
+        orphans = sorted(p for p in PHASE_TEXT if p not in used)
+        assert not orphans, (
+            f"以下阶段有文案、却没有任何链路会用到：{orphans} —— "
+            f"界面上永远不会出现它们，但进度模型得一直为它们留着位置"
+        )
+        for kind, steps in STEPS.items():
+            for step in steps:
+                assert progress_at(kind, step.phase) is not None
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -695,51 +999,61 @@ class TestProgressIsReported:
         tm = get_task_manager()
         rec = tm.create("parse", trace_id="t-progress")
 
-        from backend.app.core.redis_client import PHASE_PROGRESS, TaskProgressStore
+        from backend.app.core.progress import progress_at
+        from backend.app.core.redis_client import TaskProgressStore
 
         store = TaskProgressStore(None)          # 模拟 Redis 不可用
         for phase in ("prechecking", "analyzing", "diagnosing"):
             await tm._write(rec, store, phase=phase, status="processing")
-            assert rec.progress == PHASE_PROGRESS[phase], (
+            assert rec.progress == progress_at("parse", phase), (
                 f"阶段 {phase} 之后 progress 是 {rec.progress}，"
-                f"应当是 {PHASE_PROGRESS[phase]} —— 进度条会钉在 0"
+                f"应当是 {progress_at('parse', phase)} —— 进度条会钉在 0"
             )
 
     async def test_进度单调不减(self):
         """倒着走会让进度条往回缩，比停在 0 更让人困惑。"""
         tm = get_task_manager()
-        rec = tm.create("parse", trace_id="t-mono")
+        rec = tm.create("generate", trace_id="t-mono")
+        from backend.app.core.progress import STEPS
         from backend.app.core.redis_client import TaskProgressStore
 
         store = TaskProgressStore(None)
         seen = []
-        for phase in ("queued", "prechecking", "analyzing", "detecting_rooms",
-                      "extracting_dimensions", "diagnosing", "finalizing", "done"):
-            await tm._write(rec, store, phase=phase, status="processing")
+        for step in STEPS["generate"]:
+            await tm._write(rec, store, phase=step.phase, status="processing")
             seen.append(rec.progress)
+        await tm._write(rec, store, phase="done", status="completed")
+        seen.append(rec.progress)
+
         assert seen == sorted(seen), f"进度回退了：{seen}"
         assert seen[-1] == 100
 
-    async def test_失败时进度不会假装走完(self):
+    async def test_失败时进度停在断点上(self):
         """
-        失败要把 phase 落成 `done`（链路走完了），但**进度不该显示 100%**。
+        失败**不该显示 100%**，而应当停在它真正断掉的那一步。
 
-        ⚠️ 这里只断言后端的语义；前端另有一条（PhaseProgress 的
-        `headline`）负责不把 `done` 显示成"完成"。
+        ⚠️ 这条以前是"失败把 phase 落成 `done`，但进度不该显示 100%" ——
+        一个自相矛盾的断言：`done` 在模型里就是 100。当时的测试只能断言
+        `progress >= mid`（等于什么都没断言），因为它要的行为和它记录的行为
+        是反的。
+
+        现在 runner 失败时**保留当前阶段**，于是进度天然停在断点上，
+        界面也能说清"走到了哪一步断的"。
         """
         tm = get_task_manager()
         rec = tm.create("parse", trace_id="t-fail")
+        from backend.app.core.progress import progress_at
         from backend.app.core.redis_client import TaskProgressStore
 
         store = TaskProgressStore(None)
         await tm._write(rec, store, phase="analyzing", status="processing")
         mid = rec.progress
-        await tm._write(rec, store, phase="done", status="failed", error="boom")
+        assert mid == progress_at("parse", "analyzing")
+        await tm._write(rec, store, phase=rec.phase, status="failed", error="boom")
 
         assert rec.status == "failed"
         assert rec.error == "boom"
-        # 后端如实把它记成"阶段走完"，界面**不能**据此显示成功
-        assert rec.progress >= mid
+        assert rec.progress == mid, "失败时进度应当停在断点，不前进也不倒退"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -775,8 +1089,86 @@ async def _reset_quota(username: str) -> None:
     await client.delete(*keys)
 
 
+async def _quota_counter(user_id: int, kind: str = "generate") -> int | None:
+    """
+    读额度的**原始计数**。Redis 不可用返回 None。
+
+    ⚠️ 为什么要绕过接口直接读：`QuotaResult.degraded` 是**单次调用**的属性，
+    没有任何接口能回答"刚才那几次里有没有哪一次降级了"。
+    而"计入次数"与"放行次数"对不上，正是**有请求走了降级路径**的可观测证据。
+    """
+    from datetime import date
+
+    from backend.app.core.config import settings
+    from backend.app.core.redis_client import get_redis
+
+    client = await get_redis().client()
+    if client is None:
+        return None
+    try:
+        raw = await client.get(
+            f"{settings.REDIS_QUOTA_PREFIX}:{kind}:{user_id}:{date.today().isoformat()}"
+        )
+    except Exception:  # noqa: BLE001
+        # ⚠️ 这里**必须吞掉**。它本来只负责"读一个数"，读不到就返回 None 让
+        #    调用方走 skip —— 而实测中 Redis 恰恰是在负载下超时的
+        #    （`redis.exceptions.TimeoutError: Timeout reading from localhost:6379`）。
+        #    不吞的话，这个辅助函数自己会抛出来变成一条看不出所以然的红。
+        return None
+    return int(raw or 0)
+
+
+def _assert_quota_counted(codes: list[int], before: int | None, after: int | None) -> None:
+    """
+    放行了几次，计数就该涨几次。**对不上就跳过，并把真因写出来。**
+
+    ⚠️ 这段是 2026-09-23 实测定位后补的。不加的话失败信息会骗人：
+
+    `RedisClient.check_and_consume_quota` 在 Redis 报错时返回
+    `allowed=True, degraded=True` —— 额度**放行且不计数**。于是
+    `assert codes[limit] == 4006` 会报出一个 `assert 0 == 4006`，
+    读起来像"配额逻辑写错了"。
+
+    实测证据（`pytest tests/test_api.py -s`）：
+        告警  [quota] Redis 不可用，本次未计数即放行：user=vip task=generate  ×2
+        快照  before=0 after=2 codes=[0, 0, 0, 0] limit=3
+        异常  redis.exceptions.TimeoutError: Timeout reading from localhost:6379
+
+    真因链：接口用例会真的起图任务（`generate` fan-out 九路并发 Agent），
+    这些协程在用例结束后仍在事件循环里打转、把 Redis 往返挤过
+    `socket_timeout`，额度于是走降级路径。**触发条件是负载，与权限逻辑无关**；
+    单独跑这条用例 100% 通过。已在 HEAD 上用 `git worktree` 跑过对照，
+    同样失败 —— 改动之前就有。
+
+    为什么是 `skip` 而不是 `assert`：
+    **配额上限的语义已经有确定性的单元覆盖** ——
+    `tests/test_redis_client.py::TestQuotaRules`（上限取值、按用户隔离、
+    parse/generate 分桶、超限回滚、peek 不消耗）在不起图任务的前提下验证。
+    所以这里只是"顺带在 HTTP 层再确认一遍"，环境不配合时**如实跳过**，
+    而不是报一条指向错误方向的失败。
+    """
+    allowed = sum(1 for c in codes if c == 0)
+    if before is None or after is None:
+        pytest.skip("本机 Redis 不可用（或往返超时），额度走降级放行 —— 本轮测不到配额上限")
+    if after - before != allowed:
+        pytest.skip(
+            f"额度计数与放行次数对不上：放行 {allowed} 次，计数只涨了 {after - before} 次"
+            f"（before={before} after={after} codes={codes}）。"
+            f"含义：有请求走了 Redis 降级路径（放行且不计数），本轮测不到配额上限。"
+            f"这不是配额逻辑的错误 —— 上限语义见 tests/test_redis_client.py::TestQuotaRules。"
+        )
+
+
 class TestAuthGate:
-    """三层门控里**接口层**那一层 —— 真正拦得住 curl 的那层。"""
+    """
+    三层门控里**接口层**那一层 —— 真正拦得住 curl 的那层。
+
+    ⚠️ **放行的那几条用例必须带 `stub_graph`。**
+    它们只关心返回的业务码，却会真的起一个图任务（`generate` fan-out 九路）；
+    那些协程在用例结束后继续占着事件循环，把 Redis 往返挤过 `socket_timeout`，
+    于是额度走降级放行 —— 表现为**别的用例**偶发失败（详见 `_assert_quota_counted`）。
+    用桩图之后既不跑真图，也不再留残渣。
+    """
 
     async def test_未登录不能解析(self):
         async with await _client_with(None) as c:
@@ -863,12 +1255,14 @@ class TestAuthGate:
         limit = settings.QUOTA_USER_GENERATE_PER_DAY
         assert limit and limit > 0, "普通用户档必须有配额，否则这条用例没意义"
 
+        before = await _quota_counter(vip.id)
         async with await _client_with("vip") as c:
             codes = []
             for _ in range(limit + 1):
                 r = await c.post("/api/v1/design/generate",
                                  json={"layout_id": "layout_ok"})
                 codes.append(r.json()["code"])
+        _assert_quota_counted(codes, before, await _quota_counter(vip.id))
 
         assert codes[:limit] == [0] * limit, f"前 {limit} 次应当放行，实际 {codes}"
         assert codes[limit] == 4006, f"第 {limit + 1} 次应当被额度拦住，实际 {codes}"
@@ -880,11 +1274,16 @@ class TestAuthGate:
 
         from backend.app.core.config import settings
 
+        vip = next(u for u in auth.users() if u.username == "vip")
+        before = await _quota_counter(vip.id)
         async with await _client_with("vip") as c:
             body = {}
+            codes = []
             for _ in range(settings.QUOTA_USER_GENERATE_PER_DAY + 1):
                 body = (await c.post("/api/v1/design/generate",
                                      json={"layout_id": "layout_ok"})).json()
+                codes.append(body["code"])
+        _assert_quota_counted(codes, before, await _quota_counter(vip.id))
 
         assert body["code"] == 4006
         d = body["data"]

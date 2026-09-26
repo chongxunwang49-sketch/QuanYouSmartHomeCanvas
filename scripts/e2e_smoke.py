@@ -17,6 +17,7 @@ fan-out 的并发行为、以及 A-03 的房间对齐在真实输出上是否有
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 import time
 from pathlib import Path
@@ -90,12 +91,16 @@ async def main() -> int:
         return 2
 
     if len(sys.argv) > 1:
+        # 用户给的图：按 AC-02 的门槛（≥4 间）
+        expected_rooms = 4
         image_path = Path(sys.argv[1])
         if not image_path.exists():
             print(f"✗ 图片不存在: {image_path}")
             return 2
     else:
         image_path = make_floor_plan(ROOT / "logs" / "e2e_floor_plan.png")
+        # 合成图只画了 3 间（外墙 + 两道隔墙），期望值跟着它走
+        expected_rooms = 3
         print(f"已生成合成户型图: {image_path}")
 
     part = ImagePart.from_path(str(image_path))
@@ -291,9 +296,135 @@ async def main() -> int:
     print(f"  degraded   : {out.get('degraded')}")
     print(f"  错误       : {len(out.get('errors') or [])} 条")
 
-    ok = bool(plans) and not out.get("errors")
+    # ── 验收清单（AC-15）──
+    passed, total = checklist(out, expected_rooms=expected_rooms)
+    banner(f"验收清单：{passed}/{total}")
+    ok = passed == total
     print(f"\n  {'✓ 链路通过' if ok else '✗ 链路存在问题'}")
     return 0 if ok else 1
+
+
+#: AC-15 的判据。每条都是对**真实产物**的断言，不是"跑完没报错"。
+#: 之所以列这么多条，是因为"整条链跑通了"这句话本身没有信息量 ——
+#: 三套方案里有一套没出预算、审查结论全是编造的引用，链路照样"跑通"。
+def checklist(out: dict, *, expected_rooms: int = 4) -> tuple[int, int]:
+    """
+    逐条检查黄金路径的产物。返回 (通过数, 总数)。
+
+    ⚠️ 每一条都对应需求文档里的一个验收项（编号写在描述里），
+    这样"20/20"就不是一个自报的数字，而是能指回契约的结论。
+    """
+    layout = out.get("layout") or {}
+    diag = out.get("diagnosis") or {}
+    plans = out.get("plans") or []
+    comp = out.get("comparison") or {}
+    errors = out.get("errors") or []
+
+    def has_plan_field(field: str) -> bool:
+        return bool(plans) and all(p.get(field) for p in plans)
+
+    def budget_of(p: dict) -> dict:
+        return p.get("budget") or {}
+
+    def materials_of(p: dict) -> dict:
+        return p.get("materials") or {}
+
+    findings = [f for p in plans for f in ((p.get("risks") or {}).get("findings") or [])]
+
+    # ⚠️ 每条都带一句**可读的证据**，失败时打印出来。
+    #    没有它，一条 ✗ 只会让人再去重跑一遍找原因 —— 而这整条链要两分钟。
+    checks: list[tuple[str, bool, str]] = [
+        # ⚠️ 期望值要跟输入走：内置合成图只画了 3 间（外墙 + 两道隔墙），
+        #    拿 AC-02 给真实户型图定的"≥4 间"去卡它，红的是这条判据而不是系统。
+        #    真实图片走 AC-02 的门槛。
+        (f"AC-02 解析出 ≥{expected_rooms} 个房间",
+         len(layout.get("rooms") or []) >= expected_rooms,
+         f"实际识别 {len(layout.get('rooms') or [])} 个房间"),
+        ("AC-02 识别到墙体", bool(layout.get("walls")),
+         f"墙体 {len(layout.get('walls') or [])} 段"),
+        ("AC-02 识别到门窗", bool(layout.get("windows")) and bool(layout.get("doors")),
+         f"窗 {len(layout.get('windows') or [])} / 门 {len(layout.get('doors') or [])}"),
+        ("AC-02 有总面积且 > 0", (layout.get("total_area") or 0) > 0,
+         f"total_area={layout.get('total_area')}"),
+        ("AC-03 诊断含五个维度",
+         all(diag.get(k) for k in ("lighting", "ventilation", "circulation",
+                                   "space_utilization", "green_score")),
+         f"缺失维度 {[k for k in ('lighting','ventilation','circulation','space_utilization','green_score') if not diag.get(k)]}"),
+        ("AC-03 诊断带置信度", diag.get("confidence") is not None,
+         f"confidence={diag.get('confidence')}"),
+        ("AC-04 三套方案全部产出", len(plans) == 3, f"实际 {len(plans)} 套"),
+        ("AC-04 每套都有空间规划", has_plan_field("space_plan"),
+         f"缺空间规划的方案 {[p['plan_id'] for p in plans if not p.get('space_plan')]}"),
+        ("AC-05 每套都有预算", has_plan_field("budget"),
+         f"缺预算的方案 {[p['plan_id'] for p in plans if not p.get('budget')]}"),
+        ("AC-05 预算分项 ≥ 7",
+         bool(plans) and all(len(budget_of(p).get("lines") or []) >= 7 for p in plans),
+         f"各方案分项数 {[len(budget_of(p).get('lines') or []) for p in plans]}"),
+        ("AC-05 预算由规则引擎算（非 LLM）",
+         bool(plans) and all("rule" in str(budget_of(p).get("computed_by", "")).lower()
+                             for p in plans),
+         f"computed_by={[budget_of(p).get('computed_by') for p in plans]}"),
+        ("AC-05 预算上下限合理",
+         bool(plans) and all(0 < budget_of(p).get("total_min", 0)
+                             < budget_of(p).get("total_max", 0) for p in plans),
+         f"区间 {[(budget_of(p).get('total_min'), budget_of(p).get('total_max')) for p in plans]}"),
+        ("AC-18 每套都有选材且报告覆盖率",
+         bool(plans) and all(materials_of(p).get("quanyou_coverage") is not None
+                             for p in plans),
+         f"覆盖率 {[materials_of(p).get('quanyou_coverage') for p in plans]}"),
+        ("AC-18 没有幻觉商品",
+         bool(plans) and all(not materials_of(p).get("invented_products")
+                             for p in plans),
+         f"幻觉商品 {[materials_of(p).get('invented_products') for p in plans]}"),
+        ("AC-06 每套都有避坑审查", has_plan_field("risks"),
+         f"缺审查的方案 {[p['plan_id'] for p in plans if not p.get('risks')]}"),
+        # ⚠️ **不能要求"每条结论都有出处"。**
+        #    本项目的设计是：结论允许没有出处，但**必须显式标出来**
+        #    （`no_citation` / `data_gaps`，界面也会提示"本次没有可引用依据"）。
+        #    要求 100% 带出处会把"如实报告依据不足"判成失败 —— 那等于逼着
+        #    系统去编引用，与 AC-06 的本意正好相反。
+        #    所以分两条：① RAG 真的用上了（至少一条带出处）；
+        #              ② 没有出处的那些**被算出来了**（不是被悄悄放过）。
+        ("AC-06 审查真的用上了知识库（至少一条带出处）",
+         any(f.get("has_source") for f in findings),
+         f"共 {len(findings)} 条结论，带出处 {sum(1 for f in findings if f.get('has_source'))} 条"),
+        ("AC-06 识别 ≥5 类风险（ac06_met）",
+         bool(plans) and all((p.get("risks") or {}).get("ac06_met") for p in plans),
+         f"各类风险数 {[(p.get('risks') or {}).get('distinct_type_count') for p in plans]}"),
+        # ⚠️ 这条查的是**诚实性**，不是"有没有问题"：
+        #    结论允许没有出处（常识性提醒本来就没有依据），但**必须被报出来**。
+        #    原来那版要求"每条都有出处"，等于逼系统去编引用 —— 与 AC-06 相反。
+        ("AC-06 无出处/编造引用被如实写进 data_gaps",
+         bool(plans) and all(
+             # 没有出处的结论 → 必须有一条 data_gap 说明
+             (not [f for f in ((p.get("risks") or {}).get("findings") or [])
+                   if not f.get("has_source")])
+             or any("没有知识库依据" in g
+                    for g in ((p.get("risks") or {}).get("data_gaps") or []))
+             for p in plans),
+         f"无出处结论数 {[sum(1 for f in ((p.get('risks') or {}).get('findings') or []) if not f.get('has_source')) for p in plans]}；"
+         f"对应 data_gaps {[[g[:28] for g in ((p.get('risks') or {}).get('data_gaps') or []) if '没有知识库依据' in g] for p in plans]}"),
+        ("AC-20 每套都有环境风险（甲醛/TVOC）",
+         bool(plans) and all((p.get("environment") or {}).get("formaldehyde")
+                             for p in plans),
+         f"缺环境评估的方案 {[p['plan_id'] for p in plans if not (p.get('environment') or {}).get('formaldehyde')]}"),
+        ("AC-20 环境结论不带浓度数字",
+         not any(u in json.dumps([p.get("environment") for p in plans],
+                                 ensure_ascii=False)
+                 for u in ("mg/m", "ppm", "µg", "μg")),
+         "输出里出现了浓度单位"),
+        ("AC-04 对比表可用且行数对得上",
+         bool(comp.get("available")) and len(comp.get("rows") or []) == len(plans),
+         f"available={comp.get('available')} 行数={len(comp.get('rows') or [])}/{len(plans)}"),
+        ("AC-17 链路无错误条目", not errors, f"errors={[e.get('message','')[:60] for e in errors]}"),
+    ]
+
+    for name, ok, detail in checks:
+        mark = "✓" if ok else "✗"
+        print(f"  {mark} {name}")
+        if not ok:
+            print(f"      ↳ {detail}")
+    return sum(1 for _, ok, _ in checks if ok), len(checks)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 
 import type { WalkableData } from '../api'
+import type { Action } from './keys'
 import {
   DEFAULT_HFOV_DEG,
   MAX_HFOV_DEG,
@@ -30,6 +31,25 @@ import {
  * 不行就只走 X、再不行只走 Z。效果是贴着墙滑行，实现只有几行。
  *
  * ══════════════════════════════════════════════════════════════════
+ * ⚠️ 世界位移 → 图纸位移**只做一次**（这里踩过镜像级的坑）
+ * ══════════════════════════════════════════════════════════════════
+ * `planToEngine` 把图纸 y 映射到 **-z**（见 `coords.ts`），所以世界位移
+ * `(dx, dz)` 对应图纸位移 `(dx, -dz)`。**那个负号是必须的。**
+ *
+ * 初版把这个换算只写在**行走**分支里，自由视角分支直接
+ * `this.py += dz` —— 自由视角下 WASD 全部沿图纸 y 轴反了：按 W 后退、
+ * 按 A 往右。而且**只在自由视角下错**，切到行走就正常，所以看起来
+ * 像"按键随机失灵"。
+ *
+ * 藏得深的原因：自由视角是**穿墙**的，撞墙滑行那套反馈根本不会触发，
+ * 没有"撞墙"这种外部信号能提示方向反了。而演示图的解析结果有
+ * 一半判定为"不可行走"（实测 6 次解析 3 次），也就是**打开就是自由视角** ——
+ * 用户第一次进来看到的正好是错的那一半。
+ *
+ * 现在的写法是：换算提在分支**之前**算一次，两个分支共用 `planDx/planDz`。
+ * 两份实现迟早分叉，而这一处的分叉就是上面那个 bug。
+ *
+ * ══════════════════════════════════════════════════════════════════
  * 子步进：防止穿墙
  * ══════════════════════════════════════════════════════════════════
  * 一帧的位移必须切成小步走。虽然按 60fps、2.5m/s 算单帧只有 4cm，
@@ -51,15 +71,43 @@ const LOOK_SENSITIVITY = 0.0022
 /** 俯仰角上下限。±85° 而不是 ±90° —— 到 90° 时 up 向量与视线共线，画面会翻滚。 */
 const PITCH_LIMIT = (85 * Math.PI) / 180
 
-export interface RigInput {
-  forward: boolean
-  back: boolean
-  left: boolean
-  right: boolean
-  up: boolean
-  down: boolean
-  run: boolean
-}
+/**
+ * ══════════════════════════════════════════════════════════════════
+ * 自由视角是**默认**视角，它的起点是"看格局"，不是"站在地上"
+ * ══════════════════════════════════════════════════════════════════
+ * 需求方 2026-09-26 定的：自由视角当默认。
+ *
+ * 起因是实测 —— 同一张演示图解析 6 次，只有 **3 次**判定"可贴地行走"
+ * （可达率 33%~56%，从未超过 56%，见 `logs/walkable-distribution.json`）。
+ * 也就是说"打开就是自由视角"是**常态而不是异常**，而原来的界面把它
+ * 当成失败来措辞（"后端判定不可行走" + 一屏 issue），并且把相机放在
+ * 房间里的 1.6m 高度、朝房间纵深看 —— **在那个机位上什么都看不出来**：
+ * 需求方原话是"启动飞行模式就是为了在高处看格局"。
+ *
+ * 所以自由视角的起点改成：**升到天花板之上、俯角看下去**。
+ * 第一帧就是整个户型，然后按 G 下到地面走。
+ */
+
+/** 自由视角起点高出天花板多少（米）。2.0m 能一眼收进整个户型。 */
+const FLY_VANTAGE_ABOVE_CEILING_M = 2.0
+/**
+ * 自由视角起点的俯角（度，正数 = 往下看）。
+ *
+ * ⚠️ 不能取 0（平视）：那个机位在房间高度上平视，看到的只有墙，
+ *    而这正是"被天花板挡住"的同一个毛病换了个方向。
+ *    也不能取太陡（-80°）：那是正俯视，读不出层高和门洞，像看平面图。
+ *    38° 兼顾"看得到整个格局"与"还看得出是三维的"。
+ */
+const FLY_VANTAGE_PITCH_DEG = 38
+
+/**
+ * 每帧喂给 `update` 的按键状态。
+ *
+ * ⚠️ 字段名与 `keys.ts` 的 `Action` 是同一个联合类型 —— **按键表是唯一
+ * 的定义处**（见 `keys.ts` 文件头）。这里写死一份字段名的话，
+ * 加一个动作就要改两处，漏一处是 `keys[action]` 恒为 undefined 的静默失败。
+ */
+export type RigInput = Record<Action, boolean>
 
 export class CameraRig {
   readonly camera: THREE.PerspectiveCamera
@@ -84,7 +132,18 @@ export class CameraRig {
   /** 当前的水平视场角（度）。用户可调 —— 见 HUD 的视野控制。 */
   private hFov = DEFAULT_HFOV_DEG
 
-  constructor(data: WalkableData, aspect: number) {
+  /**
+   * @param startMode 开局用哪个模式。**不给就沿用 `data.mode`**
+   *        （后端判定"能不能贴地行走"）。
+   *
+   * ⚠️ **调用方应当传它，别依赖默认。** 2026-09-26 需求方把自由视角定为
+   *    默认视角，而"默认用哪个"是**界面层的决定**，不该由后端那句
+   *    "这个户型的门洞够不够走路"来推。不传的后果实测过一次：
+   *    UI 上是自由视角、`rig` 里却 `colliding = true`（走在碰撞里、
+   *    停在眼高平视），两处对同一个状态各说各话 —— 而且**第一下按 G
+   *    不会切模式**（UI 从 fly 翻到 walk、rig 本来就在 walk）。
+   */
+  constructor(data: WalkableData, aspect: number, startMode?: 'walk' | 'fly') {
     this.data = data
     this.camera = new THREE.PerspectiveCamera(
       verticalFovDeg(this.hFov, aspect), aspect, 0.05, 200,
@@ -93,10 +152,28 @@ export class CameraRig {
     this.px = data.spawn.x
     this.py = data.spawn.y
     this.floorY = data.eye_height_m
-    this.flyHeight = data.eye_height_m
-    this.colliding = data.mode === 'walk'
+    this.colliding = (startMode ?? data.mode) === 'walk'
     this.yaw = this.yawFromSpawn(data.spawn.yaw_deg)
+    // 起点按模式分：行走是站在地上，自由视角是**升到天花板之上俯视**。
+    // `respawn()` 走同一套，保证按 R 回到的是"同一个起点"。
+    this.applyStartPose()
     this.syncCamera()
+  }
+
+  /**
+   * 把相机摆到当前模式的**起点**。构造函数与 `respawn()` 共用。
+   *
+   * 自由视角的起点是"看格局"（见文件头 `FLY_VANTAGE_*` 的说明）；
+   * 行走的起点是出生点、平视、眼高锁死。
+   */
+  private applyStartPose() {
+    if (this.colliding) {
+      this.flyHeight = this.floorY
+      this.pitch = 0
+      return
+    }
+    this.flyHeight = this.data.ceiling_height_m + FLY_VANTAGE_ABOVE_CEILING_M
+    this.pitch = -(FLY_VANTAGE_PITCH_DEG * Math.PI) / 180
   }
 
   /** 出生朝向：图纸的 yaw → Three 的 yaw。 */
@@ -148,9 +225,11 @@ export class CameraRig {
   respawn() {
     this.px = this.data.spawn.x
     this.py = this.data.spawn.y
-    this.flyHeight = this.data.eye_height_m
     this.yaw = this.yawFromSpawn(this.data.spawn.yaw_deg)
-    this.pitch = 0
+    // ⚠️ 起点姿态按**当前模式**算（`applyStartPose`），不能一律 `pitch = 0`：
+    //    自由视角下平视等于回到"看不到格局"的那个机位，
+    //    而按 R 的语义是"回到起点"，不是"回到一个我看不懂的地方"。
+    this.applyStartPose()
     this.syncCamera()
   }
 
@@ -166,12 +245,21 @@ export class CameraRig {
     this.syncCamera()
   }
 
-  /** 传送到某个房间的中心，并把视线朝向房间纵深方向。 */
+  /**
+   * 传送到某个房间的中心，并把视线朝向房间纵深方向。
+   *
+   * ⚠️ **自由视角下要同时把高度降到眼高。**
+   *    不然会从"天花板之上俯瞰"的那个机位瞬移到房间中心、
+   *    却仍停在空中平视 —— 看到的只有屋面和空气，
+   *    而用户按的是"快速前往 主卧"，他期待的是**站在主卧里**。
+   */
   goToRoom(roomIndex: number): boolean {
     const room = this.data.rooms.find((r) => r.index === roomIndex)
     if (!room) return false
     this.moveTo(room.center[0], room.center[1])
+    if (!this.colliding) this.flyHeight = this.data.eye_height_m
     this.pitch = 0
+    this.syncCamera()
     return true
   }
 
@@ -181,7 +269,20 @@ export class CameraRig {
    * 返回是否发生了碰撞（给 HUD 显示"贴墙"提示用）。
    */
   update(input: RigInput, dt: number): boolean {
-    // 把"前后左右"从屏幕空间转到世界空间：前 = 视线方向在水平面上的投影
+    // 把"前后左右"从屏幕空间转到世界空间：前 = 视线方向**在水平面上的投影**
+    //
+    // ══════════════════════════════════════════════════════════════
+    // ⚠️ "只取水平投影"是**有意的**，两种模式都这样
+    // ══════════════════════════════════════════════════════════════
+    // 另一种常见做法是第一人称飞行的"沿视线飞"：低头按 W 就往下钻。
+    // 这里**不那样**，理由是自由视角的用途被定成"在高处看格局"：
+    //   · 低头看户型图是默认姿态（俯角 38°，见 `FLY_VANTAGE_PITCH_DEG`），
+    //     沿视线飞的话一按 W 就往下栽，想横着挪一下都做不到
+    //   · 升/降有专门的键（Space/E 与 C/Q），W A S D 只负责水平面内移动
+    //   · 两种模式的 WASD 语义因此**完全一致** —— 切模式不用重新学
+    //
+    // 这条不变量由 `probe/rig_wasd.ts` 钉着（它会先去掉基准向量的 y 分量
+    // 再比方向，并单独断言"没按升降键时垂直位移为 0"）。
     let fx = -Math.sin(this.yaw)
     let fz = -Math.cos(this.yaw)
     // 右 = 前的右手侧（水平面内顺时针 90°）
@@ -203,30 +304,29 @@ export class CameraRig {
 
     const speed = (this.colliding ? WALK_SPEED : FLY_SPEED) *
       (input.run ? RUN_MULTIPLIER : 1)
-    let dx = mx * speed * dt
-    let dz = mz * speed * dt
+    const dx = mx * speed * dt
+    const dz = mz * speed * dt
 
-    // 垂直移动只在自由视角下有效 —— 第一人称是"贴地走"，锁死眼高
+    // ── 世界位移 → 图纸位移。**只在这里做一次**，两个分支共用（见文件头）──
+    //    dx 是 Three 的世界 x，与图纸 x 同向；dz 是世界 z，图纸 y = -世界 z。
+    const planDx = dx
+    const planDz = -dz
+
     if (!this.colliding) {
+      // 垂直移动只在自由视角下有效 —— 第一人称是"贴地走"，锁死眼高
       let dy = 0
       if (input.up) dy += FLY_SPEED * dt
       if (input.down) dy -= FLY_SPEED * dt
       this.flyHeight = Math.max(-2, Math.min(this.data.ceiling_height_m + 6, this.flyHeight + dy))
-    }
 
-    if (!this.colliding) {
       // 自由视角：不做任何碰撞判定，直接位移
-      this.px += dx
-      this.py += dz
+      this.px += planDx
+      this.py += planDz
       this.syncCamera()
       return false
     }
 
     // ── 行走：子步进 + 分轴滑行 ──
-    // ⚠️ 注意这里的 x/z 是 **Three 的世界轴**，而碰撞数据是**图纸平面**的。
-    //    图纸 y 映射到 Three 的 -z，所以世界位移 (dx, dz) 对应图纸位移 (dx, -dz)。
-    const planDx = dx
-    const planDz = -dz
     const steps = Math.max(1, Math.ceil(Math.hypot(planDx, planDz) / MAX_SUBSTEP_M))
     const sdx = planDx / steps
     const sdz = planDz / steps

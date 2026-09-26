@@ -6,7 +6,7 @@ FastAPI 应用入口。
 ═══════════════════════════════════════════════════════════════════
 这个文件只做四件事
 ═══════════════════════════════════════════════════════════════════
-1. **生命周期**：启动时校验依赖、停机时取消在飞任务（ADR-13）
+1. **生命周期**：启动时校验依赖、停机时**等在飞任务跑完**（AC-31，不打断）
 2. **trace_id 中间件**：每个请求一个 trace_id，贯穿 API → Agent → LLM → 审计日志
 3. **错误翻译**：把业务异常统一转成 HTTP 200 + `code != 0`（见 api/schemas.py）
 4. **挂路由**
@@ -27,9 +27,10 @@ from loguru import logger
 
 from .api.routes import router
 from .api.schemas import ApiError, ApiResponse
-from .api.tasks import get_task_manager
+from .api.tasks import SHUTDOWN_DRAIN_SECONDS, get_task_manager
 from .core.config import settings
-from .core.logger import with_trace_id
+from .core import metrics
+from .core.logger import setup_logging, with_trace_id
 
 #: trace_id 的请求头名。前端/网关传入则沿用，便于跨服务串联。
 TRACE_HEADER = "X-Trace-Id"
@@ -40,12 +41,30 @@ async def lifespan(app: FastAPI):
     """
     启动与停机。
 
-    停机这段是 ADR-13 的落地：**先停止接收新任务，再取消在飞的**。
-    顺序反过来的话，停机过程中新到的请求仍会创建任务，而那些任务没人管 ——
-    用户会看到一个永远停在 processing 的任务。
+    停机这段是 **AC-31** 的落地（口径于 2026-09-23 反转）：
+    **先停止接收新任务，再等已在飞的自然跑完，不主动打断。**
+    先停新任务这一步不能省 —— 反过来的话，停机过程中新到的请求
+    仍会创建任务，而那些任务没人管，用户会看到一个永远停在
+    processing 的任务。
+
+    为什么不再主动取消（`handle.cancel()`）：实测它会把任务留在
+    `processing` 上（`_run` 的 CancelledError 分支当时不写 Redis），
+    界面永远"正在分析图片…"。取消权现在归用户，见 `api/tasks.py`。
     """
+    # ⚠️ **必须是启动后第一件事。**
+    #
+    # `setup_logging` 有幂等保护（进程内只生效一次），所以谁先调谁定终身：
+    # 在它之前发生的日志不会进审计文件。放在这里之前打过任何一行日志，
+    # 那一行就只在控制台上，事后查不到。
+    #
+    # ⚠️ 这里也是 AC-14 唯一被激活的地方。此前 `log_dir` 参数**全项目
+    # 无一处传过** —— 分支写好了、注释标着"供审计（AC-14）"，
+    # 而审计文件一个都没产生过。测试里有"文件真的产生了"的用例守着。
+    setup_logging(log_dir=settings.LOG_DIR, level=settings.LOG_LEVEL)
+
     logger.info("═" * 60)
     logger.info("全友·智绘家 后端启动中…")
+    logger.info(f"审计日志目录：{settings.LOG_DIR}")
 
     # 关键配置体检。**只告警不阻断** —— 缺 key 时本地 Ollama 还能兜底，
     # 起不来比"降级运行"更糟（整个演示都做不了）。
@@ -65,19 +84,99 @@ async def lifespan(app: FastAPI):
     except Exception as e:  # noqa: BLE001
         logger.warning(f"知识库检查失败：{type(e).__name__}: {e}")
 
+    # ── AC-12：先建持久化检查点，再接管上次没跑完的任务 ──
+    # ⚠️ 顺序不能反：`resume_orphans` 要靠检查点才能判断"续不续得了"，
+    #    检查点没建好时它会把所有悬挂记录都判成"无可恢复"并落成失败 ——
+    #    那会**误杀**掉本来能救回来的任务。
+    from .graph.workflow import setup_checkpointer, teardown_checkpointer
+
+    await setup_checkpointer()
+    resumed = await get_task_manager().resume_orphans()
+    if resumed:
+        logger.warning(f"启动接管：处理了 {resumed} 个上次未完成的任务")
+
+    # ── 业务数据落库（户型 / 方案 / 审计）────────────────────
+    #
+    # ⚠️ **不在这里建表。** 建表是部署动作，由 `scripts/init_db.py` 负责，
+    #    结果落进 `schema_migrations`。应用启动时顺手 CREATE TABLE 看起来
+    #    方便，代价是"表是谁建的、什么时候建的、建的是哪个版本"再也说不清 ——
+    #    而容器里跑的应用通常连 DDL 权限都不该有。
+    #    这里只**检查**：表在不在，不在就告警并说明怎么修。
+    #
+    # ⚠️ 起不来的立场与 Redis 相同：库不通**不停机**。业务数据退回
+    #    内存 + Redis（TTL 1 小时），也就是落库之前的行为。
+    #    "库挂了整个演示做不了"比"库挂了回到旧行为"糟得多。
+    try:
+        from .db import audit_sink, migrations, pool
+
+        if not settings.ENABLE_DB:
+            logger.info("业务落库已关闭（ENABLE_DB=false），户型与方案只进内存 + Redis")
+        elif await pool.is_available():
+            done = await migrations.applied()
+            if not done:
+                logger.warning(
+                    "数据库已连接，但业务表不存在 —— 户型与方案将无法持久化。"
+                    "**在宿主机**执行 `python scripts/init_db.py` 建表"
+                    "（PG 端口已映射到 127.0.0.1:5432，宿主机脚本连得上）。"
+                    "⚠️ 容器里没有这个脚本，而且这是有意的：应用镜像不该带 "
+                    "DDL 能力，建表是部署动作不是运行时动作。"
+                )
+            else:
+                logger.info(f"业务表就绪（迁移版本：{', '.join(sorted(done))}）")
+            # 审计的后台刷盘任务在这里启动。**只在库可用时启动** ——
+            # 库不通时它每 2 秒醒一次、每批都失败并打一条 warning，
+            # 那不是"尽力而为"，那是刷屏。
+            await audit_sink.start()
+        else:
+            logger.warning(
+                "数据库连接不可用 —— 户型与方案只进内存 + Redis（重启即失）。"
+                f"检查 POSTGRES_HOST={settings.POSTGRES_HOST} 与 `docker compose ps`。"
+            )
+    except Exception as e:  # noqa: BLE001 —— 落库检查失败不该让服务起不来
+        logger.warning(f"落库初始化检查失败（忽略）：{type(e).__name__}: {e}")
+
     logger.info(f"服务就绪，端口 {settings.BACKEND_PORT}")
     logger.info("═" * 60)
 
     yield
 
     logger.info("收到停机信号，开始优雅停机…")
-    await get_task_manager().shutdown()
+    # ⚠️ 检索线程池要**先收**：池线程是非 daemon 的，解释器退出时会 join，
+    #    而一次检索的超时上限是 180 秒 —— 不主动收，停机就可能被它拖住。
+    #    放在任务取消之前，是因为在飞的任务正等着检索返回。
+    try:
+        from .services.knowledge.retriever import shutdown_retrieval_pool
+
+        shutdown_retrieval_pool()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"检索线程池回收失败（不影响停机）：{type(e).__name__}: {e}")
+
+    # ⚠️ 停机上限 150s 是 `TaskManager.shutdown` 的默认值（AC-31），
+    #    配套 `docker-compose.yml` 的 `stop_grace_period: 180s` ——
+    #    后者必须**大于**前者，否则 Docker 的硬杀照样发生，等于没做。
+    #    这里显式写出来，好让"改停机预算"这件事只有一个明显的入口。
+    await get_task_manager().shutdown(timeout=SHUTDOWN_DRAIN_SECONDS)
+    # ⚠️ 检查点要在任务**之后**关：排空期间在飞任务还在写检查点。
+    await teardown_checkpointer()
     try:
         from .core.redis_client import get_redis
 
         await get_redis().close()
     except Exception as e:  # noqa: BLE001
         logger.warning(f"关闭 Redis 连接失败（忽略）：{type(e).__name__}: {e}")
+
+    # ⚠️ 审计刷盘要在**任务排空之后**：排空期间任务会写终态审计事件，
+    #    先停刷盘等于把最后那几条丢掉。丢掉的恰好是"这次停机前排空了
+    #    几个任务"这类最想查的记录。
+    # ⚠️ 连接池最后关：审计刷盘、以及任务排空期间的户型/方案落库都要用它。
+    try:
+        from .db import audit_sink, pool
+
+        await audit_sink.stop()
+        await pool.close_pool()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"落库资源回收失败（忽略）：{type(e).__name__}: {e}")
+
     logger.info("已停机")
 
 
@@ -96,7 +195,7 @@ def create_app() -> FastAPI:
 
     # ── CORS ──────────────────────────────────────────────
     # 前端是本地起的 Vue dev server，端口不定，所以开发期放开。
-    # ⚠️ 需求文档 5.5 的部署约束是「端口一律绑 127.0.0.1，全部演示在本地完成」，
+    # ⚠️ 需求文档 10.6 的部署约束是「端口一律绑 127.0.0.1，全部演示在本地完成」，
     # 所以这里放开 CORS 不会造成公网暴露 —— 服务本身就不对外。
     app.add_middleware(
         CORSMiddleware,
@@ -137,6 +236,9 @@ def create_app() -> FastAPI:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         response.headers[TRACE_HEADER] = trace_id
         response.headers["X-Elapsed-Ms"] = str(elapsed_ms)
+        # 记进进程内环形缓冲，供 /system/metrics 报 P95（AC-23）。
+        # 一次 append，没有 IO —— 热路径上不能有别的动作。
+        metrics.record("http", elapsed_ms)
 
         # 演示期把慢请求记下来，便于发现"哪个接口又变慢了"
         if elapsed_ms > 3000:

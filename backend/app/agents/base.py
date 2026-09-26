@@ -194,6 +194,28 @@ class BaseAgent(abc.ABC):
     async def _call_mcp_tool(self, tool_name: str, arguments: dict[str, Any]) -> Any:
         """
         调用 MCP 工具。延迟导入以避免 mcp 未安装时影响纯 LLM Agent。
+
+        ⚠️ **当前没有任何 Agent 调用它 —— 这是有意的，不是漏了接线。**
+
+        MCP 在本项目里的定位是**对外的工具面**（外部宿主 / 脚本按协议调用
+        本仓的三个工具），不是内部流水线的调用方式。理由是量出来的：
+
+            进程内直接调用              走 MCP（起子进程 + 重载 backend）
+            预算计算   0.08 ms          1230 ms   —— 慢约 15000×
+            矢量图渲染 5.43 ms          1230 ms   —— 慢约 226×
+
+        那 1.2 秒几乎全是"起一个 Python 子进程并 import 整个 backend 包"，
+        与被调用的函数本身无关（两个工具的计算分别是微秒级和毫秒级）。
+        A-04 一次方案生成要算三份预算，改走 MCP 就是白加约 3.6 秒 ——
+        而这条链路的墙钟时间刚刚才优化过。
+
+        所以：**内部 Agent 直接调函数**（`services/budget/engine.py`、
+        `services/render/`），MCP Server 是那几个函数的**薄壳**，两边共用
+        同一个实现（`tests/test_mcp_servers.py` 里有逐字段/逐字节的反漂移断言）。
+
+        保留这个方法是因为它是"将来真有一个会挑工具的 Agent"时的接入点 ——
+        但**在那种 Agent 出现之前，它不该被使用**。要用之前请先想清楚：
+        那一次调用值得付 1.2 秒吗？
         """
         from ..core.mcp_client import get_mcp_client
 

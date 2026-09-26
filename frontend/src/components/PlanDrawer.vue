@@ -3,8 +3,27 @@ import { computed, ref, watch } from 'vue'
 
 import AppIcon from './AppIcon.vue'
 import DegradedNotice from './DegradedNotice.vue'
-import type { Plan } from '@/api/types'
+import type { HazardItem, Plan } from '@/api/types'
 import { GRADE_LABEL, SEVERITY_LABEL, STYLE_LABEL, label } from '@/api/types'
+
+/**
+ * 风险档的展示。⚠️ `unknown`（评不了）**必须与 `low` 长得不一样** ——
+ * 把"没数据"显示成绿色的"低风险"，是这个功能最容易犯、后果最重的一个错：
+ * 用户会据此认为"这套材料没问题"。
+ */
+const RISK_LABEL: Record<string, string> = {
+  low: '低风险', medium: '中风险', high: '高风险', unknown: '无法评估',
+}
+const RISK_TONE: Record<string, string> = {
+  low: 'border-botanical/30 bg-botanical-light text-botanical',
+  medium: 'border-accent-gold/40 bg-wood-light text-accent-gold',
+  high: 'border-accent-red/30 bg-accent-red/5 text-accent-red',
+  unknown: 'border-warm-border bg-warm-sidebar text-wood-muted',
+}
+const riskLabel = (item: HazardItem) =>
+  item.insufficient_data ? RISK_LABEL.unknown : (RISK_LABEL[item.risk] ?? item.risk)
+const riskTone = (item: HazardItem) =>
+  item.insufficient_data ? RISK_TONE.unknown : (RISK_TONE[item.risk] ?? RISK_TONE.unknown)
 
 /**
  * 方案深度报告抽屉。480px，从右侧滑出。

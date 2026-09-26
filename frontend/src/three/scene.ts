@@ -1,8 +1,9 @@
 import * as THREE from 'three'
 
 import type { QualityTier } from '../composables/useFrameStats'
-import type { WalkableResponse } from '../api'
+import type { FurnitureData, WalkableResponse } from '../api'
 import { planToEngine } from './coords'
+import { buildFurniture, type FurnitureHandles } from './furniture'
 
 /**
  * 从后端给的米制场景建 Three.js 场景。
@@ -39,6 +40,16 @@ const DOOR_HEIGHT_M = 2.05
 /** 门扇厚度（米）。 */
 const LEAF_THICK_M = 0.045
 const DOOR_COLOR = 0x8a6a4b
+/** 被准星选中的门扇的自发光色。暖金，和设计系统的 accent-gold 同源。 */
+const HIGHLIGHT_EMISSIVE = 0x6a4a1e
+
+/**
+ * 准星"够得着"的距离（米）。**和 `SceneViewer` 里那把门的判定同一口径。**
+ *
+ * 2.6m ≈ 门宽 0.9m 的两倍多一点 —— 站在门口一两步之内。
+ * 放太长会让"站在客厅中间按 F 开了卧室的门"，那看起来就是乱响应。
+ */
+export const DOOR_REACH_M = 2.6
 
 /**
  * 门扇的转轴与开合。
@@ -81,6 +92,8 @@ export interface DoorHandle {
   isOpen(): boolean
   /** 关着的时候，这块地方应当挡住人。返回图纸平面上的线段 */
   blockingSegment(): [[number, number], [number, number]] | null
+  /** 被准星选中时点亮。**"F 会作用在哪扇门"必须看得见** */
+  setHighlight(on: boolean): void
 }
 
 export interface SceneHandles {
@@ -92,9 +105,37 @@ export interface SceneHandles {
   bounds: { sizeX: number; sizeZ: number; height: number }
   /** 可开关的门。**默认全部打开** */
   doors: DoorHandle[]
+  /**
+   * 天花板显隐。
+   *
+   * ⚠️ **进自由视角（飞行）时调用方应当调 `false`。** 需求方原话：
+   * 「启动飞行模式就是为了在高处看格局，如果被天花板挡住了就没有任何意义」。
+   * 这是对的 —— 天花板在贴地行走时是必要的（没有它，抬头看到的是
+   * 场景背景色，不像室内），而在飞行时它恰好挡在唯一的观察方向上。
+   */
+  setCeilingVisible(v: boolean): void
+  /**
+   * **准星选门**：从画面正中射一条线，返回打中的那扇门；没打中门返回 null。
+   *
+   * 见文件里 `pickDoor` 的说明 —— 这是"两扇门贴得近时按 F 响应的不是
+   * 自己想开的那扇"的解法。
+   */
+  doorAtCrosshair(camera: THREE.Camera): DoorHandle | null
+  /** 离给定位置最近、且在 `maxDist` 之内的门。准星的退路。 */
+  nearestDoor(planPos: [number, number], maxDist: number): DoorHandle | null
 }
 
-export function buildScene(data: WalkableResponse): SceneHandles {
+/**
+ * @param data `/layout/{id}/walkable` 的返回
+ * @param furniture `/layout/{id}/furniture` 的返回。**可选** ——
+ *        家具接口拿不到时 3D 仍然要能看（空房子也比没有房子好），
+ *        所以它是可选参数而不是必填。调用方负责把"为什么没有家具"
+ *        告诉用户，不要在这里静默吞掉。
+ */
+export function buildScene(
+  data: WalkableResponse,
+  furniture?: FurnitureData | null,
+): SceneHandles {
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(0xf7f4ee)
 
@@ -151,14 +192,20 @@ export function buildScene(data: WalkableResponse): SceneHandles {
                                     DOOR_HEIGHT_M + h / 2)
     mesh.position.set(ex, DOOR_HEIGHT_M + h / 2, ez)
     mesh.rotation.y = yawAlong(d.along)
+    // ⚠️ 过梁**打上门的标记**。它是门的一部分（门框上沿），准星指着门楣
+    //    时该选中这扇门 —— 不打标记的话准星稍微抬高一点就判定为"对着墙"，
+    //    而门楣和门在同一平面上，用户看不出差别，只会觉得"对准了却没反应"。
+    mesh.userData.doorIndex = d.index
     wallGroup.add(mesh)
   }
 
   // ══════════════════════════════════════════════════════════════
   // 门扇
   // ══════════════════════════════════════════════════════════════
-  const leafMat = track(new THREE.MeshLambertMaterial({ color: DOOR_COLOR }))
+  const leafBase = track(new THREE.MeshLambertMaterial({ color: DOOR_COLOR }))
   const doors: DoorHandle[] = []
+  /** 门扇所在的分组 —— 准星射线只打这些（加上墙，用来判"中间隔着墙"）。*/
+  const doorGroups: THREE.Group[] = []
 
   for (const d of w.doors) {
     const [hx, hy] = d.hinge
@@ -173,20 +220,29 @@ export function buildScene(data: WalkableResponse): SceneHandles {
     // 所以 θ = atan2(-dz, dx)，其中 (dx,dz) 是沿墙方向在 Three 里的表示
     const base = yawAlong([axp, ayp])
 
+    // ⚠️ **门扇用自己的材质实例**（不是共享的 `leafBase`）。
+    //    高亮只能点亮一扇门 —— 共享材质的话点亮一扇等于点亮全部。
+    //    实测门只有个位数，多几个材质实例的开销可以忽略。
+    const leafMat = track(leafBase.clone())
+
     const leafGeo = track(new THREE.BoxGeometry(
       d.width_m, DOOR_HEIGHT_M, LEAF_THICK_M,
     ))
     const leaf = new THREE.Mesh(leafGeo, leafMat)
     leaf.position.set(d.width_m / 2, DOOR_HEIGHT_M / 2, 0)
+    // 门扇也打标记：准星射线从门扇上取回是哪扇门
+    leaf.userData.doorIndex = d.index
     group.add(leaf)
 
     // 门把手：一个小方块，让"这是门"一眼可见
     const knobGeo = track(new THREE.BoxGeometry(0.09, 0.09, 0.14))
-    const knob = new THREE.Mesh(knobGeo, wallMat)
+    const knob = new THREE.Mesh(knobGeo, leafMat)
     knob.position.set(d.width_m - 0.12, 1.0, 0)
+    knob.userData.doorIndex = d.index
     group.add(knob)
 
     scene.add(group)
+    doorGroups.push(group)
 
     let open = true                      // ⚠️ 默认全部打开
     const apply = (t: number) => {
@@ -203,6 +259,11 @@ export function buildScene(data: WalkableResponse): SceneHandles {
         apply(t)
       },
       isOpen: () => open,
+      setHighlight(on: boolean) {
+        // 自发光而不是换色：换色会和门本身的木色打架，也更难看出
+        // "这是选中态"还是"这扇门本来就是浅色"。
+        leafMat.emissive.setHex(on ? HIGHLIGHT_EMISSIVE : 0x000000)
+      },
       blockingSegment() {
         if (open) return null
         // 关着 → 门洞里多一段实心墙。用**碰撞中心线**那套端点，
@@ -218,12 +279,29 @@ export function buildScene(data: WalkableResponse): SceneHandles {
   // ══════════════════════════════════════════════════════════════
   // 地面 / 天花板 —— 每间房一块
   // ══════════════════════════════════════════════════════════════
+  // ── 地面色：有家具数据时用 3D 专用的 surface_floor ──────────────
+  //
+  // ⚠️ 常量 `FLOOR_COLOR` 是**兜底**（没有家具数据时）。后端的
+  //    `surface_floor` 比它深，那是刻意的：浅色地面会让浅色家具
+  //    （布艺、石面）跟地面同色 —— 实测 modern 的 fabric 对浅地面
+  //    只有 1.01:1，等于没画。地面是中调，家具才能双向对比。
+  const floorColor = (() => {
+    const hex = furniture?.surface_floor
+    if (!hex) return FLOOR_COLOR
+    const n = parseInt(hex.replace('#', ''), 16)
+    return Number.isNaN(n) ? FLOOR_COLOR : n
+  })()
+
   const floorMat = track(new THREE.MeshLambertMaterial({
-    color: FLOOR_COLOR, side: THREE.DoubleSide,
+    color: floorColor, side: THREE.DoubleSide,
   }))
   const ceilMat = track(new THREE.MeshLambertMaterial({
     color: CEILING_COLOR, side: THREE.DoubleSide,
   }))
+  // ⚠️ 天花板**单独一个分组**。它不是装饰：飞行模式要把它整体隐藏
+  //    （见 `setCeilingVisible`），散在场景里就没法一次全隐。
+  const ceilingGroup = new THREE.Group()
+  ceilingGroup.name = 'ceilings'
 
   w.rooms.forEach((room, i) => {
     const [x1, y1, x2, y2] = room.free_rect
@@ -247,8 +325,9 @@ export function buildScene(data: WalkableResponse): SceneHandles {
     const ceil = new THREE.Mesh(geo, ceilMat)
     ceil.position.set(fx, height - lift, fz)
     ceil.rotation.x = Math.PI / 2
-    scene.add(ceil)
+    ceilingGroup.add(ceil)
   })
+  scene.add(ceilingGroup)
 
   // ══════════════════════════════════════════════════════════════
   // 灯光
@@ -283,10 +362,92 @@ export function buildScene(data: WalkableResponse): SceneHandles {
   const sizeX = s.width_m
   const sizeZ = s.depth_m
 
+  // ══════════════════════════════════════════════════════════════
+  // 家具 —— 坐标全部来自后端（见 furniture.ts 的说明）
+  // ══════════════════════════════════════════════════════════════
+  let furnitureHandles: FurnitureHandles | null = null
+  if (furniture && furniture.rooms?.length) {
+    // 动态 import 会破坏 buildScene 的同步签名，而这个模块与 coords
+    // 已经同属 three 那个 chunk，静态引入不会多拉任何东西。
+    furnitureHandles = buildFurniture(furniture)
+    scene.add(furnitureHandles.group)
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // 准星选门
+  // ══════════════════════════════════════════════════════════════
+  //
+  // ⚠️ **为什么不是"离得最近的那扇"。**
+  //
+  // 需求方原话：「两个门贴的很近时按 F 会出现相应的不是自己想要响应的门」。
+  // 距离是**对称量**，人站在两扇门之间时，它根本无法表达"我想要哪一扇" ——
+  // 那 5cm 的远近差别既不是用户能感知的，也不是用户能控制的。
+  // 玩家能控制的是**看哪儿**，所以判据应该用视线，不是距离。
+  //
+  // 做法就是射击游戏的准星：从画面正中射一条线，打在门扇/门楣上的
+  // 那扇门就是目标。顺带解决了两件事：
+  //   · 隔着墙的门不会被选中（射线先撞墙）
+  //   · 门开着、门扇转到房间里时，指着门扇也知道是哪一扇
+  //
+  // ⚠️ 射线只打**门扇/门楣/墙**这三类，不打地板、家具、天花板。
+  //    打了的话，低头看地板就会命中"地板"，把门判成"准星没对准"——
+  //    而玩家低头开门是很自然的动作。
+  const raycaster = new THREE.Raycaster()
+  const SCREEN_CENTER = new THREE.Vector2(0, 0)
+  /** 命中结果里反查是哪扇门。门扇、门把手、门楣都打了 `doorIndex` 标记。 */
+  const doorByIndex = new Map<number, DoorHandle>()
+  for (const d of doors) doorByIndex.set(d.index, d)
+
+  function doorOf(obj: THREE.Object3D): DoorHandle | null {
+    let cur: THREE.Object3D | null = obj
+    while (cur) {
+      const idx = cur.userData?.doorIndex
+      if (typeof idx === 'number') return doorByIndex.get(idx) ?? null
+      cur = cur.parent
+    }
+    return null
+  }
+
+  function doorAtCrosshair(camera: THREE.Camera): DoorHandle | null {
+    // 相机这一帧已经挪过位置（`rig.syncCamera()`），而 `matrixWorld` 是
+    // 上一帧渲染时更新的。不刷的话射线起点差一帧的距离 —— 近距离开门时
+    // 那点差别足够让射线从门缝里穿过去。
+    camera.updateMatrixWorld()
+    raycaster.setFromCamera(SCREEN_CENTER, camera)
+    raycaster.far = DOOR_REACH_M
+
+    // 墙也要一起打：**先撞到墙就说明中间隔着墙**，这时不算"够得着"。
+    // 结果按距离排序，所以取第一个命中项判定即可。
+    const hits = raycaster.intersectObjects([...doorGroups, wallGroup], true)
+    const first = hits.find((h) => h.object.visible)
+    if (!first) return null
+    return doorOf(first.object)
+  }
+
+  function nearestDoor(planPos: [number, number], maxDist: number): DoorHandle | null {
+    let best: DoorHandle | null = null
+    let bestD = maxDist
+    for (const d of doors) {
+      const dist = Math.hypot(d.planPos[0] - planPos[0], d.planPos[1] - planPos[1])
+      if (dist <= bestD) {
+        bestD = dist
+        best = d
+      }
+    }
+    return best
+  }
+
+  function setCeilingVisible(v: boolean) {
+    ceilingGroup.visible = v
+  }
+
   return {
     scene,
     applyTier,
     doors,
+    setCeilingVisible,
+    doorAtCrosshair,
+    nearestDoor,
     bounds: { sizeX, sizeZ, height },
     dispose() {
       for (const d of disposables) d.dispose()

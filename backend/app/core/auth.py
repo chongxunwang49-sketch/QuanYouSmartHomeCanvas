@@ -12,7 +12,7 @@
 而不是假装它是一个可以直接上线的认证层。
 
 ══════════════════════════════════════════════════════════════════════
-三处与需求文档 2.3.2 的有意偏离（都在代码里标注，不改文档）
+三处与需求文档 11.3.2 的有意偏离（都在代码里标注，不改文档）
 ══════════════════════════════════════════════════════════════════════
  ① **令牌是自己实现的 HS256，不是 python-jose / pyjwt。**
     项目 requirements.txt 明确不装这两个包（见该文件【C】段）。
@@ -64,7 +64,7 @@ _PASSWORD_NAMESPACE = "quanyou-smart-homecanvas-demo"
 #: 令牌有效期。12 小时 —— 演示当天不用重复登录。
 TOKEN_TTL_SECONDS = 12 * 3600
 
-#: 角色。与需求文档 2.2.7 的三级模型一致。
+#: 角色。与需求文档 11.2.7 的三级模型一致。
 ROLE_ADMIN = "admin"
 ROLE_DESIGNER = "designer"
 ROLE_USER = "user"
@@ -123,7 +123,7 @@ class User:
         """
         是否不受额度限制。
 
-        依据需求文档 2.2.7：**admin 与 designer 都不限量**，
+        依据需求文档 11.2.7：**admin 与 designer 都不限量**，
         只有 `user` 受每日配额约束。这与
         `core/redis_client.py` 的 `_role_limit()` 是同一个判断 ——
         两处必须一致，`tests/test_auth.py` 有断言钉着。
@@ -151,6 +151,9 @@ class User:
             "membership": self.membership,
             "is_unlimited": self.is_unlimited,
             "can_use_paid_features": self.can_use_paid_features,
+            # 封禁 / 启用。**必须给前端** —— 管理页要显示"已停用"，
+            # 否则被封的账号在表里和正常账号长得一样，管理员看不出自己做了什么。
+            "is_active": self.is_active,
         }
 
 
@@ -160,22 +163,138 @@ def _raw_users() -> list[dict[str, Any]]:
     return json.loads(path.read_text(encoding="utf-8"))["users"]
 
 
+#: 运行期改动的落盘位置。
+#:
+#: ⚠️ **刻意不写回 `seed_data/users.json`。** 那是**入库的种子文件**，
+#: 演示时点一下"开通会员"就会在工作区留下未提交改动，下一次
+#: `git status` 看到一片脏文件 —— 而它其实不是代码变更。
+#: `data/` 在 `.gitignore` 里，演示怎么折腾都不影响仓库。
+OVERRIDE_PATH: Path = PROJECT_ROOT / "data" / "users_override.json"
+
+
+@lru_cache(maxsize=1)
+def _overrides() -> dict[int, dict[str, str]]:
+    """
+    读取运行期覆盖。**只覆盖 `role` / `membership` / `is_active`**，
+    不覆盖口令与身份信息。
+
+    文件损坏、不存在、格式不对一律**当作"没有覆盖"**并告警 ——
+    这些东西不该让登录整个挂掉。宁可回到种子数据，也不要一个打不开的门。
+    """
+    try:
+        raw = json.loads(OVERRIDE_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[auth] 读取 {OVERRIDE_PATH.name} 失败，按无覆盖处理：{type(e).__name__}: {e}")
+        return {}
+
+    out: dict[int, dict[str, str]] = {}
+    if not isinstance(raw, dict):
+        return {}
+    for key, val in raw.items():
+        if not isinstance(val, dict):
+            continue
+        try:
+            uid = int(key)
+        except (TypeError, ValueError):
+            continue
+        out[uid] = {str(k): str(v) for k, v in val.items()}
+    return out
+
+
+def _as_bool(text: str, default: bool) -> bool:
+    """覆盖文件里存的是字符串。认不出来的值**回落到默认**而不是当成 False ——
+    把 `"yes"` 之类误判成"停用"会让一个账号莫名其妙登不进来。"""
+    low = (text or "").strip().lower()
+    if low in ("1", "true", "yes", "on"):
+        return True
+    if low in ("0", "false", "no", "off"):
+        return False
+    return default
+
+
+def reset_user_cache() -> None:
+    """丢弃用户缓存。**改完用户必须调它**，否则旧角色会一直被认到进程结束。"""
+    _overrides.cache_clear()
+    _raw_users.cache_clear()
+
+
+def _to_user(raw: dict[str, Any]) -> User:
+    """种子条目 + 运行期覆盖 → `User`。覆盖只认 role / membership / is_active。"""
+    uid = int(raw["id"])
+    ov = _overrides().get(uid, {})
+    seed_active = bool(raw.get("is_active", True))
+    return User(
+        id=uid,
+        username=str(raw["username"]),
+        display_name=str(raw.get("display_name") or raw["username"]),
+        title=str(raw.get("title") or ""),
+        avatar_text=str(raw.get("avatar_text") or raw["username"][:1]),
+        role=ov.get("role", str(raw["role"])),
+        membership=ov.get("membership", str(raw["membership"])),
+        is_active=_as_bool(ov["is_active"], seed_active) if "is_active" in ov else seed_active,
+    )
+
+
 def users() -> tuple[User, ...]:
-    out: list[User] = []
-    for raw in _raw_users():
-        out.append(
-            User(
-                id=int(raw["id"]),
-                username=str(raw["username"]),
-                display_name=str(raw.get("display_name") or raw["username"]),
-                title=str(raw.get("title") or ""),
-                avatar_text=str(raw.get("avatar_text") or raw["username"][:1]),
-                role=str(raw["role"]),
-                membership=str(raw["membership"]),
-                is_active=bool(raw.get("is_active", True)),
-            )
-        )
-    return tuple(out)
+    """
+    全部账号（种子 + 运行期覆盖）。
+
+    ⚠️ **覆盖是在这里合并的，不是在 `_raw_users()` 里** —— 后者是种子文件的
+    原样缓存，把覆盖混进去会让"写入 + 清缓存"变成一场竞态：
+    清了一半的缓存会读到一个既不是种子、也不是最终值的中间态。
+    分开之后每次 `users()` 都是当前真值，`reset_user_cache()` 一把清干净。
+    """
+    return tuple(_to_user(raw) for raw in _raw_users())
+
+
+def set_user_role(user_id: int, role: str) -> User:
+    """改角色。取值非法抛 `ValueError`（API 层转成 4001）。"""
+    if role not in ROLES:
+        raise ValueError(f"角色取值不合法：{role}；允许 {list(ROLES)}")
+    return _write_override(user_id, "role", role)
+
+
+def set_user_active(user_id: int, active: bool) -> User:
+    """启用 / 封禁一个账号。被封禁的账号**登不进来**（`verify_credentials` 会返回 None）。"""
+    return _write_override(user_id, "is_active", "true" if active else "false")
+
+
+def set_user_membership(user_id: int, membership: str) -> User:
+    """改会员档位。取值非法抛 `ValueError`。"""
+    if membership not in MEMBERSHIPS:
+        raise ValueError(f"档位取值不合法：{membership}；允许 {list(MEMBERSHIPS)}")
+    return _write_override(user_id, "membership", membership)
+
+
+def _write_override(user_id: int, field: str, value: str) -> User:
+    """
+    写一条覆盖并落盘。
+
+    ⚠️ **每次都重新读一遍文件再改**，而不是拿 `_overrides()` 的缓存去改 ——
+    缓存是"我这个进程看到的"，文件是"大家看到的"。演示时同时开了
+    两个终端改同一个账号的话，基于缓存写回会把对方的改动抹掉。
+    """
+    if find_by_id(user_id) is None:
+        raise ValueError(f"用户不存在：id={user_id}")
+
+    # 从磁盘读最新，绕开缓存
+    _overrides.cache_clear()
+    merged = {str(k): dict(v) for k, v in _overrides().items()}
+    merged.setdefault(str(user_id), {})[field] = value
+
+    OVERRIDE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # 先写临时文件再替换：中途崩溃不会留下半个 JSON（那会让所有人登录失败）
+    tmp = OVERRIDE_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(OVERRIDE_PATH)
+
+    reset_user_cache()
+    user = find_by_id(user_id)
+    assert user is not None  # 上面已校验存在性；这里只为让类型收敛
+    logger.info(f"[auth] 用户改动 id={user_id} {field}={value}（已落盘 {OVERRIDE_PATH.name}）")
+    return user
 
 
 def find_by_username(username: str) -> User | None:
@@ -189,6 +308,126 @@ def find_by_id(user_id: int) -> User | None:
 
 def _hash_password(password: str, salt: str) -> str:
     return hashlib.sha256((_PASSWORD_NAMESPACE + salt + password).encode("utf-8")).hexdigest()
+
+
+# ══════════════════════════════════════════════════════════════════
+# 登录设备（个人中心）
+# ══════════════════════════════════════════════════════════════════
+#
+# ⚠️ **用词要准：这是"从登录请求推断出来的设备"，不是密码学意义的设备绑定。**
+#    没有指纹、没有证书、没有二次验证 —— 依据只有 User-Agent 与来源 IP。
+#    两者都可以被伪造，所以它**只用于"我自己看看有哪些地方登录过"**，
+#    不构成任何访问控制。界面上也必须这么写。
+#
+#    之所以还要做：个人中心如果只有"账号名 + 会员情况"两行，页面会空得
+#    像没做完（用户明确说过"清新不代表空洞"）。登录记录是**真实可查**的
+#    一个信息，比摆几行编出来的"绑定设备：iPhone 15 Pro"诚实得多。
+
+#: 设备记录的落盘位置。与 `users_override.json` 同理，放 `data/`（已 gitignore）。
+LOGIN_RECORD_PATH: Path = PROJECT_ROOT / "data" / "login_records.json"
+
+#: 每个账号最多保留多少台设备。超出的按"最近登录"淘汰 ——
+#: 演示机上来来回回登录，不设上限文件会一直长。
+MAX_DEVICES_PER_USER = 10
+
+_BROWSERS = (
+    ("Edg", "Edge"),
+    ("OPR", "Opera"),
+    ("Chrome", "Chrome"),
+    ("Firefox", "Firefox"),
+    ("Safari", "Safari"),
+)
+
+
+def describe_device(user_agent: str) -> str:
+    """
+    从 User-Agent 里抽一个人看得懂的设备名。**是启发式，不保证准确。**
+
+    刻意只做"浏览器 · 系统"这一层，不做型号识别：UA 里的型号字符串
+    （尤其是国产浏览器的）乱七八糟，硬解析只会得到"iPhone 15 Pro"这种
+    看起来精确其实猜的东西 —— 那正是本项目最忌讳的「看起来合理的错误」。
+
+    认不出来就如实说「未知设备」，不要编。
+    """
+    ua = user_agent or ""
+    if not ua:
+        return "未知设备"
+
+    browser = next((name for key, name in _BROWSERS if key in ua), "未知浏览器")
+
+    if "Windows" in ua:
+        os_name = "Windows"
+    elif "Android" in ua:
+        os_name = "Android"
+    elif "iPhone" in ua or "iPad" in ua:
+        os_name = "iOS"
+    elif "Mac OS X" in ua or "Macintosh" in ua:
+        os_name = "macOS"
+    elif "Linux" in ua:
+        os_name = "Linux"
+    else:
+        os_name = "未知系统"
+
+    return f"{browser} · {os_name}"
+
+
+def _device_key(user_agent: str, ip: str) -> str:
+    """同一台设备（UA + IP 相同）算一条，不重复堆记录。"""
+    return hashlib.sha256(f"{user_agent}|{ip}".encode("utf-8")).hexdigest()[:12]
+
+
+def _read_login_records() -> dict[str, Any]:
+    try:
+        raw = json.loads(LOGIN_RECORD_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[auth] 读取 {LOGIN_RECORD_PATH.name} 失败，按空处理：{type(e).__name__}: {e}")
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def record_login(user_id: int, user_agent: str, ip: str) -> None:
+    """
+    记一次登录。**失败只告警，绝不让登录本身失败** ——
+    这是个锦上添花的功能，不该成为进门的门槛。
+    """
+    try:
+        data = _read_login_records()
+        key = str(user_id)
+        devices: list[dict[str, Any]] = list(data.get(key) or [])
+        dk = _device_key(user_agent, ip)
+
+        now = time.strftime("%Y-%m-%d %H:%M:%S")
+        hit = next((d for d in devices if d.get("key") == dk), None)
+        if hit:
+            hit["last_seen"] = now
+            hit["count"] = int(hit.get("count", 1)) + 1
+        else:
+            devices.append({
+                "key": dk,
+                "name": describe_device(user_agent),
+                "ip": ip or "—",
+                "first_seen": now,
+                "last_seen": now,
+                "count": 1,
+            })
+
+        # 最近的排前面，超出上限的丢掉
+        devices.sort(key=lambda d: str(d.get("last_seen", "")), reverse=True)
+        data[key] = devices[:MAX_DEVICES_PER_USER]
+
+        LOGIN_RECORD_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = LOGIN_RECORD_PATH.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(LOGIN_RECORD_PATH)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[auth] 记录登录设备失败（不影响登录）：{type(e).__name__}: {e}")
+
+
+def login_records(user_id: int) -> list[dict[str, Any]]:
+    """某个账号的登录设备，最近的在前。"""
+    return list(_read_login_records().get(str(user_id)) or [])
 
 
 def verify_credentials(username: str, password: str) -> User | None:
@@ -215,6 +454,34 @@ def verify_credentials(username: str, password: str) -> User | None:
 
     user = find_by_id(int(raw["id"]))
     return user if (user and user.is_active) else None
+
+
+def is_disabled_account(username: str, password: str) -> bool:
+    """
+    口令**正确**、但账号被停用 —— 用来把"账号已停用"和"口令不对"区分开。
+
+    ⚠️ 两个条件缺一不可，这是个有意的安全形状：
+
+      · 只有**口令正确**才告诉他"账号被停用了" —— 说给一个口令都输错的人听，
+        等于免费告诉他"这个用户名存在"，那就是一个用户名枚举接口
+        （`auth_login` 的注释里为同一件事刻意合并了 4001 的两句话）。
+      · 但口令对了还必须**说得清楚** —— 否则被封的人会一直以为自己记错了口令，
+        反复重试到怀疑人生。演示时尤其明显：刚在管理页点了「停用」，
+        回头登录只看到"用户名或口令不正确"，会以为是自己操作错了。
+
+    这个取舍是：**已知口令的人不怕被告知账号状态**（他本来就进得去，
+    只是被管理员停了），而不知道口令的人什么也问不出来。
+    """
+    u = (username or "").strip().lower()
+    raw = next((r for r in _raw_users() if str(r["username"]).lower() == u), None)
+    if raw is None:
+        return False
+    expected = str(raw.get("password_hash") or "")
+    actual = _hash_password(password or "", str(raw.get("salt") or ""))
+    if not hmac.compare_digest(expected, actual):
+        return False
+    user = find_by_id(int(raw["id"]))
+    return bool(user and not user.is_active)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -302,9 +569,12 @@ def reset_secret_cache() -> None:
 
 
 __all__ = [
+    "LOGIN_RECORD_PATH",
+    "MAX_DEVICES_PER_USER",
     "MEMBERSHIP_FREE",
     "MEMBERSHIP_PAID",
     "MEMBERSHIPS",
+    "OVERRIDE_PATH",
     "ROLES",
     "ROLE_ADMIN",
     "ROLE_DESIGNER",
@@ -313,10 +583,18 @@ __all__ = [
     "TokenError",
     "User",
     "decode_token",
+    "describe_device",
     "find_by_id",
     "find_by_username",
+    "is_disabled_account",
     "issue_token",
+    "login_records",
+    "record_login",
     "reset_secret_cache",
+    "reset_user_cache",
+    "set_user_active",
+    "set_user_membership",
+    "set_user_role",
     "users",
     "verify_credentials",
 ]

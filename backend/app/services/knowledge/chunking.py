@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import yaml
 
@@ -33,6 +33,17 @@ MAX_CHUNK_CHARS = 1200
 
 SIZE_CHUNK = 500
 SIZE_OVERLAP = 60
+
+#: 允许的语料类型。**取值必须来自这里，不能由调用方自由填** ——
+#: `doc_type` 会进 Chroma 的 metadata，而元数据字段一旦出现自由文本，
+#: 按类型过滤就变成了"猜别人当初写了什么"。
+#: 取值与 `seed_data/references_manifest.yaml` 里在用的那几种对齐。
+DOC_TYPES: tuple[str, ...] = ("avoid_pit", "regulation", "quanyou_official")
+
+#: 单次上传的正文长度上限（字符）。约 20 万字符 ≈ 一本小册子。
+#: 再大就该走 `scripts/ingest_knowledge.py` 那条离线路径 ——
+#: 那是**同步请求**，卡在事件循环里等 embedding 会把整站的轮询一起拖住。
+MAX_UPLOAD_CHARS = 200_000
 
 
 class ManifestError(RuntimeError):
@@ -133,46 +144,77 @@ def _headings_of(text: str) -> list[str]:
     return out
 
 
-def chunk_files(files: list[dict]) -> list[dict[str, Any]]:
-    """把文件列表切成 chunk，每条带上溯源元数据。"""
-    by_header, by_size = build_splitters()
-    chunks: list[dict[str, Any]] = []
+def chunk_text(
+    text: str,
+    *,
+    source: str,
+    doc_type: str = "avoid_pit",
+    tags: Sequence[str] | None = None,
+    source_dir: str = "",
+    priority: str = "support",
+) -> list[dict[str, Any]]:
+    """
+    把**一段文本**切成 chunk，元数据形状与 `chunk_files` 完全一致。
 
+    ⚠️ 抽这个函数是**为了不出现第二套切块逻辑**。
+    `POST /knowledge/upload` 收的是一段用户上传的文本，而 `chunk_files`
+    收的是文件列表 —— 如果上传走自己写的一套切块，两边迟早分叉：
+    分块大小、标题抽取、最小长度这些参数只要有一处不一样，
+    检索出来的"来源"就不可比，而**没有任何东西会报错**。
+
+    所以切块这件事只有这一份实现：`chunk_files` 读文件后也调它。
+    """
+    if not text.strip():
+        return []
+    by_header, by_size = build_splitters()
+    out: list[dict[str, Any]] = []
+    try:
+        parts = by_header.split_text(text)
+    except Exception:  # noqa: BLE001 —— 单个文档解析失败不该中断整批
+        parts = []
+
+    for part in parts:
+        body = part.page_content if hasattr(part, "page_content") else str(part)
+        pieces = by_size.split_text(body) if len(body) > MAX_CHUNK_CHARS else [body]
+        for piece in pieces:
+            piece = piece.strip()
+            if not (MIN_CHUNK_CHARS <= len(piece)):
+                continue
+            out.append({
+                "text": piece,
+                "doc_type": doc_type,
+                "tags": list(tags or []),
+                # 标题路径 → 溯源时可读到"出自哪一节"
+                "headings": " / ".join(_headings_of(piece)),
+                "source": source,
+                "source_dir": source_dir,
+                "priority": priority,
+            })
+    return out
+
+
+def chunk_files(files: list[dict]) -> list[dict[str, Any]]:
+    """把文件列表切成 chunk，每条带上溯源元数据。**切块本身走 `chunk_text`。**"""
+    chunks: list[dict[str, Any]] = []
     for entry in files:
         try:
             text = entry["path"].read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        if not text.strip():
-            continue
-
-        try:
-            parts = by_header.split_text(text)
-        except Exception:  # noqa: BLE001 —— 单个文件解析失败不该中断整批
-            parts = []
-
-        for part in parts:
-            body = part.page_content if hasattr(part, "page_content") else str(part)
-            pieces = by_size.split_text(body) if len(body) > MAX_CHUNK_CHARS else [body]
-            for piece in pieces:
-                piece = piece.strip()
-                if not (MIN_CHUNK_CHARS <= len(piece)):
-                    continue
-                chunks.append({
-                    "text": piece,
-                    "doc_type": entry["doc_type"],
-                    "tags": entry["tags"],
-                    # 标题路径 → 溯源时可读到"出自哪一节"
-                    "headings": " / ".join(_headings_of(piece)),
-                    "source": entry["rel"],
-                    "source_dir": entry["source"],
-                    "priority": entry["priority"],
-                })
+        chunks.extend(chunk_text(
+            text,
+            source=entry["rel"],
+            doc_type=entry.get("doc_type", "avoid_pit"),
+            tags=entry.get("tags") or [],
+            source_dir=entry.get("source", ""),
+            priority=entry.get("priority", "support"),
+        ))
     return chunks
 
 
 __all__ = [
     "ManifestError", "load_manifest", "corpus_root_of", "collect_files",
-    "build_splitters", "chunk_files",
+    "build_splitters", "chunk_files", "chunk_text",
     "MIN_CHUNK_CHARS", "MAX_CHUNK_CHARS", "SIZE_CHUNK", "SIZE_OVERLAP",
+    "DOC_TYPES", "MAX_UPLOAD_CHARS",
 ]

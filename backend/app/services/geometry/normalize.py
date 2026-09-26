@@ -369,12 +369,17 @@ def derive_scale(layout: dict[str, Any]) -> ScaleEstimate:
         )
         if gap > SCALE_DISAGREEMENT_WARN:
             notes.append(
-                "⚠️ 两个来源分歧偏大，说明**原图不严格按比例绘制**或 bbox 有偏差。"
+                "⚠️ 两个来源分歧偏大，说明原图不严格按比例绘制、或 bbox 有偏差。"
                 "3D 漫游里的尺寸与实际会有出入"
             )
 
+    # ⚠️ **这些 notes 会逐条显示在界面上，里面不能写 Markdown。**
+    #    Vue 模板不解析 Markdown，`**强调**` 会**字面渲染成四个星号**。
+    #    实测踩过两次：一次是前端模板里手写的（已加契约测试），
+    #    一次是后端的 ApiError 文案里（2026-09-24 在 3D 页面的家具报错条上
+    #    看到的）。所以现在有一条测试扫后端所有用户可见文案。
     notes.append(
-        "该比例尺由 bbox 面积推导，是**近似值**：bbox 是轴对齐矩形，"
+        "该比例尺由 bbox 面积推导，是近似值：bbox 是轴对齐矩形，"
         "L 形房间会被高估、相邻房间的 bbox 会重叠"
     )
     return ScaleEstimate(px_per_m=px_per_m, source=source, notes=notes)

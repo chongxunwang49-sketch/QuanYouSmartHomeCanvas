@@ -7,7 +7,7 @@
 
 **业务错误一律走 HTTP 200 + code != 0**，不靠 HTTP 状态码表达业务失败。
 
-需求文档 4.4 明确写了这条，理由很实在：前端 axios 拦截器通常按 HTTP 状态码
+需求文档 12.4 明确写了这条，理由很实在：前端 axios 拦截器通常按 HTTP 状态码
 判断请求成败，用 4xx/5xx 表达"额度用完了""户型数据不足"这类**业务**结果，
 会被拦截器当成网络/服务错误弹出通用报错，而用户需要看到的是
 「缺少房间面积，建议重新上传更清晰的户型图」这种**可操作**的提示。
@@ -56,6 +56,7 @@ ErrorCode = Literal[
     4009,  # 任务已存在同名
     4005,  # 权限不足 / 需要开通会员（AC-01 + AC-13）
     4006,  # 超出每日额度（AC-13）
+    4007,  # 账号已被管理员停用（口令正确时才返回，见 auth.is_disabled_account）
     5001,  # 执行失败
     5002,  # 依赖不可用（Redis / 模型 / 知识库）
 ]
@@ -110,10 +111,30 @@ class GenerateRequest(BaseModel):
         default_factory=lambda: ["economy", "medium", "high"],
         description="预算档位列表，与 styles 按位置配对",
     )
-    quanyou_priority: bool = Field(default=True, description="是否优先推荐全友自有产品（AC-18）")
+    quanyou_priority: bool = Field(
+        default=True,
+        description=(
+            "同等条件下是否优先推荐全友自有产品（软偏好）。"
+            "⚠️ AC-18 的 60% 覆盖率保底是平台级要求，**不受此开关影响**"
+        ),
+    )
     requirements: dict[str, Any] = Field(
         default_factory=dict,
         description="业主需求：family_size / has_elderly / has_children / pets / smart_home / eco_level",
+    )
+    # ── AC-19 材料偏好 ────────────────────────────────────────
+    # 语义是「偏好与排除」，不是「逐件挑选」：AC-18 的覆盖率是系统的
+    # 验收指标，让用户直接把竞品挑满会让它变成一句空话。
+    # 详见 services/material/filters.py 的模块说明。
+    excluded_categories: list[str] = Field(
+        default_factory=list,
+        description="不想要的品类 key（见 GET /material/price 返回的 categories）",
+    )
+    excluded_brands: list[str] = Field(
+        default_factory=list, description="不想要的品牌。不能排除「全友」（与 AC-18 冲突，会被 4001 拒绝）",
+    )
+    preferred_brands: list[str] = Field(
+        default_factory=list, description="同等条件下优先的品牌，加分低于平台的全友优先",
     )
 
 
@@ -124,9 +145,48 @@ class ReviewRequest(BaseModel):
     requirements: dict[str, Any] = Field(default_factory=dict, description="业主需求")
 
 
+class KnowledgeUploadRequest(BaseModel):
+    """
+    4.6 知识库入库请求（2026-09-26 补齐 —— 此前只有文档里写着）。
+
+    ⚠️ **收文本，不收文件。** 这一步是有意的取舍：
+      · 收文件要处理 multipart、大小上限、编码嗅探、以及"传上来的
+        到底是 md 还是伪装成 md 的二进制" —— 而这些与业务无关。
+      · 而知识库的语料本来就是**纯文本 md**（见 `references_manifest.yaml`）。
+        让浏览器把文件读成文本再提交，前端一行 `FileReader` 就够了。
+    上限由 `MAX_UPLOAD_CHARS` 把关，超了 4001 并说明原因。
+    """
+
+    title: str = Field(description="文档标题，作为 `source` 显示在引用里")
+    text: str = Field(description="文档正文（markdown 纯文本）")
+    doc_type: str = Field(
+        default="avoid_pit",
+        description="语料类型，取值见 `services/knowledge/chunking.DOC_TYPES`",
+    )
+    tags: list[str] = Field(default_factory=list, description="标签，用于检索过滤")
+
+
+class FloorMaterialRequest(BaseModel):
+    """
+    4.3‴ 换一间房的地面材料（AC-10）。
+
+    `material_id` 传空串 = **还原**成默认房型配色。用空串而不是
+    `null` 或一个 `DELETE`：还原和替换是同一个动作的两种取值，
+    分成两个接口会让前端在两处各写一遍房间号的校验。
+    """
+
+    room_index: int = Field(description="房间下标（与地面热区的 room_index 同一个）")
+    material_id: str = Field(
+        default="",
+        description="材料目录里的 product id；空串表示还原成默认配色",
+    )
+
+
 __all__ = [
     "ApiResponse", "ApiError", "ErrorCode",
     "ParseRequest", "GenerateRequest", "ReviewRequest",
+    "KnowledgeUploadRequest",
+    "FloorMaterialRequest",
 ]
 
 
@@ -137,4 +197,27 @@ class LoginRequest(BaseModel):
     password: str = Field(description="口令")
 
 
-__all__ += ["LoginRequest"]  # type: ignore[name-defined]
+class MembershipRequest(BaseModel):
+    """自助改档位（演示用：普通用户"开通会员"）。"""
+
+    membership: str = Field(description="free 或 paid")
+
+
+class UserUpdateRequest(BaseModel):
+    """
+    管理员改**别人**的角色 / 档位 / 启用状态。
+
+    三个字段都可选，只改传了的那个。**取值校验不在这里做** —— 允许的取值
+    由 `core/auth.py` 的 `ROLES` / `MEMBERSHIPS` 定义，在那里校验才能保证
+    只有一处真源（`set_user_role` 会抛 `ValueError`，API 层转 4001）。
+
+    ⚠️ `role` 允许传，但**不允许传 `admin`** —— 这条策略在路由层拦
+    （「管理页不做管理员权限分配」是权限策略，不是领域约束）。
+    """
+
+    role: str | None = Field(default=None, description="designer / user（**不接受 admin**）")
+    membership: str | None = Field(default=None, description="free / paid")
+    is_active: bool | None = Field(default=None, description="false = 封禁（该账号将无法登录）")
+
+
+__all__ += ["LoginRequest", "MembershipRequest", "UserUpdateRequest"]  # type: ignore[name-defined]

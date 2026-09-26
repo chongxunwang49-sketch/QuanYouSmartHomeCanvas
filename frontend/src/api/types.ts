@@ -35,8 +35,20 @@ export const ErrorCode = {
   BAD_REQUEST: 4001,
   /** 数据不支撑该操作 —— 对应业务连续性守卫（AC-33） */
   NOT_ALLOWED: 4002,
+  /**
+   * **未登录 / 登录已失效。**
+   *
+   * ⚠️ 后端刻意**不用 HTTP 401**：axios 拦截器按状态码分流，4xx 会被归一成
+   * "服务错误"弹通用报错，而"请重新登录"是**可操作的提示**。理由见
+   * `backend/app/api/deps.py` 的模块说明。前端拿到它的唯一动作是跳 `/login`。
+   */
+  UNAUTHORIZED: 4003,
   /** 任务不存在或已过期 */
   TASK_NOT_FOUND: 4004,
+  /** 需要开通会员（AC-01 门控，`api/deps.py` 的 `require_paid`） */
+  NEED_PAID: 4005,
+  /** 当日额度用完（AC-13，`api/deps.py` 的 `consume_quota`） */
+  QUOTA_EXCEEDED: 4006,
   /** 执行失败 */
   EXEC_FAILED: 5001,
   /** 依赖不可用（Redis / 模型 / 知识库） */
@@ -57,6 +69,147 @@ export class BizError extends Error {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// 认证与权限（AC-01）
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * 角色 × 会员 —— 两个**正交**的维度，不要混成一条枚举。
+ *
+ *   role        admin / designer / user     —— 决定**能看什么**
+ *   membership  free / paid                 —— 决定**用多少**
+ *
+ * 混在一起的后果：加"会员管理员"这种组合时要改枚举，而且判定会写成
+ * `role === 'vip'` 这种把两个维度压扁的代码。后端 `core/auth.py` 的
+ * `User.is_unlimited` / `can_use_paid_features` 就是按正交写的，
+ * 前端必须同构，否则会出现"界面显示不限量、后端却把他限流了"。
+ */
+export type UserRole = 'admin' | 'designer' | 'user'
+export type Membership = 'free' | 'paid'
+
+/**
+ * 当前用户。
+ *
+ * ⚠️ **不含任何口令材料**（后端 `User` 就没有 `password_hash` / `salt`，
+ * 有测试钉着）。也不做本地持久化 —— 见 `stores/auth.ts` 的说明。
+ */
+export interface AuthUser {
+  id: number
+  username: string
+  display_name: string
+  title: string
+  /** 头像上的文字（1–2 个字），后端给，前端不要自己截 */
+  avatar_text: string
+  role: UserRole
+  role_label: string
+  membership: Membership
+  /** 不受额度限制：admin / designer */
+  is_unlimited: boolean
+  /** 付费功能可用：`is_unlimited || membership === 'paid'` */
+  can_use_paid_features: boolean
+  /** 是否启用。`false` = 已停用，**该账号登不进来**（管理页用它显示封禁态） */
+  is_active: boolean
+}
+
+/**
+ * 一条登录设备记录。
+ *
+ * ⚠️ **这是"从登录请求推断出的设备"，不是密码学意义的设备绑定。**
+ * 依据只有 User-Agent 与来源 IP，两者都可伪造 —— 它只回答
+ * "我自己看看有哪些地方登录过"，**不构成任何访问控制**。
+ * 界面上也必须这么写，不要把它说成"设备锁"。
+ */
+export interface DeviceRecord {
+  /** 同一台设备（UA + IP 相同）的稳定标识，后端算的 */
+  key: string
+  /** 形如 `Chrome · Windows`。**启发式推断，认不出就是「未知设备」** */
+  name: string
+  ip: string
+  first_seen: string
+  last_seen: string
+  /** 这台设备登录过几次 */
+  count: number
+}
+
+export interface DevicesData {
+  devices: DeviceRecord[]
+  /** 后端给的那句免责说明。**要原样展示** —— 不要自己重写一遍 */
+  note: string
+}
+
+export interface LoginRequest {
+  username: string
+  password: string
+}
+
+export interface LoginData {
+  access_token: string
+  token_type: string
+  /** 秒。后端 12 小时，没有 refresh token（有意偏离需求 2.3.2，理由在 core/auth.py） */
+  expires_in: number
+  user: AuthUser
+}
+
+export interface MeData {
+  user: AuthUser
+}
+
+/**
+ * 一个任务类型的今日额度。
+ *
+ * `limit === null` 表示不限量（管理员 / 设计师），此时 `used` **仍是真的** ——
+ * 次数对谁都累计，只是对不限量的人不设上限。所以界面要显示
+ * 「已用 7 次 · 不限量」，而不是显示「7 / ∞」。
+ */
+export interface QuotaBucket {
+  allowed: boolean
+  used: number
+  limit: number | null
+  remaining: number | null
+  role: string
+  unlimited: boolean
+  /** 何时重置，形如 `2026-09-23 24:00`。后端给，前端不要自己算 */
+  reset_at: string
+  /**
+   * ⚠️ **Redis 不可用时为 true，此时额度是"放行且不计数"。**
+   *
+   * 界面必须如实说「额度统计暂不可用」，**不能拿 `remaining` 当真** ——
+   * 那个数字在降级时是拿默认值填的。这正是本项目「不产出看起来合理的错误」
+   * 那条原则在界面上的一次具体应用。
+   */
+  degraded: boolean
+}
+
+export interface QuotaData {
+  quota: Record<string, QuotaBucket>
+  user_id: number
+  role: UserRole
+  unlimited: boolean
+}
+
+export interface UserListData {
+  users: AuthUser[]
+  /** 允许的取值由后端给（`core/auth.py` 的 ROLES / MEMBERSHIPS），前端不另写一份 */
+  roles: UserRole[]
+  memberships: Membership[]
+}
+
+/**
+ * 4005 / 4006 的 `data` 形状。**拒绝时必须说清缺什么、怎么办** ——
+ * 所以这里每个字段都是给用户看的，不是给开发者调试的。
+ */
+export interface GateInfo {
+  feature?: string
+  membership?: Membership
+  required_membership?: Membership
+  /** 去哪开通。后端 `deps.UPGRADE_HINT` 给，前端不要自己编一句 */
+  upgrade_hint?: string
+  task_type?: string
+  limit?: number
+  used?: number
+  reset_at?: string
+}
+
+// ══════════════════════════════════════════════════════════════════
 // 任务与进度
 // ══════════════════════════════════════════════════════════════════
 
@@ -71,11 +224,11 @@ export type TaskPhase =
   | 'queued'
   | 'prechecking'
   | 'analyzing'
-  | 'detecting_rooms'
-  | 'extracting_dimensions'
   | 'diagnosing'
   | 'planning'
-  /** 报价单审查专用：与 planning 同节点不同语境，见后端 tasks.py 的 _phase_for */
+  /** 方案链内的避坑审查：与 planning 同节点不同语境，见后端 tasks.py 的 _phase_for */
+  | 'checking_risks'
+  /** 报价单审查专用：与 checking_risks 同节点不同语境 */
   | 'reviewing'
   | 'finalizing'
   | 'done'
@@ -89,9 +242,36 @@ export interface TaskStatusData<R = unknown> {
   phase: TaskPhase | string
   /** 中文阶段文案，来自后端。直接展示。 */
   phase_text: string
+  /** 进入当前阶段时的百分比，且已按实际进度在阶段内插值（单调不回退） */
   progress: number
+  /**
+   * 已用秒数，**以服务端为准**。
+   *
+   * ⚠️ 前端不要自己从"点了按钮那一刻"算：刷新页面、从别的页面切回来，
+   * 本地计时都会归零，而任务其实已经跑了一分多钟 ——
+   * 用户会看到"已等待 0 秒"配一个 60% 的进度条。
+   * 为 null 表示服务端也不知道（拿不到开始时间），此时前端才回退到本地计时。
+   */
+  elapsed_seconds: number | null
+  /**
+   * 预计剩余秒数。**`null` = 估不出来，不是 0** ——
+   * 模型已经被实际耗时追上的时候（`overrun`）后端就不给数字了，
+   * 因为"预计还剩 3 秒"再挂 40 秒比不给还糟。
+   */
+  eta_seconds: number | null
+  /** 已超出模型预期。界面此时改口说"比预期久"，而不是继续报一个失效的倒计时。 */
+  overrun: boolean
   /** 降级完成也是完成，但必须让用户看见（AC-17） */
   degraded: boolean
+  /**
+   * 是不是被用户自己中断的（AC-31）。
+   *
+   * ⚠️ `status` 在中断时仍然是 `failed` —— 它是**控制流通道**
+   * （轮询循环靠"completed / failed 就停"来判断该不该继续），
+   * 而这个是**措辞通道**：界面据此说"已中断"而不是"失败"。
+   * 用户自己按的按钮，不该被报成一个错误。
+   */
+  cancelled?: boolean
   error: string | null
   result: R | null
 }
@@ -178,18 +358,46 @@ export interface Diagnosis {
   load_bearing_warning: string[]
 }
 
+/** 单个操作的能力判定（`CapabilityReport.to_dict()` 里 `operations` 的每一项）。 */
+export interface Capability {
+  allowed: boolean
+  reason: string
+  /** 缺什么。**拒绝时必须说清**（AC-33 的立场），前端直接展示 */
+  missing: string[]
+  /** 怎么办。同样直接展示，不要改写成"系统繁忙" */
+  suggestion: string
+}
+
 /**
  * 能力报告。**前端不需要自己推断"现在能做什么"** ——
  * 后端直接告诉你（需求文档 2.2.3）。
+ *
+ * ⚠️ **形状在 2026-09-24 修正过：它是嵌套的，不是扁平的。**
+ *
+ * 这里原来声明的是 `can_generate_plan` / `can_estimate_budget` /
+ * `can_select_materials` / `can_review` / `missing` / `suggestion` 一组
+ * **扁平字段**，而后端 `CapabilityReport.to_dict()` 返回的是
+ * `{mode, reason, operations: {generate_plan: {allowed, reason, missing, suggestion}}}`
+ * —— **那组扁平字段一个都不存在。**
+ *
+ * 更糟的是旧类型带了 `[key: string]: unknown` 索引签名，于是
+ * `c.can_generate_plan` 取到 `undefined` 也**不报类型错**。
+ * 实测后果（读代码确认的因果链，不是推测）：
+ *   · `canGenerate` 里那句 `typeof c.can_generate_plan === 'boolean'`
+ *     永远为假 → 一直走"按 rooms + total_area 自己判断"的兜底分支；
+ *   · `blockedReason` 读 `c.suggestion` 永远是 undefined →
+ *     后端给的那句「缺少墙体信息」从来没能显示给用户。
+ * 于是"缺墙体"的户型（**有房间、有面积，只是没墙**）在前端看来是可生成的，
+ * 按钮亮着，点下去后端回 4002 —— 界面承诺了一个做不到的操作。
+ *
+ * 现在按后端真实形状声明，并去掉索引签名：**让类型系统真的能拦住这类漂移。**
+ * `tests/test_frontend_contract.py` 里还有一条逐键比对的用例兜底。
  */
 export interface Capabilities {
-  can_generate_plan?: boolean
-  can_estimate_budget?: boolean
-  can_select_materials?: boolean
-  can_review?: boolean
-  missing?: string[]
-  suggestion?: string
-  [key: string]: unknown
+  mode: string
+  reason: string
+  /** 操作名 → 判定。操作名见 `core/capabilities.py` 的 `_PROBES` */
+  operations: Record<string, Capability>
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -388,6 +596,18 @@ export interface GenerateResult {
   diagnosis: Diagnosis | null
   plans: Plan[]
   comparison: Comparison | null
+  /**
+   * **结果是否只交付了一部分。**
+   *
+   * 方案在 A-06 避坑审查**开始前**就已经产出并交付了（实测：整链 123 秒，
+   * 方案在第 38 秒就齐了），此时 `partial=true`，每套方案的
+   * `missing_artifacts` 里都有 `risks`。审查跑完后由完整结果覆盖，
+   * 届时 `partial=false`。
+   *
+   * ⚠️ 所以**不能**拿"有没有 plans"当"任务完成了"的判据 ——
+   * 判据只有 `status === 'completed'`。
+   */
+  partial: boolean
   degraded: boolean
   degrade_reasons: string[]
   errors: { agent?: string; type?: string; message?: string }[]
@@ -548,8 +768,40 @@ export interface GenerateRequest {
   layout_id: string
   styles?: string[]
   budget_grades?: string[]
+  /**
+   * 同等条件下是否优先推荐全友自有产品（软偏好）。
+   *
+   * ⚠️ **AC-18 的 60% 覆盖率保底不受这个开关影响。** 它是平台级要求，
+   * 不是可选项 —— 能被用户关掉的验收指标是测不了的。
+   * 关掉之后覆盖率会从接近 100% 回落到贴着底线，替代记录随之增多，
+   * 那才是这个开关可观测的效果。
+   */
   quanyou_priority?: boolean
   requirements?: Record<string, unknown>
+  /** AC-19：排除的品类 key。与后端 `GET /material/options` 的清单一致 */
+  excluded_categories?: string[]
+  /** AC-19：排除的品牌。**不能排除全友** —— 与 AC-18 冲突，后端 4001 拒绝 */
+  excluded_brands?: string[]
+  /** AC-19：同等条件下优先的品牌（加分高于平台的全友优先，但低于 AC-18 底线） */
+  preferred_brands?: string[]
+}
+
+/**
+ * AC-19 材料偏好的可选项。
+ *
+ * 清单来自后端目录，前端**不另存一份** —— 见 `materialOptions()` 的说明。
+ */
+export interface MaterialOptionsData {
+  categories: { key: string; label: string; unit: string }[]
+  brands: string[]
+  quanyou_brand: string
+  /** 判据常量与后端同源，避免前端各写一遍 0.6 / 1.5 / 2.0 */
+  constants: {
+    min_quanyou_coverage: number
+    preferred_brand_bonus: number
+    quanyou_preference_bonus: number
+  }
+  catalog_version: string
 }
 
 export interface ReviewRequest {
@@ -614,6 +866,25 @@ export const SEVERITY_LABEL: Record<string, string> = {
 
 export const label = (dict: Record<string, string>, key: string): string => dict[key] ?? key
 
+/**
+ * 任务状态该怎么说给用户听。**任何展示 `phase_text` 的地方都该过这一层。**
+ *
+ * ⚠️ 为什么不能直接用 `phase_text`：
+ *
+ * 用户按下「中断」之后，后端的 `phase` **刻意停在断点上**（不写成 `done` ——
+ * 那会让进度条假装走完，而且 `done` 的文案是"完成"）。
+ * 于是 `phase_text` 会一直说"正在分析图片…"，而那条任务早就停了。
+ * 页面头的状态胶囊正是直接展示 `phase_text` 的，实测就出现了
+ * "进度卡说『已中断』、页头却说『正在分析图片…』"这种自相矛盾的画面。
+ */
+export function statusHeadline(
+  snap: Pick<TaskStatusData, 'cancelled' | 'status' | 'phase_text'> | null | undefined,
+): string {
+  if (!snap) return ''
+  if (snap.cancelled) return '已中断'
+  return snap.phase_text
+}
+
 // ══════════════════════════════════════════════════════════════════
 // 3D 漫游（4.3″，第一人称行走）
 // ══════════════════════════════════════════════════════════════════
@@ -654,6 +925,16 @@ export interface WalkDoor {
   width_m: number
   from_room: number
   to_room: number
+  /**
+   * 这扇门**通不通**。
+   *
+   * ⚠️ `false` = **画出来但走不过去**（典型是入户门：它开在外墙上，
+   * 两侧不构成"两间房之间"）。不可通行的门 `from_room`/`to_room` 都是 `-1`。
+   *
+   * 这个字段存在的原因就是"平面图与 3D 对不上"：这些门原先**根本不返回**，
+   * 于是矢量图上画了、3D 里没有。
+   */
+  passable: boolean
   /** 转轴位置（米）。门扇绕它旋转 */
   hinge: [number, number]
   /** 沿墙的单位方向：从铰链指向门洞另一端 */
@@ -686,6 +967,18 @@ export interface WalkableResponse {
   scene: SceneData
   walkable: WalkableData
   plan_transform: PlanTransform
+  /**
+   * 3D 场景被**等比放大**了多少倍（1 = 没放大）。
+   *
+   * ⚠️ 放大之后，这份响应里的长度（房间、墙、门、出生点）**全部是放大后的**，
+   * 而 `player_radius_m` / `eye_height_m` 仍是真人尺寸 —— 那是"放大房子、
+   * 不放大人的"这个口径的直接体现。`plan_transform.scale` 已经除过 k，
+   * 所以小地图上的绿点仍然落在正确的位置。
+   *
+   * **平面图接口（`/plan.svg`、`/hotspots`）不受影响，仍是真实尺寸。**
+   */
+  scene_scale?: number
+  scene_scale_note?: string
 }
 
 /** 米制场景（与后端 `Scene.to_dict()` 对齐）。 */

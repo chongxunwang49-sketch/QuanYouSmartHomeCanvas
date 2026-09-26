@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import AppIcon from './AppIcon.vue'
-import { NAV, isNavActive } from '@/config/nav'
+import { isNavActive, navForRole } from '@/config/nav'
 import { useInfoPanel } from '@/composables/useInfoPanel'
+import { useAuthStore } from '@/stores/auth'
 import { useHealthStore } from '@/stores/health'
 
 /**
@@ -14,11 +15,22 @@ import { useHealthStore } from '@/stores/health'
  * → 底部用户卡。导航项**选中态是叶绿浅底 + 1.5px 圆点**，不是常见的左侧
  * 竖条 —— 竖条在这套圆角语言里显得硬。
  *
- * 菜单数据来自 `@/config/nav`（唯一真源，⌘K 面板读同一份）。
+ * 菜单数据来自 `@/config/nav`（唯一真源，⌘K 面板读同一份），
+ * 并按当前用户的**角色**过滤（`navForRole`）。
  */
 const route = useRoute()
+const router = useRouter()
 const health = useHealthStore()
+const auth = useAuthStore()
 const { show: showInfo } = useInfoPanel()
+
+/**
+ * 当前角色可见的菜单。
+ *
+ * ⚠️ `auth.role` 在登录前是 `null`，`navForRole(null)` 返回**空数组** ——
+ * 见那个函数的说明：宁可先空着，也不要先渲染出管理员菜单再收回去。
+ */
+const navItems = computed(() => navForRole(auth.role))
 
 /**
  * 展开的父项集合。
@@ -43,11 +55,11 @@ function toggle(to: string) {
 const isExpanded = (to: string) => expanded.value.has(to)
 
 watch(
-  () => route.path,
-  (path) => {
+  () => [route.path, navItems.value] as const,
+  ([path]) => {
     const next = new Set(expanded.value)
     let changed = false
-    for (const item of NAV) {
+    for (const item of navItems.value) {
       if (item.children && isNavActive(path, item.to, false) && !next.has(item.to)) {
         next.add(item.to)
         changed = true
@@ -57,6 +69,17 @@ watch(
   },
   { immediate: true },
 )
+
+/** 角色 / 档位的展示标签。管理员与设计师不必显示档位（对他们无意义） */
+const roleChip = computed(() => auth.user?.role_label ?? '')
+const membershipChip = computed(() =>
+  auth.user && !auth.isUnlimited ? (auth.membership === 'paid' ? '会员' : '免费版') : '',
+)
+
+async function logout() {
+  auth.logout()
+  await router.replace({ name: 'login' })
+}
 
 /**
  * 一级判定用 `startsWith`（在 `/parse/overview` 时「户型解析」也要亮）；
@@ -107,7 +130,7 @@ const degradedDeps = computed(() =>
 
       <!-- ── 导航 ── -->
       <nav class="flex flex-col gap-1 px-3">
-        <template v-for="item in NAV" :key="item.to">
+        <template v-for="item in navItems" :key="item.to">
           <!--
             一级项整体套一个带 padding 的容器（.nav-item 自带 px-3 py-2），
             里面再放路由链接 —— 这样右侧的展开箭头能落在同一块高亮底上。
@@ -182,34 +205,69 @@ const degradedDeps = computed(() =>
     </div>
 
     <!-- ── 底部用户卡 ──
-         整张卡是一个按钮：打开「系统信息」面板。
-         之前这里是个纯装饰的 div —— 有 hover 效果、有齿轮图标，
-         点了什么都不发生。那种"承诺了交互却不给"比不画齿轮更糟。 -->
+         这里原来是写死的「演示账号 / Demo Session」占位。现在读真实登录用户，
+         并且把登出做成一个**独立可见的按钮** —— 藏进信息面板里的登出
+         在演示时很难找，而对面试官展示"换个账号登录"正是要看的一件事。 -->
     <div class="border-t border-warm-border/80 p-3">
-      <button
-        class="flex w-full items-center justify-between rounded-xl border border-warm-border bg-white/70 p-2.5 text-left shadow-xs transition-colors hover:border-botanical/40 hover:bg-white"
-        type="button"
-        title="查看系统信息（后端连接、依赖状态、设计稿出处）"
-        @click="showInfo()"
-      >
-        <div class="flex min-w-0 items-center gap-2.5">
+      <div class="flex items-center gap-2">
+        <button
+          class="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl border border-warm-border bg-white/70 p-2.5 text-left shadow-xs transition-colors hover:border-botanical/40 hover:bg-white"
+          type="button"
+          title="查看系统信息（后端连接、依赖状态、设计稿出处）"
+          @click="showInfo()"
+        >
           <div class="relative flex-shrink-0">
+            <!-- 头像文字由后端给（`avatar_text`），前端不自己截用户名 ——
+                 "admin" 截两个字是 "ad"，不如后端配的"管" -->
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-full border border-botanical/20 bg-botanical-light text-[12px] font-bold text-botanical"
+              class="flex h-8 w-8 items-center justify-center rounded-full border border-botanical/20 bg-botanical-light text-[13px] font-bold text-botanical"
             >
-              QY
+              {{ auth.user?.avatar_text || '—' }}
             </div>
             <span
               class="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-botanical ring-2 ring-white"
             />
           </div>
           <div class="flex min-w-0 flex-col">
-            <span class="truncate text-[12px] font-semibold text-wood-dark">演示账号</span>
-            <span class="truncate text-[10px] text-wood-muted">Demo Session</span>
+            <span class="truncate text-[12px] font-semibold text-wood-dark">
+              {{ auth.displayName || '未登录' }}
+            </span>
+            <span class="flex min-w-0 items-center gap-1">
+              <span class="truncate text-[10px] text-wood-muted">
+                {{ auth.user?.title || '—' }}
+              </span>
+            </span>
           </div>
-        </div>
-        <AppIcon name="caret-down" :size="16" class="text-wood-muted" />
-      </button>
+        </button>
+
+        <button
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-warm-border bg-white/70 text-wood-muted shadow-xs transition-colors hover:border-accent-red/40 hover:text-accent-red"
+          type="button"
+          title="退出登录"
+          aria-label="退出登录"
+          @click="logout"
+        >
+          <AppIcon name="arrow-left" :size="16" />
+        </button>
+      </div>
+
+      <!-- 角色 × 档位。**两个维度分开显示**，不要合成一个标签 ——
+           合成之后就说不清"会员但仍然受限"这种事 -->
+      <div v-if="auth.user" class="mt-2 flex flex-wrap items-center gap-1.5 px-1">
+        <span class="chip">{{ roleChip }}</span>
+        <span
+          v-if="membershipChip"
+          class="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+          :class="
+            auth.membership === 'paid'
+              ? 'border-accent-gold/40 bg-wood-light text-wood'
+              : 'border-warm-border bg-warm-sidebar text-wood-muted'
+          "
+        >
+          {{ membershipChip }}
+        </span>
+        <span v-if="auth.isUnlimited" class="text-[10px] text-wood-muted">不限量</span>
+      </div>
     </div>
   </aside>
 </template>

@@ -97,7 +97,10 @@ async function submit() {
 
     const snap = await s.poll.start(created.task_id, created.estimated_seconds)
     if (s.poll.timedOut.value) {
-      toast.warning('轮询超时（120 秒）。任务可能仍在后台执行，可用 trace_id 排查。')
+      // 期限由后端估算算出（见 useTaskPolling），报实际值而不是写死"120 秒"
+      toast.warning(
+        `轮询超时（${s.poll.timeoutSeconds.value} 秒）。任务可能仍在后台执行，可用 trace_id 排查。`,
+      )
       return
     }
     if (!snap) return

@@ -2,7 +2,7 @@
 物品热区 —— 从**几何**推导，不用目标检测。
 
 ═══════════════════════════════════════════════════════════════════
-为什么不用 YOLO（需求文档 2.2.6 记录的那次方案重做）
+为什么不用 YOLO（需求文档 11.2.6 记录的那次方案重做）
 ═══════════════════════════════════════════════════════════════════
 V1.0 的设计是"用 YOLOv8 检测生成图里的地板、墙纸、空调"。它不可行，
 理由不是"效果差一点"，而是**类别根本不存在**：
@@ -27,7 +27,7 @@ precision 字段：不许假装精确（AC-09 / AC-28）
 本模块产出的**全部是 `exact`** —— 因为它量的是几何本身，不是生成图。
 `room_level` / `none` 出现在 `geo_check.py` 处理 AI 图的路径上。
 
-> 诚实性原则（需求文档 2.2.6）：`room_level` 的热区悬停时必须显示
+> 诚实性原则（需求文档 11.2.6）：`room_level` 的热区悬停时必须显示
 > "本区域整体参考价"，而不是假装精确到某一件家具。
 > **用户可以接受近似，不能接受被骗。**
 
@@ -78,6 +78,14 @@ class HotspotGeom:
     bbox: list[float]
     precision: str
     source: str
+    #: 这块热区属于哪间房（`scene.rooms` 的下标）。地面/墙面热区都有值，
+    #: 门热区没有（门在两间房之间，不属于任何一间）。
+    #:
+    #: ⚠️ 与 SVG 里 `<polygon id="room-{N}">` 的 N **是同一个枚举顺序**
+    #:    （都来自 `enumerate(scene.rooms)`），所以前端可以拿它去对应房间。
+    #: 2026-09-26 加：AC-10 重定性成「矢量图上换地面材质」之后，
+    #: 需要从"点中的那块地面热区"反推到"哪间房"。
+    room_index: int | None = None
     #: 计价面积/数量（㎡ 或 个）。None 表示这项不按面积算
     quantity: float | None = None
     unit: str = ""
@@ -112,6 +120,8 @@ class HotspotGeom:
             "rings": [[[round(x, 2), round(y, 2)] for x, y in r] for r in self.rings],
             "precision": self.precision,
             "source": self.source,
+            # 属于哪间房（门热区是 None）。前端据此把「点中的地面」映射到房间
+            "room_index": self.room_index,
             "quantity": round(self.quantity, 2) if self.quantity is not None else None,
             "unit": self.unit,
             "note": self.note,
@@ -135,13 +145,13 @@ def hotspot_geometry(scene: Scene, proj: Projection) -> list[HotspotGeom]:
     geoms: list[HotspotGeom] = []
 
     # ── 一、地面：每个房间一块 ──
-    for room in scene.rooms:
-        g = _floor_hotspot(len(geoms), room, proj, half)
+    for ri, room in enumerate(scene.rooms):
+        g = _floor_hotspot(len(geoms), room, proj, half, ri)
         if g is not None:
             geoms.append(g)
 
     # ── 二、墙面：每个房间一圈（挖空中间，见 HotspotGeom.svg_path）──
-    for room in scene.rooms:
+    for ri, room in enumerate(scene.rooms):
         g = _wall_hotspot(len(geoms), room, proj, half, scene.ceiling_height_m)
         if g is not None:
             geoms.append(g)
@@ -188,7 +198,8 @@ def _px_ring(proj: Projection, x1: float, y1: float, x2: float, y2: float
     return ring, [left, top, right, bottom]
 
 
-def _floor_hotspot(index: int, room: RoomShape, proj: Projection, half: float
+def _floor_hotspot(index: int, room: RoomShape, proj: Projection, half: float,
+                   room_index: int | None = None
                    ) -> HotspotGeom | None:
     boxes = _rect_rings(room, proj, half)
     if boxes is None:
@@ -199,6 +210,7 @@ def _floor_hotspot(index: int, room: RoomShape, proj: Projection, half: float
         index=index,
         label=f"{room.name}地面",
         category=FLOOR_CATEGORY,
+        room_index=room_index,
         rings=[ring],
         bbox=bbox,
         precision="exact",

@@ -107,20 +107,40 @@ export function provideParseSession(): ParseSession {
     return fromResult ?? fromLayout ?? null
   })
 
+  /**
+   * 取后端对某个操作的判定。
+   *
+   * ⚠️ **路径是 `operations[op]`，不是顶层的 `can_<op>`。**
+   * 这里原来读的是 `c.can_generate_plan`（扁平字段），而后端返回的是
+   * `{operations: {generate_plan: {allowed, …}}}` —— 那个字段根本不存在，
+   * 于是这句判据永远是 undefined、永远走兜底分支。详见 `api/types.ts`
+   * 里 `Capabilities` 的说明（2026-09-24 修正）。
+   */
+  function opCapability(op: string) {
+    return capabilities.value?.operations?.[op] ?? null
+  }
+
   const canGenerate = computed(() => {
     if (isDegradedBasic.value) return false // 降级时结构字段全空，生成无意义
     if (!layout.value) return false
-    const c = capabilities.value
-    if (c && typeof c.can_generate_plan === 'boolean') return c.can_generate_plan
+    const cap = opCapability('generate_plan')
+    if (cap) return cap.allowed
     // 后端没给能力报告时，按"有没有房间和面积"自行判断——
     // 这不是替后端做决定，只是避免界面出现一个必然失败的可点按钮。
+    // ⚠️ 它挡不住"有房间有面积但没墙"那种——那正是**必须**由后端判的，
+    //    所以上面那条路径才是主路径，这里只是报告缺失时的兜底。
     return (layout.value.rooms?.length ?? 0) > 0 && (layout.value.total_area ?? 0) > 0
   })
 
   const blockedReason = computed(() => {
     if (isDegradedBasic.value) return '当前为降级解析结果，结构与面积字段不可用'
-    const c = capabilities.value
-    if (c?.suggestion) return String(c.suggestion)
+    // 后端拒绝时会说清"缺什么"与"怎么办"，**原样展示** ——
+    // 不要改写成"系统繁忙"这种糊弄话（DegradedNotice 的立场）。
+    const cap = opCapability('generate_plan')
+    if (cap) {
+      const missing = cap.missing?.length ? `缺少${cap.missing.join('、')}。` : ''
+      return `${missing}${cap.suggestion ?? ''}`.trim() || cap.reason || ''
+    }
     if (!(layout.value?.total_area ?? 0)) return '缺少户型总面积，无法估算造价'
     return ''
   })

@@ -45,8 +45,22 @@ const POLL_STAGES: readonly PollStage[] = [
   { untilMs: 120_000, intervalMs: 5_000 },
 ] as const
 
-/** 到点放弃。需求文档：「120 秒：停止轮询，提示超时并提供 trace_id」 */
+/**
+ * 到点放弃的下限。需求文档：「120 秒：停止轮询，提示超时并提供 trace_id」。
+ *
+ * ⚠️ 它是**下限**，不是固定值。实测方案生成链要 122.9 秒 ——
+ * 比这个下限还长，于是"轮询先放弃了、结果两秒后才准备好"。
+ * 用户看到的是"超时，任务可能仍在后台执行"，而其实马上就有结果了。
+ *
+ * 所以真正的期限取 `max(这个下限, 后端估算 × 2)`。用后端自己的估算来定，
+ * 是因为它是同一套阶段模型算出来的（`core/progress.py`）；
+ * 乘 2 是留给"模型标定偏慢"的余量 —— 模型本来就会被实际速度修正，
+ * 但没有义务修正到分毫不差。
+ */
 export const POLL_TIMEOUT_MS = 120_000
+
+/** 超出后端估算多少倍就放弃 */
+const POLL_DEADLINE_FACTOR = 2
 
 function intervalFor(elapsedMs: number): number {
   for (const stage of POLL_STAGES) {
@@ -70,8 +84,25 @@ export interface TaskPolling<R> {
   running: DeepReadonly<Ref<boolean>>
   /** 从开始到现在的毫秒数，供界面显示"已等待 42s" */
   elapsedMs: DeepReadonly<Ref<number>>
-  /** 已等待的时间是否超出了后端给的估算，用于把"预计 40 秒"换成"比预期久" */
-  overEstimate: DeepReadonly<Ref<boolean>>
+  /**
+   * 预计剩余秒数。`null` = 估不出来（含"已超出预期"与"还没拿到第一次响应"）。
+   *
+   * 它按本地时钟**逐秒递减**，不是每轮轮询才跳一次 —— 后端 2 秒才回一次，
+   * 直接显示服务端那个数的话，倒计时会"卡住两秒、跳两秒"。
+   */
+  etaSeconds: DeepReadonly<Ref<number | null>>
+  /** 已超出预期。界面改口说"比预期久"，不再报数字 */
+  overrun: DeepReadonly<Ref<boolean>>
+  /** 本次轮询多少秒后放弃。用于超时提示里的那句话，避免各处硬编码"120 秒" */
+  timeoutSeconds: DeepReadonly<Ref<number>>
+  /**
+   * 正在轮询的 task_id（空串 = 没有）。
+   *
+   * ⚠️ 单独给一个 ref，而不是让调用方调 `savedTaskId()`：那个是**函数**，
+   * 在模板里调不会跟着任务变化重新求值 —— 而「中断」按钮要拿它去发请求，
+   * 拿到上一个任务的 id 就会去中断一个已经结束的任务。
+   */
+  activeTaskId: DeepReadonly<Ref<string>>
   error: Ref<string>
   /** 超时结束（区别于失败） */
   timedOut: DeepReadonly<Ref<boolean>>
@@ -79,6 +110,14 @@ export interface TaskPolling<R> {
   phaseLog: DeepReadonly<Ref<PhaseLogEntry[]>>
   start: (taskId: string, estimatedSeconds?: number) => Promise<TaskStatusData<R> | null>
   stop: () => void
+  /**
+   * 补拉一次状态，把 `status` 刷新到最新。**不启动轮询。**
+   *
+   * 给"中断"用：`stop()` 之后界面还停在中断前那一帧（"正在分析图片…"），
+   * 而用户明明刚按了中断 —— 中间最多要等一个轮询间隔才自愈。
+   * 这里主动拉一次，按钮按下去界面就跟着变。
+   */
+  refreshOnce: () => Promise<TaskStatusData<R> | null>
   /** 上次这个页面跑过的 task_id（进程内存优先，其次 sessionStorage） */
   savedTaskId: () => string
 }
@@ -145,10 +184,45 @@ export function useTaskPolling<R = unknown>(sessionKey = 'default'): TaskPolling
   const status = ref<TaskStatusData<R> | null>(null) as Ref<TaskStatusData<R> | null>
   const running = ref(false)
   const elapsedMs = ref(0)
-  const overEstimate = ref(false)
+  const etaSeconds = ref<number | null>(null)
+  const overrun = ref(false)
   const error = ref('')
   const timedOut = ref(false)
   const phaseLog = ref<PhaseLogEntry[]>([])
+
+  /**
+   * ══════════════════════════════════════════════════════════════════
+   * 计时锚点：本地时钟只负责"走秒"，数值以服务端为准
+   * ══════════════════════════════════════════════════════════════════
+   * 之前是 `elapsedMs = Date.now() - beganAt`，`beganAt` 在 `start()` 里取，
+   * **每次调用都重新取一次当时的时间**。于是两个场景都会归零：
+   *   · 整页刷新 —— `beganAt` 是组件内变量，重新挂载就没了
+   *   · 从别的页面切回来 —— 走的还是 `start()`
+   *
+   * 而任务一直在后端跑。用户看到"已等待 0 秒"配一个 60% 的进度条，
+   * 只会认为这个页面坏了。（这条路径实测触发过：用户反馈"
+   * 一点开其它网页再回来进度完全消失"。）
+   *
+   * 现在改成：每轮轮询都拿服务端的 `elapsed_seconds` 重新锚一次，
+   * 两次轮询之间由本地时钟平滑推进。
+   */
+  let anchorElapsedMs = 0
+  let anchorAt = Date.now()
+  /** 最近一次服务端给的剩余秒数，及其对应的本地已用时间 */
+  let etaAnchor: number | null = null
+  let etaAnchorElapsedMs = 0
+  /** 本次轮询的放弃期限（毫秒）。见 POLL_TIMEOUT_MS 的说明 */
+  let deadlineMs = POLL_TIMEOUT_MS
+  const timeoutSeconds = ref(Math.round(POLL_TIMEOUT_MS / 1000))
+  const activeTaskId = ref('')
+
+  const localElapsedMs = () => anchorElapsedMs + (Date.now() - anchorAt)
+
+  function reanchor(elapsedFromServer: number | null) {
+    if (elapsedFromServer === null) return    // 服务端也不知道，就继续用本地的
+    anchorElapsedMs = elapsedFromServer * 1000
+    anchorAt = Date.now()
+  }
 
   // ── 恢复上一次的会话 ──
   // 组件重新挂载时先把结果填回去，用户立刻看到上次的内容；
@@ -180,6 +254,25 @@ export function useTaskPolling<R = unknown>(sessionKey = 'default'): TaskPolling
 
   const savedTaskId = () => SESSIONS.get(sessionKey)?.taskId || ssGet(sessionKey)
 
+  async function refreshOnce(): Promise<TaskStatusData<R> | null> {
+    const id = activeTaskId.value || savedTaskId()
+    if (!id) return null
+    try {
+      const snap = await taskStatus<R>(id)
+      reanchor(snap.elapsed_seconds)
+      status.value = snap
+      etaAnchor = snap.overrun ? null : snap.eta_seconds
+      etaAnchorElapsedMs = localElapsedMs()
+      etaSeconds.value = etaAnchor
+      overrun.value = snap.overrun
+      return snap
+    } catch {
+      // 拉不到就保持原样 —— 这是"锦上添花"的一次刷新，
+      // 失败不该在界面上留下任何痕迹（轮询下一次自然会同步）。
+      return null
+    }
+  }
+
   async function start(
     taskId: string,
     estimatedSeconds?: number,
@@ -194,6 +287,32 @@ export function useTaskPolling<R = unknown>(sessionKey = 'default'): TaskPolling
     //    而那正是用户回来最想看到的东西。
     if (!sameTask) phaseLog.value = []
     running.value = true
+    activeTaskId.value = taskId
+
+    // ⚠️ 别在重进同一个任务时把计时重置。任务一直在后端跑，本地归零
+    //    会显示成"刚开始"（见锚点说明）。新任务才重新起表。
+    if (!sameTask) {
+      anchorElapsedMs = 0
+      anchorAt = Date.now()
+      elapsedMs.value = 0
+      overrun.value = false
+      // 后端在创建任务时给的粗估（`estimated_seconds`）。它只用来**填第一帧**，
+      // 免得用户点完按钮看到一个空的倒计时；第一次轮询回来就被真实值覆盖。
+      etaAnchor = estimatedSeconds ?? null
+      etaAnchorElapsedMs = 0
+      etaSeconds.value = etaAnchor
+    }
+
+    // 期限同样不能因为"又点了一次 start"而重置 —— 重进同一个任务时
+    // 任务已经跑了一会儿，重置等于给它续命，轮询就永远不会超时了。
+    if (!sameTask) {
+      deadlineMs = Math.max(
+        POLL_TIMEOUT_MS,
+        (estimatedSeconds ?? 0) * 1000 * POLL_DEADLINE_FACTOR,
+      )
+      timeoutSeconds.value = Math.round(deadlineMs / 1000)
+    }
+
     SESSIONS.set(sessionKey, {
       taskId,
       status: status.value as unknown,
@@ -203,13 +322,15 @@ export function useTaskPolling<R = unknown>(sessionKey = 'default'): TaskPolling
     })
     ssSet(sessionKey, taskId)
 
-    const beganAt = Date.now()
-    // 估算值只用来判断"是不是比预期久了"，不参与调速
-    const estimateMs = estimatedSeconds ? estimatedSeconds * 1000 : 0
     if (timer) clearInterval(timer)
     timer = setInterval(() => {
-      elapsedMs.value = Date.now() - beganAt
-      if (estimateMs && elapsedMs.value > estimateMs) overEstimate.value = true
+      elapsedMs.value = localElapsedMs()
+      // 倒计时跟着本地时钟走。只在两秒一次的轮询里更新的话，
+      // 它会"卡住两秒、跳两秒"，看着像坏了。
+      if (etaAnchor !== null) {
+        const since = (elapsedMs.value - etaAnchorElapsedMs) / 1000
+        etaSeconds.value = Math.max(0, etaAnchor - since)
+      }
     }, 250)
 
     try {
@@ -218,8 +339,7 @@ export function useTaskPolling<R = unknown>(sessionKey = 'default'): TaskPolling
       for (;;) {
         if (cancelled) return null
 
-        const elapsed = Date.now() - beganAt
-        if (elapsed >= POLL_TIMEOUT_MS) {
+        if (localElapsedMs() >= deadlineMs) {
           timedOut.value = true
           return null
         }
@@ -235,25 +355,38 @@ export function useTaskPolling<R = unknown>(sessionKey = 'default'): TaskPolling
           // 单次轮询失败不终止整条链 —— 网络抖一下就放弃，用户得从头再来。
           // 但连续失败会由超时兜底，不会无限重试。
           error.value = messageOf(e)
-          await sleep(intervalFor(Date.now() - beganAt))
+          await sleep(intervalFor(localElapsedMs()))
           continue
         }
         if (cancelled) return null
 
         error.value = ''
+
+        // ── 先把服务端的时间锚下来 ──
+        // ⚠️ 顺序有讲究：`reanchor` 必须在算 `atMs` 之前，否则阶段轨迹里的
+        //    时间戳与"已用时间"会来自两个不同的钟，轨迹上出现负的间隔。
+        reanchor(snap.elapsed_seconds)
+        const atMs = localElapsedMs()
+
         const prevPhase = status.value?.phase
         status.value = snap
+        etaAnchor = snap.overrun ? null : snap.eta_seconds
+        etaAnchorElapsedMs = atMs
+        etaSeconds.value = etaAnchor
+        overrun.value = snap.overrun
+        elapsedMs.value = atMs
+
         if (snap.phase !== prevPhase) {
           phaseLog.value.push({
             phase: snap.phase,
             text: snap.phase_text,
-            atMs: Date.now() - beganAt,
+            atMs,
           })
         }
 
         if (snap.status === 'completed' || snap.status === 'failed') return snap
 
-        await sleep(intervalFor(Date.now() - beganAt))
+        await sleep(intervalFor(localElapsedMs()))
         if (cancelled) return null
       }
     } finally {
@@ -262,7 +395,7 @@ export function useTaskPolling<R = unknown>(sessionKey = 'default'): TaskPolling
         clearInterval(timer)
         timer = null
       }
-      elapsedMs.value = Date.now() - beganAt
+      elapsedMs.value = localElapsedMs()
     }
   }
 
@@ -286,12 +419,16 @@ export function useTaskPolling<R = unknown>(sessionKey = 'default'): TaskPolling
     // 只读暴露：这几个字段由轮询驱动，让调用方误写会破坏时序
     running: readonly(running),
     elapsedMs: readonly(elapsedMs),
-    overEstimate: readonly(overEstimate),
+    etaSeconds: readonly(etaSeconds),
+    overrun: readonly(overrun),
+    timeoutSeconds: readonly(timeoutSeconds),
+    activeTaskId: readonly(activeTaskId),
     error,
     timedOut: readonly(timedOut),
     phaseLog: readonly(phaseLog),
     start,
     stop,
+    refreshOnce,
     savedTaskId,
   }
 }

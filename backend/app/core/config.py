@@ -37,6 +37,17 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     PROJECT_ROOT: Path = PROJECT_ROOT
 
+    #: 审计日志目录（AC-14）。**留空 = 不写审计文件**，只打控制台。
+    #:
+    #: ⚠️ 这个配置项以前根本不存在，而 `logger.setup_logging(log_dir=...)`
+    #: 那条写 JSON 审计文件的分支**从来没有被任何地方调用过** ——
+    #: 分支写好了、注释还标着"供审计（AC-14）"，文件却一个都没产生过。
+    #: 现在由 `main.py` 的 lifespan 传进来，测试里也有"文件真的产生了"的用例。
+    #:
+    #: 默认落在仓库根的 `logs/`，它在 .gitignore 里 —— 审计日志含用户操作
+    #: 与 trace_id，不该进公开仓库。
+    LOG_DIR: Path = PROJECT_ROOT / "logs"
+
     # ── 本地部署约束（附录 B.6 / AC-37）─────────────────────
     # 决策：本项目全部演示在本地完成，不做任何公网暴露。
     # 因此监听地址一律绑回环，CORS 走白名单——绝不使用 0.0.0.0 或 ["*"]。
@@ -91,15 +102,53 @@ class Settings(BaseSettings):
     # ── LLM 调用参数 ──────────────────────────────────────
     # ⚠️ 实测坑：deepseek-flash 是思考模型，reasoning token 会先消耗预算。
     #    max_tokens=100 时 169 个 reasoning token 吃光全部预算，content 返回空字符串。
-    #    因此下限必须给足，默认 8000。
-    LLM_MAX_TOKENS: int = 8000
+    #
+    # ⚠️ **8000 → 32000（2026-09-24）。** 8000 曾经被认为是"给得很足"，
+    #    实测证明它在**真实演示图上必然失败**：
+    #
+    #        [A-01] 提供方 deepseek 调用失败: 返回空内容，但消耗了 8000 个
+    #        reasoning token —— max_tokens=8000 被思考过程耗尽。
+    #        主模型解析失败，转入降级路径
+    #
+    #    即 8000 不足以解析 `演示素材/户型图/03-三室两厅-98平.png`（1372×1418）。
+    #    图片越大 prompt 越长、推理链也越长，于是**越大越清楚的图越容易失败** ——
+    #    方向恰好是反的。
+    #
+    #    ⚠️ 而它的失败是**静默的**：任务 completed、`degraded=true`，
+    #       但降级解析只给房间名、没有面积与墙体，于是能力守卫随后拒绝生成
+    #       （4002「缺少房间面积、墙体信息」）。用户看到的是"解析成功但没法出方案"。
+    #       正是本项目最防的那类"看起来成功、实际什么都没做"。
+    #
+    #    上限已实测：DeepSeek `/v1` 接受到 `max_tokens=65536`（HTTP 200），
+    #    所以 32000（4 倍余量）既不撞上限，也不放任跑飞。
+    #
+    #    ⚠️ 此前只有 `docker-compose.yml` 覆盖成 32000，**dev 模式仍是 8000** ——
+    #       于是"本机跑一直降级、容器里跑正常"。那个差异当时是**有意留的**
+    #       （"好对比两种模式的行为"），现在对比结果出来了：dev 侧是坏的。
+    #       所以两边统一，compose 里那行覆盖也一并去掉，只留这一处定义。
+    LLM_MAX_TOKENS: int = 32000
     LLM_TIMEOUT_SECONDS: float = 120.0
     LLM_TEMPERATURE: float = 0.0
     LLM_MAX_RETRIES: int = 2
 
     # ── Agent 执行控制 ────────────────────────────────────
     AGENT_TIMEOUT_SECONDS: float = 30.0
-    AGENT_MAX_CONCURRENCY: int = 4
+    #
+    # ⚠️ 这里原来还有 `AGENT_MAX_CONCURRENCY = 4`，2026-09-24 删除。
+    #
+    # 它**全项目零调用** —— 没有任何一处信号量、队列或调度器读它。
+    # 也就是说它从来没有限制过并发，却在配置里写着"并发上限 4"。
+    # 这类纸面配置比没有配置更糟：读代码的人会据此认为并发已经受控，
+    # 于是不再去看真正限制并发的地方是哪里。
+    #
+    # 真正限制并发的是 `graph/workflow.py::MAX_PLAN_BRANCHES = 4` ——
+    # 它把分支数卡在 4，乘以 3 个产出者，最坏情况 12 路并发 LLM 调用。
+    # 实测默认三套（9 路）：fan-out 段 21.3s，三路分别 21.3/20.1/19.4s
+    # 同时段完成，**确实是真并行**。所以任何小于 9 的"并发上限"都会
+    # 直接把这段拖慢一倍（把并行变成排队），而不是"更安全"。
+    #
+    # 结论：并发靠分支数上限来管，不靠一个全局信号量。要收紧，
+    # 改 `MAX_PLAN_BRANCHES`，并连带重估 `core/progress.py` 的期望耗时。
 
     # ── Redis ─────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -107,7 +156,38 @@ class Settings(BaseSettings):
     REDIS_CACHE_PREFIX: str = "qy:cache"
     REDIS_QUOTA_PREFIX: str = "qy:quota"
     REDIS_TASK_PREFIX: str = "qy:task"
-    ENABLE_REDIS_CHECKPOINTER: bool = True
+
+    # ── LangGraph 检查点（AC-12）───────────────────────────
+    #
+    # ⚠️ **这一项从 `ENABLE_REDIS_CHECKPOINTER` 改名而来（2026-09-24）。**
+    #    原来的名字现在会骗人：检查点不存 Redis 了。
+    #
+    #    换存储的原因是**实测撞墙**，不是偏好：
+    #    `langgraph-checkpoint-redis` 依赖 RediSearch，启动时要发 `FT.INFO`，
+    #    而 §9.2 钉死的 `redis:7-alpine` **没有任何模块**：
+    #        redisvl.exceptions.RedisSearchError: unknown command 'FT.INFO'
+    #    要让它跑起来只能换 `redis/redis-stack-server` —— 镜像明显更重，
+    #    而本机 Docker VM 的内存余量本就紧张（见 docker-compose.yml 的账）。
+    #
+    #    改用它旁边的 PostgreSQL：`qy-postgres` 一直在跑、**完全空闲**
+    #    （代码里一行都没读写过它），用它做检查点等于白捡。
+    #
+    #    ⚠️ 这是对 AC-12「Redis 会话恢复」字面口径的偏离，
+    #       已在需求文档记 V2.4 修订。**语义没变**：中断后状态可恢复。
+    ENABLE_CHECKPOINTER: bool = True
+
+    @property
+    def checkpoint_dsn(self) -> str:
+        """
+        检查点的连接串（psycopg 用，不是 SQLAlchemy 的 `+psycopg2` 形式）。
+
+        与 `postgres_dsn` 分开是因为那个属性带着 SQLAlchemy 的驱动前缀，
+        而 psycopg 不认。两个都留着：将来真接 ORM 时用前者。
+        """
+        return (
+            f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
 
     # ── PostgreSQL ────────────────────────────────────────
     POSTGRES_HOST: str = "localhost"
@@ -115,6 +195,16 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "qy"
     POSTGRES_PASSWORD: str = "qy"
     POSTGRES_DB: str = "quanyou"
+
+    #: 业务数据落库开关（户型的持久化副本、方案、审计事件）。
+    #:
+    #: 与 `ENABLE_CHECKPOINTER` 分开：那个管的是**图执行状态**（中断续跑），
+    #: 这个管的是**业务数据**。两者可以独立开关 —— 例如只想知道
+    #: "库连不上时接口还活不活"，关掉这个就行。
+    #:
+    #: 关掉或连不上时，业务数据退回内存 + Redis（TTL 1 小时），
+    #: 也就是落库之前的行为。**不降级到报错**。
+    ENABLE_DB: bool = True
 
     # ── ChromaDB（嵌入式，非独立容器）──────────────────────
     CHROMA_PATH: Path = Path("E:/quanyou/data/chroma")
@@ -155,7 +245,7 @@ class Settings(BaseSettings):
 
     # AI 图上的热区 —— 默认关闭（ADR-10）
     #
-    # 需求文档 2.2.6 曾担心「预设的 0.70 阈值会让所有 AI 图都不显示热区」，
+    # 需求文档 11.2.6 曾担心「预设的 0.70 阈值会让所有 AI 图都不显示热区」，
     # 但当时那只是推测。2026-09-23 用 scripts/calibrate_hotspot_iou.py
     # 在 E:/quanyou/outputs 上实测，**推测被证实**：
     #

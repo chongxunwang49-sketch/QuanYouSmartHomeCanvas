@@ -1,172 +1,175 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, ref, watch } from 'vue'
+import { RouterView, useRoute } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
 import DegradedNotice from '@/components/DegradedNotice.vue'
 import DiffMatrix from '@/components/DiffMatrix.vue'
-import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import PaidGateNotice from '@/components/PaidGateNotice.vue'
 import PhaseProgress from '@/components/PhaseProgress.vue'
-import PlanCard from '@/components/PlanCard.vue'
-import PlanDrawer from '@/components/PlanDrawer.vue'
-import { designGenerate } from '@/api'
-import { imageAt } from '@/assets/images/pool'
-import { toast } from '@/utils/toast'
-import { messageOf } from '@/api/client'
-import type { GenerateResult, Plan } from '@/api/types'
-import { GRADE_LABEL, STYLE_LABEL, label } from '@/api/types'
-import { useTaskPolling } from '@/composables/useTaskPolling'
+import TaskCancelButton from '@/components/TaskCancelButton.vue'
+import { statusHeadline } from '@/api/types'
+import { NAV, isNavActive } from '@/config/nav'
+import { provideGenerateSession } from '@/composables/useGenerateSession'
+import { useAuthStore } from '@/stores/auth'
 import { useTaskStore } from '@/stores/task'
+import { toast } from '@/utils/toast'
 
 /**
- * 方案生成与横向对比。
+ * 方案生成 —— **模块外壳**（父路由组件）。
  *
- * 三种风格 × 三个预算档，**按位置配对**（styles[0] 配 budget_grades[0]），
- * 产出数量取两者较短的。这个配对规则是后端的契约，前端不重算。
+ * ══════════════════════════════════════════════════════════════════
+ * 为什么要拆子路由（需求方 2026-09-24 明确要求）
+ * ══════════════════════════════════════════════════════════════════
+ * 需求方原话：「我现在的建议是在「方案生成」模块采用和上面「户型解析」
+ * 模块一样的子目录形式，对功能进行细分（**不要为了做子目录而做子目录，
+ * 每个目录模块要保证不空洞**）」。
+ *
+ * 所以拆的判据是"这一页能不能独立回答一个问题"，不是"能不能凑三项"：
+ *
+ *   生成参数   —— 要生成什么？（户型、风格×档位、需求、材料偏好）
+ *   三方案对比 —— 三套方案各是什么、差在哪？（含选定）
+ *   3D 装修漫游 —— 选定那套走进去是什么样？
+ *
+ * 三页各自都是重内容（参数表单 ~700px、三张方案卡 ~900px、3D 画布
+ * 74vh），平铺在一页里会拉到 3000px 以上 —— 和「户型解析」当初拆分的
+ * 动因完全一样（见 ParseView 的文件头）。
+ *
+ * ⚠️ **`3D 装修漫游` 这一页是需求方这次点名要的**：「在用户拿到 id 后
+ *    进入的装修搭配推荐三选一后，可以在该模块再次生成一个包含家具的
+ *    3d 界面进行移动」。见 `GenerateWalkthroughView.vue`。
+ *
+ * ══════════════════════════════════════════════════════════════════
+ * 这一层负责的四件事，都不是"顺手放的"
+ * ══════════════════════════════════════════════════════════════════
+ * ① **持有生成会话。** 生成要跑 90 秒以上，轮询放在子页里的话，
+ *    用户切一次子页就把它掐掉了（原因见 useGenerateSession 文件头）。
+ *
+ * ② **降级提示挂在这一层。** `DegradedNotice` 不折叠、不可关闭，
+ *    理由是"一个能被点掉的警告，第一批就会被点掉"。放进子页的话，
+ *    切一次页就等于点掉了它。
+ *
+ * ③ **「方案已产出、审查仍在进行」那条提示也挂在这一层。** 它解释的是
+ *    "为什么方案卡上写着缺 risks" —— 用户在任何子页都该看得到，
+ *    尤其在他切到 3D 漫游去的时候。
+ *
+ * ④ **页面头只渲染一次。** 子页再放一个会变成双标题。
  */
 const route = useRoute()
-const router = useRouter()
+const s = provideGenerateSession()
+const auth = useAuthStore()
 const tasks = useTaskStore()
-const poll = useTaskPolling<GenerateResult>()
 
-const layoutId = ref(String(route.query.layout || ''))
-const submitting = ref(false)
+const generateNav = NAV.find((n) => n.to === '/generate')
+const isIndex = computed(() => route.path === '/generate')
 
 /**
- * 三套预设配对。改这里等于改"一次生成哪三套方案"。
+ * 当前所在的子页。
  *
- * ⚠️ **第 3 套曾写 `luxury`，而后端 `PlanStyle` 里没有这个值** ——
- * 后果是那一套方案（高端档）落进 `_STYLE_HINTS.get(style, …)` 的兜底分支，
- * **完全没拿到风格引导**，界面上却仍标着「意式轻奢」。
- * 后端只从 `?layout=` 或这里拿风格，不会自己纠正，所以是静默失效。
- *
- * 现已与后端 `DEFAULT_BRANCH_PAIRS`（modern/nordic/chinese）对齐 ——
- * 前端默认三套 = 后端默认三套，两边一致。
- * 可选的风格全集见 `@/api/types` 的 `STYLE_LABEL`（同样对齐后端枚举）。
+ * ⚠️ 子项用 `isNavActive(..., exact=true)` 精确匹配：子项里「生成参数」
+ * 的路径就是 `/generate`，它是 `/generate/plans` 等所有子路由的前缀 ——
+ * 用 startsWith 的话在子页会同时点亮两项（详见 config/nav 文件头）。
  */
-const PAIRS = [
-  { style: 'modern', grade: 'economy' },
-  { style: 'nordic', grade: 'medium' },
-  { style: 'chinese', grade: 'high' },
-] as const
+const currentChild = computed(() =>
+  isIndex.value
+    ? null
+    : (generateNav?.children?.find((c) => isNavActive(route.path, c.to, true)) ?? null),
+)
 
-const styles = ref<string[]>(PAIRS.map((p) => p.style))
-const grades = ref<string[]>(PAIRS.map((p) => p.grade))
+const breadcrumb = computed(() =>
+  isIndex.value
+    ? ['全友·智绘家', '方案中心', '多智能体方案并行对比']
+    : ['全友·智绘家', '方案中心', currentChild.value?.label ?? ''],
+)
 
-const quanyouPriority = ref(true)
-const requirements = ref({
-  family_size: 3,
-  has_elderly: false,
-  has_children: true,
-  pets: false,
-  smart_home: false,
-  eco_level: 'high',
+const title = computed(() =>
+  isIndex.value ? '多方案智能对比与价值评估' : (currentChild.value?.label ?? ''),
+)
+
+/** 付费门控（AC-01）。**只用于界面**：置灰 + 给理由。真正的拦截在后端 4005。 */
+const paidBlocked = computed(() => Boolean(auth.user) && !auth.canUsePaid)
+
+const matrixOpen = ref(false)
+
+const headerStatus = computed(() => {
+  const snap = s.status.value
+  if (!snap) return { icon: 'sparkle', text: '等待生成', tone: 'wood' as const }
+  return {
+    icon: snap.cancelled ? 'x-circle' : 'brain',
+    text: statusHeadline(snap),
+    tone: (snap.cancelled ? 'wood' : 'botanical') as 'wood' | 'botanical',
+  }
 })
 
-const result = computed(() => poll.status.value?.result ?? null)
-const plans = computed(() => result.value?.plans ?? [])
-const comparison = computed(() => result.value?.comparison ?? null)
+/** 用户按了「中断」：停掉轮询并立刻补拉一次状态，否则界面停在上一帧。 */
+async function afterCancel() {
+  s.poll.stop()
+  const snap = await s.poll.refreshOnce()
+  if (snap && snap.cancelled) {
+    tasks.update(snap.task_id, {
+      status: snap.status, phaseText: snap.phase_text, summary: '已中断',
+    })
+  }
+}
 
-/** 推荐位：中间那套（中档）。**这是产品位，不是系统推荐的"最优"** ——
-    系统明确不给方案排序，这里高亮的是"中间档"这个展示逻辑。 */
-const FEATURED_INDEX = 1
+/**
+ * 「开始生成」的落点。**提示文案在会话层算出来、这里只负责说。**
+ *
+ * ⚠️ 分开的理由：`submit()` 要在子页之间通用（生成参数页和顶栏按钮都调它），
+ * 而 "toast 说什么" 是界面的事。会话层不引 toast，测试与复用都干净。
+ */
+async function onGenerate() {
+  await s.submit()
+  // 材料偏好冲突（4001）不走 toast —— 那些问题由「生成参数」子页
+  // 贴在选项旁边（用户需要一边看着标红的选项一边改，弹窗一闪而过帮不上忙）。
+  if (s.filterProblems.value.length) return
 
-const drawerOpen = ref(false)
-const matrixOpen = ref(false)
-const activePlan = ref<Plan | null>(null)
-
-/** 按方案序号稳定取图 —— 同一套方案每次刷新看到的是同一张 */
-const imageFor = imageAt
-
-async function submit() {
-  if (!layoutId.value.trim()) {
-    toast.warning('请先填写或从「户型解析」带过来 layout_id')
+  const snap = s.status.value
+  if (!snap) return
+  if (snap.status === 'failed') {
+    toast.error(snap.error || '生成失败')
     return
   }
-  submitting.value = true
-  try {
-    const created = await designGenerate({
-      layout_id: layoutId.value.trim(),
-      styles: styles.value,
-      budget_grades: grades.value,
-      quanyou_priority: quanyouPriority.value,
-      requirements: requirements.value,
-    })
-    tasks.track({ taskId: created.task_id, kind: 'generate' })
-    router.replace({ query: { ...route.query, task: created.task_id } })
-
-    const snap = await poll.start(created.task_id, created.estimated_seconds)
-    if (poll.timedOut.value) {
-      toast.warning('轮询超时（120 秒）。任务可能仍在后台执行。')
-      return
-    }
-    if (!snap) return
-
-    const n = snap.result?.plans?.length ?? 0
-    tasks.update(created.task_id, {
-      status: snap.status,
-      phaseText: snap.phase_text,
-      degraded: snap.degraded,
-      summary: n ? `产出 ${n} 套方案` : snap.error || '',
-    })
-
-    if (snap.status === 'failed') toast.error(snap.error || '生成失败')
-    else if (n < (created.plan_count ?? 3)) {
-      // 个别分支失败是真实会发生的事，如实提示而不是报"成功"
-      toast.warning(`请求 ${created.plan_count ?? 3} 套，实际产出 ${n} 套`)
-    } else toast.success(`已产出 ${n} 套方案`)
-  } catch (e) {
-    toast.error(messageOf(e))
-  } finally {
-    submitting.value = false
+  if (s.poll.timedOut.value) {
+    // 期限是按后端估算算出来的（见 useTaskPolling），所以这里报实际值，
+    // 不写死"120 秒" —— 实测整链 122.9 秒，写死的话提示本身就是错的。
+    toast.warning(`轮询超时（${s.poll.timeoutSeconds.value} 秒）。任务可能仍在后台执行。`)
+    return
+  }
+  const n = snap.result?.plans?.length ?? 0
+  const want = s.styles.value.length
+  if (n && n < want) {
+    // 个别分支失败是真实会发生的事，如实提示而不是报"成功"
+    toast.warning(`请求 ${want} 套，实际产出 ${n} 套`)
+  } else if (n) {
+    toast.success(`已产出 ${n} 套方案`)
   }
 }
 
-function openDetail(plan: Plan) {
-  activePlan.value = plan
-  drawerOpen.value = true
-}
-
-function selectPlan(plan: Plan) {
-  toast.success(
-    `已选定「${label(STYLE_LABEL, plan.style)} · ${label(GRADE_LABEL, plan.budget_grade)}」。` +
-      '（演示环境：未真的落库，选定动作到此为止。）',
-  )
-}
-
-onMounted(async () => {
-  const taskId = String(route.query.task || '')
-  if (!taskId) return
-  const snap = await poll.start(taskId)
-  if (snap?.result) {
-    tasks.track({
-      taskId,
-      kind: 'generate',
-      summary: `产出 ${snap.result.plans?.length ?? 0} 套方案`,
-    })
-    tasks.update(taskId, { status: snap.status, phaseText: snap.phase_text })
-  }
-})
+// 地址栏的 layout 变了（从工作台或解析结果跳过来）就跟上
+watch(
+  () => route.query.layout,
+  (v) => {
+    const id = String(v || '')
+    if (id && id !== s.layoutId.value) s.layoutId.value = id
+  },
+)
 </script>
 
 <template>
   <main class="mx-auto flex w-full max-w-[1760px] flex-1 flex-col gap-4 overflow-y-auto scroll-thin p-6 surface-dots">
     <PageHeader
-      :breadcrumb="['全友·智绘家', '方案中心', '多智能体方案并行对比']"
-      title="多方案智能对比与价值评估"
-      :status="
-        poll.status.value
-          ? { icon: 'brain', text: poll.status.value.phase_text }
-          : { icon: 'sparkle', text: '等待生成', tone: 'wood' }
-      "
-      :code="layoutId ? `LAYOUT: ${layoutId}` : ''"
+      :breadcrumb="breadcrumb"
+      :title="title"
+      :status="headerStatus"
+      :code="s.layoutId.value ? `LAYOUT: ${s.layoutId.value}` : ''"
     >
       <template #actions>
         <button
           class="btn-ghost px-3 py-1.5"
           type="button"
-          :disabled="!plans.length"
+          :disabled="!s.plans.value.length"
           @click="matrixOpen = true"
         >
           <AppIcon name="chart-bar" :size="16" class="text-botanical" />
@@ -175,234 +178,78 @@ onMounted(async () => {
         <button
           class="btn-primary px-3.5 py-1.5"
           type="button"
-          :disabled="!layoutId.trim() || submitting || poll.running.value"
-          @click="submit"
+          :disabled="!s.layoutId.value.trim() || s.submitting.value || s.poll.running.value || paidBlocked"
+          @click="onGenerate"
         >
-          <AppIcon :name="poll.running.value ? 'spinner' : 'sparkle'" :size="16" />
-          <span>{{ poll.running.value ? '生成中…' : plans.length ? '重新生成' : '开始生成' }}</span>
+          <AppIcon :name="s.poll.running.value ? 'spinner' : 'sparkle'" :size="16" />
+          <span>{{
+            s.poll.running.value ? '生成中…' : s.plans.value.length ? '重新生成' : '开始生成'
+          }}</span>
         </button>
       </template>
     </PageHeader>
 
+    <!-- 会员门控（AC-01）。放在"缺户型 ID"那条之前 —— 它是更前置的一个
+         问题：连"能不能做这件事"都不成立时，先答那个。 -->
+    <PaidGateNotice feature="GENERATE" />
+
     <!--
-      按钮置灰必须说明原因。
-      「开始生成」在没填 layout_id 时是 disabled —— 如果不解释，
-      用户点一下发现没反应，只会认为界面坏了。
+      ── 降级提示：故意放在子路由**之上**，切页也在 ──
+      见文件头 ②。它不折叠、不可关闭，这是刻意继承的约束。
+    -->
+    <DegradedNotice v-if="s.result.value?.degraded" :reasons="s.result.value.degrade_reasons" />
+
+    <!--
+      ── 方案已交付、风险复核仍在进行 ──
+      ⚠️ 这条提示不是装饰：此时方案卡片的 `missing_artifacts` 里写着 `risks`。
+      实测方案 38 秒产出、审查还要 82 秒 —— 不说的话，那 82 秒里用户
+      看到的是一份"缺东西"的结果，而且切到 3D 页也仍然看不到解释。
     -->
     <div
-      v-if="!layoutId.trim() && !plans.length"
-      class="flex items-start gap-2.5 rounded-xl border border-accent-gold/40 bg-wood-light/50 p-3"
+      v-if="s.poll.running.value && s.result.value?.partial && s.plans.value.length"
+      class="flex items-start gap-2.5 rounded-xl border border-botanical/30 bg-botanical/5 p-3"
     >
-      <AppIcon name="info" :size="17" class="mt-0.5 shrink-0 text-accent-gold" />
+      <AppIcon name="info" :size="17" class="mt-0.5 shrink-0 text-botanical" />
       <p class="text-[11px] leading-relaxed text-wood">
-        <span class="font-semibold">「开始生成」当前不可点，因为还没有户型 ID。</span>
-        生成方案要用一份**已解析的户型**——先到「户型解析」上传一张户型图，
-        解析完成后点「生成装修方案」会自动带着 ID 跳过来。
+        <span class="font-semibold">
+          方案已产出（{{ s.plans.value.length }} 套），可以开始看了。
+        </span>
+        避坑审查仍在进行，完成后会自动补上每套方案的风险结论 ——
+        <span class="text-wood-muted">
+          在此之前，方案卡片上的「缺少产物」会写明缺的是哪一项。
+        </span>
       </p>
     </div>
 
-    <!-- ══ 生成参数 ══ -->
-    <section v-if="!plans.length" class="card p-4">
-      <h2 class="mb-3 flex items-center gap-2 font-serif text-[15px] font-semibold text-wood-dark">
-        <AppIcon name="gear" :size="16" class="text-botanical" />
-        <span>生成参数</span>
-      </h2>
+    <!-- ── 子页 ── -->
+    <RouterView />
 
-      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div class="flex flex-col gap-3">
-          <div>
-            <label class="mb-1.5 block text-[12px] font-semibold text-wood-dark">
-              户型 ID
-              <span class="ml-1 font-normal text-wood-muted">（来自「户型解析」）</span>
-            </label>
-            <div class="flex gap-2">
-              <input
-                v-model="layoutId"
-                class="field px-3 py-2 font-mono"
-                placeholder="layout_20260923_xxxxxx"
-              />
-              <button class="btn-ghost shrink-0 px-3 py-2" type="button" @click="router.push('/parse')">
-                <AppIcon name="blueprint" :size="15" class="text-botanical" />
-                <span>去解析</span>
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <p class="mb-1.5 text-[12px] font-semibold text-wood-dark">
-              风格 × 预算档（按位置配对）
-            </p>
-            <div class="flex flex-col gap-2">
-              <div
-                v-for="(p, i) in PAIRS"
-                :key="p.style"
-                class="flex items-center gap-2 rounded-xl border border-warm-border bg-white p-2.5"
-              >
-                <span class="font-mono text-[11px] text-wood-muted">
-                  {{ String(i + 1).padStart(2, '0') }}
-                </span>
-                <select v-model="styles[i]" class="field flex-1 px-2.5 py-1.5">
-                  <option v-for="(v, k) in STYLE_LABEL" :key="k" :value="k">{{ v }}</option>
-                </select>
-                <AppIcon name="arrow-right" :size="14" class="shrink-0 text-wood-muted" />
-                <select v-model="grades[i]" class="field flex-1 px-2.5 py-1.5">
-                  <option v-for="(v, k) in GRADE_LABEL" :key="k" :value="k">{{ v }}</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="flex flex-col gap-3">
-          <div>
-            <p class="mb-1.5 text-[12px] font-semibold text-wood-dark">业主需求</p>
-            <div class="grid grid-cols-2 gap-2">
-              <label class="flex items-center gap-2 rounded-xl border border-warm-border bg-white px-3 py-2">
-                <span class="text-[12px] text-wood-muted">常住人数</span>
-                <input
-                  v-model.number="requirements.family_size"
-                  class="field w-14 px-2 py-1 text-center"
-                  type="number"
-                  min="1"
-                  max="10"
-                />
-              </label>
-              <label
-                v-for="opt in [
-                  { k: 'has_children', label: '有儿童' },
-                  { k: 'has_elderly', label: '有老人' },
-                  { k: 'pets', label: '养宠物' },
-                  { k: 'smart_home', label: '要智能家居' },
-                ]"
-                :key="opt.k"
-                class="flex cursor-pointer items-center gap-2 rounded-xl border border-warm-border bg-white px-3 py-2"
-              >
-                <input
-                  v-model="(requirements as Record<string, unknown>)[opt.k]"
-                  class="accent-[#4A7C59]"
-                  type="checkbox"
-                />
-                <span class="text-[12px] text-wood-dark">{{ opt.label }}</span>
-              </label>
-            </div>
-          </div>
-
-          <label
-            class="flex cursor-pointer items-start gap-3 rounded-xl border border-warm-border bg-white p-3"
-          >
-            <input v-model="quanyouPriority" class="mt-0.5 accent-[#4A7C59]" type="checkbox" />
-            <span>
-              <span class="flex items-center gap-1.5 text-[12px] font-semibold text-wood-dark">
-                <AppIcon name="leaf" :size="14" class="text-botanical" />
-                <span>优先推荐全友自有产品</span>
-              </span>
-              <span class="mt-0.5 block text-[11px] leading-relaxed text-wood-muted">
-                开启后选材会优先命中全友自有商品，覆盖率目标 ≥60%（AC-18）。
-                未达标时后端会自动做同价位替代，替代记录可见于材料明细。
-              </span>
-            </span>
-          </label>
-
-          <div class="rounded-xl border border-warm-border bg-warm-sidebar/60 p-3">
-            <p class="flex items-center gap-1.5 text-[12px] font-semibold text-wood-dark">
-              <AppIcon name="info" :size="14" class="text-wood-muted" />
-              <span>关于耗时</span>
-            </p>
-            <p class="mt-1 text-[11px] leading-relaxed text-wood-muted">
-              生成会并行跑 3 套方案 × 3 个 Agent，加一次汇聚审查，共 10 个产出任务。
-              实测约 95 秒。期间可以切到别的页面，任务在后台继续。
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-
+    <!--
+      进度卡放在外壳层，**每个子页下面都能看到**。
+      生成要跑 90 秒以上，这期间用户可能已经切到「三方案对比」去看
+      （那里此刻还是空的）—— 进度必须跟着他。
+    -->
     <PhaseProgress
-      v-if="poll.status.value"
-      :text="poll.status.value.phase_text"
-      :progress="poll.status.value.progress"
-      :elapsed-ms="poll.elapsedMs.value"
-      :over-estimate="poll.overEstimate.value"
-      :log="poll.phaseLog.value"
-      :status="poll.status.value.status"
-    />
-
-    <!-- ══ 空状态 ══ -->
-    <div v-if="!plans.length && !poll.running.value" class="card">
-      <EmptyState
-        art="设计与户型-design-components_c2hs"
-        title="还没有生成方案"
-        description="填入一个已解析的户型 ID，选好风格与预算档，系统会并行产出空间规划、造价明细与材料选型，再做一次汇聚审查。"
-      >
-        <button class="btn-ghost px-4 py-2" type="button" @click="router.push('/parse')">
-          <AppIcon name="blueprint" :size="16" class="text-botanical" />
-          <span>先去解析户型图</span>
-        </button>
-      </EmptyState>
-    </div>
-
-    <!-- ══ 降级提示 ══ -->
-    <DegradedNotice
-      v-if="result?.degraded"
-      :reasons="result.degrade_reasons"
-    />
-
-    <!-- ══ 方案卡 ══ -->
-    <section v-if="plans.length" class="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-3">
-      <PlanCard
-        v-for="(p, i) in plans"
-        :key="p.plan_id"
-        :plan="p"
-        :featured="i === FEATURED_INDEX && plans.length >= 3"
-        :image="imageFor(i)"
-        :image-index="i"
-        @detail="openDetail(p)"
-        @select="selectPlan(p)"
-      />
-    </section>
-
-    <!-- ══ 汇总说明 ══ -->
-    <section
-      v-if="plans.length && comparison?.notes?.length"
-      class="card p-4"
+      v-if="s.status.value"
+      :text="s.status.value.phase_text"
+      :progress="s.status.value.progress"
+      :elapsed-ms="s.poll.elapsedMs.value"
+      :eta-seconds="s.poll.etaSeconds.value"
+      :overrun="s.poll.overrun.value"
+      :log="s.poll.phaseLog.value"
+      :status="s.status.value.status"
+      :error="s.status.value.error ?? ''"
+      :cancelled="s.status.value.cancelled"
     >
-      <p class="flex items-center gap-1.5 text-[12px] font-semibold text-wood-dark">
-        <AppIcon name="info" :size="14" class="text-wood-muted" />
-        <span>汇总说明</span>
-      </p>
-      <ul class="mt-1.5 space-y-1">
-        <li
-          v-for="(n, i) in comparison.notes"
-          :key="i"
-          class="flex items-start gap-1.5 text-[11px] leading-relaxed text-wood-muted"
-        >
-          <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-accent-gold" />
-          <span>{{ n }}</span>
-        </li>
-      </ul>
-    </section>
+      <template #actions>
+        <TaskCancelButton
+          v-if="s.poll.running.value"
+          :task-id="s.poll.activeTaskId.value"
+          @settled="afterCancel"
+        />
+      </template>
+    </PhaseProgress>
 
-    <!-- ══ 错误 ══ -->
-    <section
-      v-if="result?.errors?.length"
-      class="rounded-xl border border-accent-red/30 bg-accent-red/5 p-3.5"
-    >
-      <p class="flex items-center gap-1.5 text-[12px] font-bold text-wood-dark">
-        <AppIcon name="bug" :size="14" class="text-accent-red" />
-        <span>执行中的错误（{{ result.errors.length }}）</span>
-      </p>
-      <ul class="mt-1.5 space-y-1">
-        <li
-          v-for="(e, i) in result.errors"
-          :key="i"
-          class="break-words font-mono text-[11px] leading-relaxed text-wood"
-        >
-          [{{ e.agent || '—' }}] {{ e.message }}
-        </li>
-      </ul>
-    </section>
-
-    <PlanDrawer :plan="activePlan" :open="drawerOpen" @close="drawerOpen = false" />
-    <DiffMatrix :comparison="comparison" :open="matrixOpen" @close="matrixOpen = false" />
+    <DiffMatrix :comparison="s.comparison.value" :open="matrixOpen" @close="matrixOpen = false" />
   </main>
 </template>

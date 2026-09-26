@@ -30,6 +30,7 @@ Windows 就复现 —— 属于最难查的那类 bug。
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -95,6 +96,123 @@ def _reset_redis_singleton():
     reset_redis_client()
     yield
     reset_redis_client()
+
+
+@pytest.fixture(autouse=True)
+async def _drain_background_tasks():
+    """
+    每个用例结束后**取消在飞的图任务**，再丢弃任务注册表。
+
+    ⚠️ 这是 2026-09-23 定位到的一个**真实的测试污染**，不是洁癖。
+
+    现象：`pytest tests/test_api.py` 偶发失败，且失败在
+    `TestAuthGate` 的配额用例上，报 `assert 0 == 4006` —— 看着像权限逻辑错了。
+
+    实测（`pytest -s`，把降级告警打出来）：
+        DIAG  4 次请求全部放行，而 Redis 里的计数器只涨到 2
+        WARN  [quota] Redis 不可用，本次未计数即放行：user=vip task=generate  ×2
+        E     redis.exceptions.TimeoutError: Timeout reading from localhost:6379
+
+    真因链：`/layout/parse` 与 `/design/generate` 的接口用例会**真的起图任务**，
+    而它们从不被回收 —— 每个 `generate` 任务 fan-out 九路并发 Agent，
+    这些协程在用例结束后仍在事件循环里打转。用例越跑越多，
+    事件循环被挤到 **Redis 往返超过 `socket_timeout=3s`** →
+    `check_and_consume_quota` 走降级路径（放行且不计数）→ 配额上限测不出来。
+
+    在 HEAD 上用 `git worktree` 跑过对照：**同样的失败在改动之前就存在**。
+
+    所以这里在用例之间把任务清干净。这既消掉了偶发失败，
+    也让套件跑得更快（少了几十个白烧 CPU 的协程）。
+    """
+    yield
+    try:
+        from backend.app.api.tasks import get_task_manager, reset_task_manager
+
+        # shutdown 会把注册表标记为"停机中"，所以之后必须 reset，
+        # 否则下一个用例连 `create()` 都会被拒（见 TaskManager.create）。
+        #
+        # ⚠️ `timeout=1` 而不是 3：`cancel()` 是立刻发出的，这个超时只决定
+        #    **等多久确认它退干净**。而图任务内部有 `asyncio.shield()` 包住的
+        #    子协程（langgraph 的重试监视线），外层被取消后它们不一定会跟着退，
+        #    于是几乎每个用例都要白等满整个超时。实测 `timeout=3` 把整套
+        #    从 101s 拖到 228s；1s 足够拿到"取消已送达"的效果。
+        await get_task_manager().shutdown(timeout=1)
+        reset_task_manager()
+    except Exception as e:  # noqa: BLE001 —— 清理失败不该让用例变红
+        import warnings
+
+        warnings.warn(f"清理后台任务失败（忽略）：{type(e).__name__}: {e}")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _restore_demo_quota():
+    """
+    整套测试跑完后，把演示账号的额度计数清回干净。
+
+    ⚠️ 不加这个的话，跑一次 `pytest` 就会把 `vip`/`demo` 当天的生成额度用光
+    （配额用例会故意打满），于是**演示时一打开就是"今日已用完"** ——
+    而且它会在 Redis 里挂到次日零点，看着像权限配错了。
+
+    实测：`/auth/quota` 在跑完测试后返回
+        generate  used=3 limit=3   → 界面显示"今日已用完"
+    而这不是代码问题，是测试留下的状态。
+
+    session 级：只在整套跑完时清一次，不是每个用例都清（那样反而是几千次
+    Redis 往返）。
+    """
+    yield
+    try:
+        import asyncio
+        from datetime import date
+
+        from backend.app.core import auth
+        from backend.app.core.config import settings
+        from backend.app.core.redis_client import get_redis
+
+        async def _clear() -> bool:
+            client = await get_redis().client()
+            if client is None:
+                return False
+            today = date.today().isoformat()
+            keys = [
+                f"{settings.REDIS_QUOTA_PREFIX}:{kind}:{u.id}:{today}"
+                for u in auth.users()
+                for kind in ("parse", "generate", "review")
+            ]
+            await client.delete(*keys)
+            return True
+
+        asyncio.run(_clear())
+    except Exception:  # noqa: BLE001 —— 清理失败不该让整轮测试算失败
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _isolated_user_overrides(tmp_path, monkeypatch):
+    """
+    把「运行期用户覆盖」隔离到临时文件。
+
+    ⚠️ **这是必需的，不是洁癖。** `data/users_override.json` 是**演示状态的
+    落盘位置** —— 你在界面上点一下"开通会员"，`demo` 就变成 paid 了。
+    如果测试读的是那个真实文件，后果是：
+
+        · `test_免费用户用不了付费功能_付费用户可以` 会因为找不到 free 用户
+          抛 `StopIteration` —— 报错信息完全指不到"你刚才演示过"
+        · 表现是"昨天还全绿，今天红了"，而且改代码怎么都不好
+
+    测试必须只依赖 `seed_data/users.json` 这份**入库的**种子状态。
+    每个用例一个空目录，写完就丢。
+    """
+    from backend.app.core import auth
+
+    original = auth.OVERRIDE_PATH
+    auth.OVERRIDE_PATH = tmp_path / "users_override.json"
+    auth.reset_user_cache()
+    try:
+        yield
+    finally:
+        auth.OVERRIDE_PATH = original
+        auth.reset_user_cache()
 
 
 @pytest.fixture(autouse=True)

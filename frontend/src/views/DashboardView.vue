@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { imageAttribution, imagePool } from '@/assets/images/pool'
 import AppIcon from '@/components/AppIcon.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ImageLightbox from '@/components/ImageLightbox.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { useAuthStore } from '@/stores/auth'
 import { useHealthStore } from '@/stores/health'
 import { useTaskStore } from '@/stores/task'
 
@@ -14,16 +15,36 @@ import { useTaskStore } from '@/stores/task'
  * 工作台总览。
  *
  * ⚠️ **这一页没有假数据。** 所有数字都来自真实来源：
- * 任务台账（本次会话真实提交过的任务）、`/system/health`（真实依赖状态）、
+ * 任务台账（本次会话真实提交过的任务）、`/dashboard/stats`（跨会话累计，
+ * 从库里数出来）、`/system/health`（真实依赖状态）、
  * `seed_data/material_catalog.json`（演示目录，会显著标注）。
+ *
+ * ⚠️ 「本会话」与「累计」**分开陈列、分别标注口径** —— 它们一个是浏览器
+ * 内存里的、一个是库里的，混在一处会让人以为两套数字是同一个口径。
  *
  * 之所以强调这点：工作台是"仪表盘"最容易被编数据的地方——
  * 写死几个漂亮的同比增幅、几条趋势线，看起来完整，但那正是
  * 用户最反感的"AI 味"。宁可空着，也不编。
  */
 const router = useRouter()
+const route = useRoute()
 const tasks = useTaskStore()
 const health = useHealthStore()
+const auth = useAuthStore()
+
+/**
+ * 被角色守卫弹回来时带过来的那一页名字，没有就是 `''`。
+ *
+ * 「知道了」把它从地址栏清掉 —— 否则用户刷新一下又看见一次，
+ * 会以为系统在反复报同一个错。
+ */
+const denied = computed(() => String(route.query.denied ?? ''))
+
+function clearDenied() {
+  const q = { ...route.query }
+  delete q.denied
+  router.replace({ path: '/', query: q })
+}
 
 // 实景图池。案例图缺失时自动回落 Pexels 照片（见 assets/images/pool.ts）
 const cases = imagePool.main
@@ -130,6 +151,54 @@ const ENTRIES = [
 
 const recent = computed(() => tasks.recent.slice(0, 6))
 
+// ── 累计计数（跨会话，来自 `/dashboard/stats`）────────────────────
+//
+// ⚠️ 与「最近任务」那个列表是**两种东西**，页面上也分开说：
+//    · 这个块      跨会话持久化（落库），刷新、重启都还在
+//    · 最近任务    本次会话（前端 Pinia），刷新即清零
+// 混在一起陈列的话，用户会以为"累计 12 个户型"和"最近 6 个任务"
+// 是同一套口径的数 —— 而它们一个是库里的、一个是浏览器内存里的。
+const stats = ref<DashboardStatsData | null>(null)
+
+/** `null` → `—`。**不显示 0**：0 是"确实没有"，null 是"读不到"。 */
+const num = (v: number | null | undefined) => (v === null || v === undefined ? '—' : String(v))
+
+const statCards = computed(() => {
+  const s = stats.value
+  return [
+    {
+      label: '户型', value: num(s?.layouts),
+      hint: s?.available ? '已解析并落库' : '数据库不可用',
+      tone: 'text-wood-dark',
+    },
+    {
+      label: '装修方案', value: num(s?.plans),
+      hint: s?.available ? '三套一组，按方案计数' : '数据库不可用',
+      tone: 'text-wood-dark',
+    },
+    {
+      label: '审计事件', value: num(s?.audit_events),
+      hint: s?.available ? `其中登录 ${s.by_action.login ?? 0} 次` : '数据库不可用',
+      tone: 'text-botanical',
+    },
+    {
+      label: '知识库', value: s?.kb.available ? `${s.kb.chunks}` : '—',
+      hint: s?.kb.available ? `${s.kb.documents ?? '?'} 篇文档` : (s?.kb.reason || '不可用'),
+      tone: s?.kb.available ? 'text-botanical' : 'text-accent-gold',
+    },
+  ]
+})
+
+onMounted(async () => {
+  try {
+    stats.value = await dashboardStats()
+  } catch {
+    // 拿不到就让这个块整体不显示 —— 但**不能显示成 0**，
+    // 所以这里保持 null，模板里 `v-if="stats"` 会把它整块收起来。
+    stats.value = null
+  }
+})
+
 const statusLabel: Record<string, string> = {
   pending: '排队中',
   processing: '进行中',
@@ -158,9 +227,37 @@ const checkEntries = computed(() => Object.entries(health.checks))
   <main class="mx-auto flex w-full max-w-[1760px] flex-1 flex-col gap-4 overflow-y-auto scroll-thin p-6 surface-glow">
     <PageHeader
       :breadcrumb="['全友·智绘家', '工作台总览']"
-      title="工作台总览"
+      :title="auth.isLoggedIn ? `你好，${auth.displayName}` : '工作台总览'"
       :status="{ icon: 'leaf', text: 'Botanical Warmth · Nature Edition' }"
     />
+
+    <!--
+      被角色守卫弹回来时的说明（`router/index.ts` 的 `denied` 参数）。
+
+      ⚠️ 守卫**刻意不渲染一个 403 页面**：用户是点旧书签、敲 URL 或从 ⌘K
+      过来的，TA 没有做错什么，一个报错页只会让人以为系统坏了。
+      但也不能**静默**弹回去 —— 那会表现成"我点了没反应"。
+      所以落点在这里说清是哪一页、为什么、以及当前角色是什么。
+    -->
+    <div
+      v-if="denied"
+      class="flex items-start gap-2.5 rounded-xl border border-accent-gold/45 bg-wood-light/55 p-3"
+    >
+      <AppIcon name="warning-circle" :size="17" class="mt-0.5 shrink-0 text-accent-gold" />
+      <div class="min-w-0 flex-1">
+        <p class="text-[12px] font-semibold text-wood-dark">
+          「{{ denied }}」需要更高的角色权限，已返回工作台
+        </p>
+        <p class="mt-1 text-[11px] leading-relaxed text-wood">
+          当前登录：{{ auth.displayName }}（{{ auth.user?.role_label }}）。
+          要用管理员账号看全部账号与知识库，请退出后用
+          <span class="num font-semibold">admin</span> 登录。
+        </p>
+      </div>
+      <button class="btn-ghost shrink-0 px-3 py-1.5" type="button" @click="clearDenied">
+        <span>知道了</span>
+      </button>
+    </div>
 
     <!-- ══ 上部：入口卡 + 实景图 ══ -->
     <section class="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -241,15 +338,55 @@ const checkEntries = computed(() => Object.entries(health.checks))
         </span>
 
         <div class="pointer-events-none absolute bottom-0 left-0 right-0 p-4">
+          <!-- 这个徽标是**标签**（"这张图是什么"），不是版权声明，所以保留。
+               ⚠️ 原来这里下面还压着一行 `imageAttribution`，已删 —— 见下面对
+               「声明只写一处」的说明。 -->
           <span
             class="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/85 px-2.5 py-0.5 text-[11px] font-semibold text-wood backdrop-blur-sm"
           >
             <AppIcon name="house-line" :size="13" class="text-botanical" />
             <span>{{ imagePool.isQuanyouCase ? '全友实景案例' : '家居实拍参考' }}</span>
           </span>
-          <p class="mt-2 text-[11px] leading-relaxed text-white/90">{{ imageAttribution }}</p>
         </div>
       </div>
+    </section>
+
+    <!-- ══ 累计（跨会话，来自 /dashboard/stats）══ -->
+    <section v-if="stats" class="card p-4">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 class="flex items-center gap-2 font-serif text-[16px] font-semibold text-wood-dark">
+          <AppIcon name="chart-line" :size="17" class="text-botanical" />
+          <span>累计</span>
+        </h2>
+        <span class="text-[11px] text-wood-muted">
+          跨会话持久化的真实计数 · 与下面「仅本会话」的那个列表不是一回事
+        </span>
+      </div>
+
+      <!--
+        ⚠️ **库不通时显示 `—` 而不是 0。**
+        `null` 与 `0` 的含义完全相反：0 是"确实没做过"，
+        null 是"读不到"。显示成 0 的话，评审者会以为系统是空的 ——
+        而这正是本项目最忌讳的那类"看起来合理的错误"。
+      -->
+      <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div
+          v-for="c in statCards"
+          :key="c.label"
+          class="rounded-xl border border-warm-border bg-white p-3"
+        >
+          <p class="text-[10px] font-semibold uppercase text-wood-muted">{{ c.label }}</p>
+          <p class="num mt-1 text-[22px] font-bold" :class="c.tone">{{ c.value }}</p>
+          <p class="mt-0.5 text-[10px] text-wood-muted">{{ c.hint }}</p>
+        </div>
+      </div>
+
+      <p
+        v-if="!stats.available"
+        class="mt-3 rounded-xl border border-accent-gold/40 bg-wood-light/50 p-2.5 text-[11px] leading-relaxed text-wood"
+      >
+        {{ stats.reason }}
+      </p>
     </section>
 
     <!-- ══ 中部：任务 + 系统状态 ══ -->
@@ -451,12 +588,27 @@ const checkEntries = computed(() => Object.entries(health.checks))
         </div>
       </div>
 
+      <!--
+        ⚠️ **半页的图片声明只写在这一处。**
+
+        原来每张图下方（主图、每张缩略图、灯箱）都挂一行"素材来自…"，
+        用户反馈：每张都声明会让看图这件事变差（视线总被那行字拽住）。
+        声明的作用是"明确告知"，**告知一次就够了** —— 逐图重复不会让声明
+        更有效，只会让界面像一面免责声明墙。
+      -->
       <p class="mt-3 text-[11px] leading-relaxed text-wood-muted/80">
         素材来源：{{ imageAttribution }}。
       </p>
     </section>
 
-    <!-- 灯箱。主图与两排画廊共用一套下标，翻页能一路翻到底 -->
+    <!--
+      灯箱。主图与两排画廊共用一套下标，翻页能一路翻到底。
+
+      ⚠️ 这里的 `caption` **保留**，它不算"重复声明"：
+      灯箱是**全屏**的，会把上一条（唯一的）声明整个盖住 ——
+      人在单独看某张图时，声明必须仍然可见。这不是多印一遍，
+      是让同一句话在另一个上下文里继续有效。
+    -->
     <ImageLightbox
       :images="cases"
       :index="lightboxIndex"

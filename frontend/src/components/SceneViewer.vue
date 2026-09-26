@@ -4,15 +4,17 @@ import type * as THREE_NS from 'three'
 
 import AppIcon from './AppIcon.vue'
 import {
+  layoutFurniture,
   layoutPlanSvg,
   layoutWalkable,
   messageOf,
 } from '../api'
-import type { WalkableData, WalkableResponse } from '../api'
+import type { FurnitureData, WalkableData, WalkableResponse } from '../api'
 import { cappedPixelRatio, readGpuInfo, useFrameStats, type GpuInfo } from '../composables/useFrameStats'
 import type { CameraRig } from '../three/rig'
-// ⚠️ 从 coords 引，不从 rig 引 —— rig 会静态拉进 three（570KB）
+// ⚠️ 从 coords / keys 引，不从 rig 引 —— rig 会静态拉进 three（570KB）
 import { DEFAULT_HFOV_DEG, MAX_HFOV_DEG, MIN_HFOV_DEG } from '../three/coords'
+import { ACTIONS, bindingsFor, helpLine, KEYMAP, ONCE_MAP, type Action, type OnceAction } from '../three/keys'
 
 import type { SceneHandles } from '../three/scene'
 
@@ -39,9 +41,34 @@ import type { SceneHandles } from '../three/scene'
  * 走两步就看得出来。
  */
 
+/**
+ * ⚠️ **家具是「方案」的属性，不是「户型」的属性**（2026-09-24 需求方明确）。
+ *
+ * 同一个户型可以有三套装修方案，家具因此有三种摆法；而户型本身的 3D
+ * 是一份、与方案无关。所以这个组件用 `planId` 决定画不画家具：
+ *
+ *   只给 layoutId                 → 空房子。这是「户型解析」的 3D 漫游
+ *   layoutId + planId             → 在**同一份户型几何**上放这套方案的家具。
+ *                                   这是「方案生成 · 三选一」之后的 3D 漫游
+ *
+ * 两条路径共用同一份 `/walkable` 几何，**不从 0 重新建模** —— 需求方
+ * 原话：「「方案生成」模块的 3d 漫游就是在「户型解析」3d 漫游的情况下
+ * 放入家具和装修，而不是自己重新从 0 生成，这样可以省资源和等待时间」。
+ *
+ * 之前的实现是无条件拉家具并画上 —— 于是「户型解析」的 3D 里出现了家具，
+ * 而那里本来应该是空房子。那不是多画了几件东西：它让"解析结果"看起来
+ * 已经带了装修，用户分不清看到的是户型还是方案。
+ */
 const props = withDefaults(
-  defineProps<{ layoutId: string; height?: string }>(),
-  { height: '520px' },
+  defineProps<{
+    layoutId: string
+    height?: string
+    /** 装修方案 ID。给了才画家具（见上面的说明）。 */
+    planId?: string
+    /** 方案风格，决定家具配色。不给时后端按 modern 兜底。 */
+    planStyle?: string
+  }>(),
+  { height: '520px', planId: '', planStyle: '' },
 )
 
 const canvasEl = ref<HTMLCanvasElement | null>(null)
@@ -60,11 +87,19 @@ const bumping = ref(false)
 /** 当前水平视场角。用户可调，存 localStorage —— 这是主观偏好，不该写死。 */
 const hFov = ref(Number(localStorage.getItem('qy.viewer.hfov') || DEFAULT_HFOV_DEG))
 
-/** 离玩家最近、且够近可以够得着的那扇门 */
-const nearDoor = ref<{ index: number; open: boolean; dist: number } | null>(null)
+/**
+ * 当前会被 `F` 作用的那扇门。
+ *
+ * ⚠️ `byAim` 要显示给用户：**"F 会作用在哪扇门"必须是看得见的**。
+ * 这正是"两扇门贴得近时开错了门"这个问题的根治办法 —— 距离判据下
+ * 用户无从知道系统选了哪一扇，只能靠按下去再试。
+ */
+const doorTarget = ref<{ index: number; open: boolean; dist: number; byAim: boolean } | null>(null)
 /** 最近一次开关门的提示 */
 const doorToast = ref('')
 let doorToastAt = 0
+/** 上一帧点亮的门。切目标时先熄灭它，否则会留下一路亮着的门。 */
+let litDoor: { index: number; setHighlight(on: boolean): void } | null = null
 
 const stats = useFrameStats()
 /** 探测到的显卡。拿不到就是 null，不影响运行。 */
@@ -72,8 +107,31 @@ const gpu = shallowRef<GpuInfo | null>(null)
 const webglFailed = ref('')
 
 const walkable = computed<WalkableData | null>(() => data.value?.walkable ?? null)
+/**
+ * 家具。**只有给了 `planId` 才会去取**（见 props 的说明）。
+ * null = 这套没有家具，画空房子。`furnitureError` 单独记"该有但取不到"。
+ */
+const furniture = shallowRef<FurnitureData | null>(null)
+const furnitureError = ref('')
+/** 摆不下的家具 —— 与"没生成"是两件事，界面上要分开说。 */
+const furnitureRejected = computed(() => furniture.value?.rejected ?? [])
+/** 这次要不要画家具。见 props 的说明。 */
+const wantsFurniture = computed(() => Boolean(props.planId))
 /** 模板里要读门的状态，用一个浅引用桥接（handles 是普通变量，Vue 追踪不到） */
 const handlesRef = shallowRef<SceneHandles | null>(null)
+/**
+ * 后端判定的"可贴地行走"。**这是"能不能切"，不是"默不默认"。**
+ *
+ * ⚠️ 2026-09-26 需求方定了：**自由视角是默认视角**。
+ *
+ * 起因是实测 —— 同一张演示图解析 6 次只有 3 次判定可行走
+ * （可达率 33%~56%，从未超过 56%）。也就是"打开就是自由视角"是**常态**，
+ * 而原来的界面把它当失败来措辞（"后端判定不可行走"+ 一屏 issue），
+ * 相机还放在房间里 1.6m 高处平视 —— 那个机位什么都看不出来。
+ *
+ * 所以现在：**开局一律自由视角，起点在天花板之上俯视**（见 `rig.ts`
+ * 的 `FLY_VANTAGE_*`），能走的户型多给一个"下到地面行走"。
+ */
 const canWalk = computed(() => walkable.value?.mode === 'walk')
 
 /**
@@ -94,13 +152,17 @@ let lastT = 0
 let bumpTimer = 0
 let doorAt = 0
 
-/** 够得着门的距离（米）。门宽 0.9m，站在门口一两步之内 */
-const DOOR_REACH_M = 2.0
+/** 够得着门的距离（米）。**口径在 `three/scene.ts` 里，一处定义。** */
+const DOOR_REACH_M = 2.6
 
-const keys = {
-  forward: false, back: false, left: false, right: false,
-  up: false, down: false, run: false,
-}
+/**
+ * 按键状态。字段名 = `three/keys.ts` 的 `Action`，**那份表是唯一定义处**。
+ *
+ * 用 `??=` 而不是写死一份初始对象：键表加了新动作时，这里漏一个就是
+ * `keys[action]` 恒为 undefined 的静默失败（表现为"新键按了没反应"）。
+ */
+const keys = {} as Record<Action, boolean>
+for (const a of ACTIONS) keys[a] = false
 
 // ══════════════════════════════════════════════════════════════════
 // 加载与建场景
@@ -110,15 +172,36 @@ async function load() {
   if (!props.layoutId) return
   loading.value = true
   error.value = ''
+  furnitureError.value = ''
   try {
-    // 两个请求并行：3D 几何 + 2D 户型图（小地图底图）
-    const [payload, svg] = await Promise.all([
+    // 三个请求并行：3D 几何 + 家具 + 2D 户型图（小地图底图）
+    //
+    // ⚠️ 没有 `planId` 时**根本不发家具请求** —— 不是"发了但不用"。
+    //    户型解析的 3D 是空房子，那是一个确定的结论，不是一个缺省。
+    //    发出去再丢掉会让后端白算一遍摆放（要遍历房间 × 目录），
+    //    也会让日志里出现一个没人用的调用。
+    const [payload, furn, svg] = await Promise.all([
       layoutWalkable(props.layoutId),
+      wantsFurniture.value
+        // ⚠️ **家具拿不到不挡住 3D。** 空房子也比没有房子好。
+        //    但"为什么没有家具"要记下来给用户看，不能静默（AC-17）。
+        ? layoutFurniture(props.layoutId, {
+            planId: props.planId,
+            style: props.planStyle || undefined,
+          }).catch((e: unknown) => {
+            furnitureError.value = messageOf(e) || '家具数据取不到'
+            return null
+          })
+        : Promise.resolve(null),
       layoutPlanSvg(props.layoutId).catch(() => ''),   // 小地图拿不到不该挡住 3D
     ])
+    furniture.value = furn
     data.value = payload
     planSvg.value = svg
-    mode.value = payload.walkable.mode
+    // ⚠️ **开局一律自由视角**，不跟 `payload.walkable.mode` 走。
+    //    跟它走的话，同一个演示户型两次打开会是两种视角 —— 而"能走"
+    //    只有一半的时候成立（实测 6 次解析 3 次）。见 `canWalk` 的说明。
+    mode.value = 'fly'
     loading.value = false
     await buildAfterPaint()
   } catch (e) {
@@ -127,7 +210,7 @@ async function load() {
   }
 }
 
-watch(() => props.layoutId, load, { immediate: true })
+watch(() => [props.layoutId, props.planId], load, { immediate: true })
 
 /** 等一帧再建：canvas 的 clientWidth/Height 要等布局完成才有值。 */
 async function buildAfterPaint() {
@@ -171,12 +254,21 @@ async function build() {
   renderer.setPixelRatio(cappedPixelRatio(stats.tier.value))
   renderer.shadowMap.enabled = false   // 见下方「为什么不开阴影」
 
-  handles = sceneMod.buildScene(payload)
+  handles = sceneMod.buildScene(payload, furniture.value)
   handlesRef.value = handles
   handles.applyTier(stats.tier.value)
+  // 建完立刻按当前模式定天花板 —— 后端判"不可行走"时开局就是自由视角，
+  // 不在这里设的话开局会被天花板挡住
+  applyCeiling()
 
   const aspect = (canvasEl.value?.clientWidth || 16) / (canvasEl.value?.clientHeight || 9)
-  rig = new rigMod.CameraRig(payload.walkable, aspect)
+  // ⚠️ **必须把起始模式显式传进去。** 不传的话 rig 会沿用
+  //    `walkable.mode`（后端判的"能不能贴地行走"），于是**可走路的户型
+  //    开局是行走、不可走路的才是自由视角** —— 而需求方要的是
+  //    "自由视角当默认"，两种户型开局应当一致。
+  //    两处不一致的后果实测过：界面写着"自由视角（俯瞰格局）"，
+  //    画面却是一扇门贴在眼前，而且第一下按 G 没有反应。
+  rig = new rigMod.CameraRig(payload.walkable, aspect, mode.value)
   rig.setHorizontalFov(hFov.value)
 
   resize()
@@ -238,10 +330,13 @@ function frame(now: number) {
   const hit = rig.update({ ...keys }, dt)
   currentRoom.value = rig.currentRoom()
 
-  // 门相关的提示与"够得着"判定，按 10Hz 更新就够了
+  // 门相关的提示与瞄准判定，按 10Hz 更新就够了
   if (now - doorAt >= 100) {
     doorAt = now
-    updateNearDoor()
+    // ⚠️ 只加锁时才瞄准。没加锁时鼠标是系统光标，用户指不了画面正中，
+    //    而且引导层会盖住画布 —— 那时还亮着一扇门只会让人困惑。
+    if (locked.value) updateDoorTarget()
+    else setDoorTarget(null)
     if (doorToastAt > 0) {
       doorToastAt -= 100
       if (doorToastAt <= 0) doorToast.value = ''
@@ -269,14 +364,16 @@ function frame(now: number) {
 // 输入
 // ══════════════════════════════════════════════════════════════════
 
-const KEYMAP: Record<string, keyof typeof keys> = {
-  KeyW: 'forward', ArrowUp: 'forward',
-  KeyS: 'back', ArrowDown: 'back',
-  KeyA: 'left', ArrowLeft: 'left',
-  KeyD: 'right', ArrowRight: 'right',
-  Space: 'up', KeyE: 'up',
-  KeyC: 'down', KeyQ: 'down',
-  ShiftLeft: 'run', ShiftRight: 'run',
+/**
+ * 一次性动作的分发。**映射在 `three/keys.ts`**，这里只实现行为。
+ *
+ * ⚠️ 之前 `KEYMAP` 和这一段 if 各写着"哪个键干什么"，加上界面提示文案
+ * 一共三份。三份里改一份，另外两份都不报错。
+ */
+const ONCE: Record<OnceAction, () => void> = {
+  door: () => toggleDoor(),
+  respawn: () => rig?.respawn(),
+  mode: () => toggleMode(),
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -287,19 +384,42 @@ function onKeyDown(e: KeyboardEvent) {
     e.preventDefault()   // 方向键/空格会滚动页面
     return
   }
-  if (e.code === 'KeyR') { rig?.respawn(); e.preventDefault(); return }
-  // F = 开关门（游戏惯例）。**切换行走/自由视角改成 G** ——
-  // 用户明确要的是"走到门口按 F 开门"，那就得把 F 让给门。
-  if (e.code === 'KeyF') { toggleDoor(); e.preventDefault(); return }
-  if (e.code === 'KeyG') { toggleMode(); e.preventDefault() }
+  const once = ONCE_MAP[e.code]
+  if (once) {
+    ONCE[once]()
+    e.preventDefault()
+  }
 }
 
+/**
+ * 抬起按键。**这里不看 `locked`** —— 加锁状态变化与按键抬起是两件独立的事，
+ * 而且漏掉一次抬起就会留下一个"按住不放"的键。
+ */
 function onKeyUp(e: KeyboardEvent) {
   const k = KEYMAP[e.code]
   if (k) {
     keys[k] = false
     e.preventDefault()
   }
+}
+
+/**
+ * 把**所有**按键状态清空。
+ *
+ * ⚠️ 有两个触发点，缺一不可：
+ *   · 失去指针锁定（按 Esc）—— 不清的话，按住 W 时按 Esc，
+ *     人会**一直往前走**直到撞墙，看起来像失控
+ *   · 窗口失焦（Alt+Tab / 切标签页）—— **浏览器在失焦后不再派发
+ *     keyup**，于是按住 W 切走再切回来，人还在往前走。
+ *     这个我是量出来的：切走标签页再切回来，`keys.forward` 仍是 true，
+ *     下一个 `mousemove` 之前人就一直在飘。
+ */
+function clearKeys() {
+  for (const a of ACTIONS) keys[a] = false
+}
+
+function onBlur() {
+  clearKeys()
 }
 
 function onMouseMove(e: MouseEvent) {
@@ -320,56 +440,113 @@ async function requestLock() {
 function onLockChange() {
   locked.value = document.pointerLockElement === canvasEl.value
   if (!locked.value) {
-    // 失去锁定时把所有按键状态清掉。不清的话，按住 W 时按 Esc，
-    // 人会**一直往前走**直到撞墙 —— 看起来像失控。
-    for (const k of Object.keys(keys) as (keyof typeof keys)[]) keys[k] = false
+    clearKeys()
+    setDoorTarget(null)
   }
-}
-
-function toggleMode() {
-  if (!canWalk.value) return          // 后端判了不可行走，就不给切回来
-  mode.value = mode.value === 'walk' ? 'fly' : 'walk'
-  rig?.setMode(mode.value)
 }
 
 /**
- * 找玩家够得着的那扇门。
+ * 切行走 / 自由视角。
  *
- * 射线检测在这里是多余的 —— 门只有个位数，直接比距离就够，
- * 而且"隔着一堵墙也能按 F 开对面的门"这种问题，用距离判定天然不存在
- * （够得着的门一定在同一间房里）。
+ * ⚠️ 切回**自由视角时保持当前高度**（不做"瞬移到俯瞰位"）——
+ *    从房间里按 G 的人想要的是"浮起来越过墙看看"，把他弹到屋顶之上
+ *    会很突兀。要回到俯瞰位按 `R`（`respawn()` 按当前模式取起点姿态）。
  */
-function updateNearDoor() {
-  const ds = handles?.doors ?? []
-  if (!rig || !ds.length) {
-    nearDoor.value = null
+function toggleMode() {
+  if (!canWalk.value) return          // 后端判了不可行走，就不给切过去（会穿墙）
+  mode.value = mode.value === 'walk' ? 'fly' : 'walk'
+  rig?.setMode(mode.value)
+  applyCeiling()
+  setDoorTarget(null)                 // 换模式后准星要重新瞄
+}
+
+/**
+ * 天花板跟随模式。**飞行时自动变透明。**
+ *
+ * 需求方原话：「启动飞行模式就是为了在高处看格局，如果被天花板挡住了
+ * 就没有任何意义」。飞行时人是往上飞的，而天花板正好在唯一的观察方向上。
+ *
+ * 行走时**必须留着** —— 没有它，抬头看到的是场景背景色，不像在室内。
+ */
+function applyCeiling() {
+  handles?.setCeilingVisible(mode.value === 'walk')
+}
+
+/**
+ * 更新"F 会作用在哪扇门"。
+ *
+ * ══════════════════════════════════════════════════════════════════
+ * 准星优先，距离兜底 —— 顺序不能反
+ * ══════════════════════════════════════════════════════════════════
+ * 需求方原话：「两个门贴的很近时按 F 会出现相应的不是自己想要响应的门，
+ * 希望你做一个视角中心点（类似于枪战游戏），遇到两个门离得很近的时候
+ * 可以通过中心点对准门进行选定」。
+ *
+ * 所以判据是**看哪儿**，不是**离哪扇近** —— 距离是用户无法控制的量，
+ * 站在两门之间时它根本没有表达"我想开哪一扇"的能力。
+ *
+ * 距离判定保留为兜底：准星对着地板/家具/空处时它仍然生效，
+ * 否则用户会遇到"明明站在门口，按 F 却没反应"。兜底时
+ * `byAim = false`，HUD 会把这件事说明白 —— **不能让用户猜**。
+ */
+function updateDoorTarget() {
+  if (!rig || !handles?.doors.length) {
+    setDoorTarget(null)
+    return
+  }
+  const aimed = handles.doorAtCrosshair(rig.camera)
+  if (aimed) {
+    const [px, py] = rig.planPosition()
+    setDoorTarget({
+      index: aimed.index,
+      open: aimed.isOpen(),
+      dist: Math.hypot(aimed.planPos[0] - px, aimed.planPos[1] - py),
+      byAim: true,
+    })
     return
   }
   const [px, py] = rig.planPosition()
-  let best: { index: number; open: boolean; dist: number } | null = null
-  for (const d of ds) {
-    const dist = Math.hypot(d.planPos[0] - px, d.planPos[1] - py)
-    if (dist > DOOR_REACH_M) continue
-    if (!best || dist < best.dist) {
-      best = { index: d.index, open: d.isOpen(), dist }
-    }
+  const near = handles.nearestDoor([px, py], DOOR_REACH_M)
+  if (!near) {
+    setDoorTarget(null)
+    return
   }
-  nearDoor.value = best
+  setDoorTarget({
+    index: near.index,
+    open: near.isOpen(),
+    dist: Math.hypot(near.planPos[0] - px, near.planPos[1] - py),
+    byAim: false,
+  })
 }
 
-/** 开关最近的那扇门。 */
+/** 换目标时先把上一扇熄灭 —— 不清的话会留下一路亮着的门。 */
+function setDoorTarget(t: { index: number; open: boolean; dist: number; byAim: boolean } | null) {
+  if (litDoor && litDoor.index !== t?.index) {
+    litDoor.setHighlight(false)
+    litDoor = null
+  }
+  if (t && !litDoor) {
+    const d = (handles?.doors ?? []).find((x) => x.index === t.index)
+    if (d) {
+      d.setHighlight(true)
+      litDoor = d
+    }
+  }
+  doorTarget.value = t
+}
+
+/** 开关当前目标门（准星对准的那扇，或兜底选出的最近那扇）。 */
 function toggleDoor() {
-  const near = nearDoor.value
-  const ds = handles?.doors ?? []
-  if (!near || !ds.length) return
-  const d = ds.find((x) => x.index === near.index)
+  const t = doorTarget.value
+  if (!t) return
+  const d = (handles?.doors ?? []).find((x) => x.index === t.index)
   if (!d) return
   const willOpen = !d.isOpen()
   d.setOpen(willOpen ? 1 : 0)
   syncDoorCollision()
   doorToast.value = willOpen ? '门已打开' : '门已关上'
   doorToastAt = 1400
-  updateNearDoor()
+  updateDoorTarget()
 }
 
 /** 把关着的门变成碰撞线段交给 rig —— 否则关上门还能直接走过去。 */
@@ -381,9 +558,22 @@ function syncDoorCollision() {
   rig?.setExtraCollision(segs)
 }
 
+/**
+ * 这间房现在能不能跳过去。
+ *
+ * ⚠️ **取决于模式，不是只看 `reachable`。** `reachable` 说的是
+ * "贴地行走模式下从出生点走得到吗"；自由视角是穿墙的，每间房都到得了。
+ * 原来一律按 `reachable` 置灰，于是自由视角下能去的房间点不动。
+ */
+function jumpable(r: WalkableData['rooms'][number]): boolean {
+  return mode.value === 'fly' || r.reachable
+}
+
 /** 跳到某个房间的中心。房间中心是后端算好的**净空中心**，一定站得住。 */
 function goToRoom(index: number) {
   rig?.goToRoom(index)
+  syncDoorCollision()
+  updateDoorTarget()
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -474,6 +664,8 @@ onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   window.addEventListener('mousemove', onMouseMove)
+  // 失焦必须清键，见 clearKeys 的说明
+  window.addEventListener('blur', onBlur)
   document.addEventListener('pointerlockchange', onLockChange)
 })
 
@@ -481,6 +673,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('keyup', onKeyUp)
   window.removeEventListener('mousemove', onMouseMove)
+  window.removeEventListener('blur', onBlur)
   document.removeEventListener('pointerlockchange', onLockChange)
   if (document.pointerLockElement === canvasEl.value) document.exitPointerLock()
   stats.stop()
@@ -496,10 +689,32 @@ onBeforeUnmount(() => {
 /** 模板里用不了 `window`，所以在这里读一次。**Dpr 探测的输入值，必须在界面上可见** */
 const devicePixelRatio = window.devicePixelRatio || 1
 
-const controlHint = computed(() =>
-  mode.value === 'walk'
-    ? 'W A S D 行走 · 鼠标转头 · Shift 疾走 · F 开关门 · R 回起点 · G 切自由视角'
-    : 'W A S D 平移 · Space/E 上升 · C/Q 下降 · 鼠标转头 · F 开关门 · R 回起点 · G 切回行走',
+/**
+ * 操作提示。**从 `three/keys.ts` 的按键表推出来，不手写。**
+ *
+ * 手写的那一份必然会漂移：改一个键、或者加一个新键，文案不会跟着变，
+ * 于是界面教用户按一个不存在的键。（这一条是"上升/下降写进通用提示、
+ * 而它们在行走模式下按了没反应"暴露出来的。）
+ */
+const controlHint = computed(() => helpLine(mode.value))
+
+/**
+ * 这个视角**是用来干什么的**。与按键表分开放是有意的：
+ * 按键表是"按什么做什么"，这句是"为什么给你这个视角"。
+ *
+ * ⚠️ 需求方 2026-09-26 定了自由视角当默认，理由是实测 6 次解析只有 3 次
+ * 判定可行走 —— 也就是说打开就是自由视角是常态。那么它就不该是一种
+ * 需要解释的异常状态，而该直接说清它能干什么。
+ */
+const modePurpose = computed(() =>
+  mode.value === 'fly'
+    ? '从高处看整个格局。可以穿墙、可以升空 —— 走到哪儿都拦不住你。'
+    : '贴着地面走，有碰撞、要开门。看的是"住进去是什么感觉"。',
+)
+
+/** 按键清单，给下面的"操作"折叠面板用。同样来自按键表。 */
+const keyChips = computed(() =>
+  bindingsFor(mode.value).filter((b) => b.action !== 'run' || b.code === 'ShiftLeft'),
 )
 </script>
 
@@ -509,14 +724,25 @@ const controlHint = computed(() =>
       <div class="min-w-0">
         <h3 class="flex items-center gap-1.5 text-[14px] font-bold text-wood-dark">
           <AppIcon name="cube" :size="15" class="text-botanical" />
-          3D 户型漫游
+          {{ wantsFurniture ? '3D 装修漫游（含家具）' : '3D 户型漫游（空房子）' }}
         </h3>
+        <!--
+          ⚠️ 措辞不再把「自由视角」当成一种失败。
+          原来写的是「自由视角（后端判定不可行走）」，还配金色告警色 ——
+          读起来像"这个户型有问题"。而实测 6 次解析有 3 次是这种情况，
+          也就是它**本来就是常态**（需求方 2026-09-26 定了自由视角当默认）。
+          现在两句都是中性的，各自说清"这个视角能干什么"。
+        -->
         <p class="mt-0.5 text-[11px] text-wood-muted">
           <template v-if="walkable">
             {{ walkable.rooms.length }} 间房 · {{ walkable.doors.length }} 扇门 ·
-            <span :class="canWalk ? 'text-botanical' : 'text-accent-gold'">
-              {{ canWalk ? '贴地行走（有碰撞）' : '自由视角（后端判定不可行走）' }}
-            </span>
+            <span class="text-botanical">自由视角（俯瞰格局，可穿墙）</span>
+            <template v-if="canWalk">
+              · <span class="text-botanical">这个户型也能贴地行走</span>
+            </template>
+            <template v-else>
+              · <span class="text-wood-muted">解析出的门洞不足以支撑行走，故只提供自由视角</span>
+            </template>
           </template>
           <template v-else-if="loading">正在准备 3D 场景…</template>
         </p>
@@ -527,8 +753,13 @@ const controlHint = computed(() =>
           class="rounded-lg border border-warm-border px-2.5 py-1.5 text-[11px] font-medium text-wood transition hover:bg-botanical-surface"
           @click="toggleMode"
         >
-          {{ mode === 'walk' ? '切自由视角 (G)' : '切回行走 (G)' }}
+          {{ mode === 'walk' ? '升空俯瞰 (G)' : '下到地面行走 (G)' }}
         </button>
+        <span
+          v-else
+          class="rounded-lg border border-warm-border/60 px-2.5 py-1.5 text-[11px] text-wood-muted"
+          title="后端判定这个户型的门洞不足以支撑贴地行走，所以不提供该模式"
+        >仅自由视角</span>
         <span
           v-if="stats.fps.value"
           class="num rounded-lg px-2 py-1.5 text-[11px] font-medium"
@@ -556,7 +787,18 @@ const controlHint = computed(() =>
       >
         <AppIcon name="cube" :size="30" class="text-white/90" />
         <p class="text-[14px] font-semibold text-white">点击进入漫游</p>
-        <p class="max-w-sm px-6 text-center text-[11px] leading-relaxed text-white/75">
+        <!-- 先说来这个视角是干什么的，再说按什么键 -->
+        <p class="max-w-md px-6 text-center text-[11px] leading-relaxed text-white/85 [text-wrap:balance]">
+          {{ modePurpose }}
+        </p>
+        <!--
+          ⚠️ 宽度给到 `max-w-xl` 是**按键表变长之后**才需要调的。
+          原来写 `max-w-sm`（24rem），而现在的提示有 11 项、约 60 个字，
+          于是在 384px 里折成三行、还把「R 回到出生点」从中间劈开 ——
+          截图里看得很明显（`logs/v1-parse-empty.png`）。
+          `[text-wrap:balance]` 让折行位置落在词组之间而不是字中间。
+        -->
+        <p class="max-w-xl px-6 text-center text-[11px] leading-relaxed text-white/70 [text-wrap:balance]">
           {{ controlHint }}
         </p>
         <p class="text-[11px] text-white/60">按 Esc 退出鼠标锁定</p>
@@ -586,11 +828,43 @@ const controlHint = computed(() =>
         class="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3"
       >
         <!-- 你在哪 -->
-        <div class="rounded-lg bg-white/85 px-2.5 py-1.5 backdrop-blur-sm">
-          <p class="text-[10px] uppercase tracking-wide text-wood-muted">当前位置</p>
-          <p class="text-[12px] font-bold text-wood-dark">
-            {{ currentRoom || '走道 / 门洞' }}
-          </p>
+        <div class="flex flex-col gap-1.5">
+          <div class="rounded-lg bg-white/85 px-2.5 py-1.5 backdrop-blur-sm">
+            <p class="text-[10px] uppercase tracking-wide text-wood-muted">当前位置</p>
+            <p class="text-[12px] font-bold text-wood-dark">
+              {{ currentRoom || '走道 / 门洞' }}
+            </p>
+          </div>
+
+          <!--
+            家具状况。**四种状态分开说**，不合并成一句"家具已加载"：
+
+              这是户型解析的 3D   → 说明"空房子是应该的，家具在方案里"
+              有家具             → 报件数
+              一件都没摆下        → 说明为什么（房间净空过小是最常见的）
+              整块取不到          → 报错误（3D 仍然能看，只是空房子）
+
+            ⚠️ 第一行是**必需的**：只画空房子而不说为什么，用户会以为
+               家具生成失败了。这与"不许静默降级"是同一条 ——
+               用户看到的是一间空房，他有权知道是"本来就该空"、
+               是"没摆下"、还是"接口挂了"。
+          -->
+          <div
+            v-if="!wantsFurniture || furnitureError || furnitureRejected.length"
+            class="pointer-events-auto max-w-[220px] rounded-lg bg-white/85 px-2.5 py-1.5 backdrop-blur-sm"
+            :title="furnitureError || furnitureRejected.map((r) => r.reason).join('；')"
+          >
+            <p class="text-[10px] uppercase tracking-wide text-wood-muted">家具</p>
+            <p v-if="!wantsFurniture" class="text-[11px] leading-relaxed text-wood-muted">
+              空房子 —— 家具属于<strong class="font-semibold">装修方案</strong>，选定方案后才画
+            </p>
+            <p v-else-if="furnitureError" class="text-[11px] text-accent-red">
+              取不到家具数据（3D 仍可浏览）：{{ furnitureError }}
+            </p>
+            <p v-else class="text-[11px] text-wood-dark">
+              有 {{ furnitureRejected.length }} 件摆不下（已跳过，未硬塞）
+            </p>
+          </div>
         </div>
 
         <!-- 小地图：**镜像问题的发现手段** -->
@@ -619,18 +893,47 @@ const controlHint = computed(() =>
         </div>
       </div>
 
-      <!-- 门提示：走到门口时出现 -->
+      <!--
+        ══ 准星 ══
+        射击游戏式的画面中心点。门的选择以它为准（见 updateDoorTarget）。
+        命中门时变亮、放大一点 —— 这是"F 会作用在哪扇门"的第一重反馈。
+      -->
       <div
-        v-if="locked && nearDoor"
+        v-if="locked && !loading && !error && !webglFailed"
+        class="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+      >
+        <span
+          class="block rounded-full ring-1 transition-all duration-100"
+          :class="doorTarget?.byAim
+            ? 'h-2.5 w-2.5 bg-accent-gold ring-accent-gold/60'
+            : 'h-1.5 w-1.5 bg-white/80 ring-black/30'"
+        />
+      </div>
+
+      <!--
+        门提示。**必须说清"F 会作用在哪一扇"** —— 这正是"
+        两扇门贴得近时开错门"那个问题的根治办法：用户看得见系统的选择，
+        而不是按下去才知道选错了。
+      -->
+      <div
+        v-if="locked && doorTarget"
         class="pointer-events-none absolute inset-x-0 bottom-16 flex justify-center"
       >
         <div class="rounded-xl bg-wood-dark/80 px-3.5 py-2 text-center backdrop-blur-sm">
           <p class="text-[12px] font-semibold text-white">
             <kbd class="rounded bg-white/20 px-1.5 py-0.5 font-mono">F</kbd>
-            {{ nearDoor.open ? '关 门' : '开 门' }}
+            {{ doorTarget.open ? '关 门' : '开 门' }}
+            <span class="font-normal text-white/70">· 第 {{ doorTarget.index + 1 }} 扇</span>
           </p>
-          <p class="mt-0.5 text-[10px] text-white/70">
-            当前状态：{{ nearDoor.open ? '已打开' : '已关闭（会挡住去路）' }}
+          <p class="mt-0.5 text-[10px]" :class="doorTarget.byAim ? 'text-accent-gold' : 'text-white/70'">
+            <template v-if="doorTarget.byAim">准星已对准这扇门</template>
+            <template v-else>
+              准星没对着门，按的是最近的一扇（{{ doorTarget.dist.toFixed(1) }}m）——
+              把中心的点对准想要的那扇可改为指定它
+            </template>
+          </p>
+          <p class="mt-0.5 text-[10px] text-white/60">
+            当前状态：{{ doorTarget.open ? '已打开' : '已关闭（会挡住去路）' }}
           </p>
         </div>
       </div>
@@ -662,6 +965,13 @@ const controlHint = computed(() =>
     </div>
 
     <!-- ══ 后端判定的问题，照实说 ══ -->
+    <!--
+      ⚠️ 这些是**后端自己报出来的**问题，照实显示，不藏。
+      但要加一句说明它们的**适用范围**：其中"走不到 N 间房"这类只在
+      贴地行走模式下成立，而自由视角是穿墙的 ——
+      不然用户会以为眼前这个能自由逛的模型"缺了几间房"。
+      （需求方 2026-09-26 把自由视角定为默认之后，这个区别才有意义。）
+    -->
     <div v-if="walkable?.issues.length" class="border-t border-warm-border bg-wood-light/30 px-4 py-2.5">
       <ul class="space-y-1">
         <li v-for="(x, i) in walkable.issues" :key="i" class="flex items-start gap-1.5 text-[11px] text-wood">
@@ -669,21 +979,44 @@ const controlHint = computed(() =>
           <span class="min-w-0">{{ x }}</span>
         </li>
       </ul>
+      <p class="mt-1.5 text-[10px] leading-relaxed text-wood-muted">
+        以上是<strong class="font-semibold">几何层面的实情</strong>，不影响自由视角浏览 ——
+        「走不到某间房」只在贴地行走模式下成立，自由视角可以穿墙看全部房间。
+      </p>
     </div>
 
-    <!-- ══ 房间快捷跳转 ══ -->
+    <!--
+      ══ 房间快捷跳转 ══
+
+      ⚠️ **可点性取决于当前模式，不是只看 `reachable`。**
+      `reachable` 说的是"贴地行走模式下从出生点走得到吗"。而自由视角是
+      穿墙的 —— 在自由视角下**每一间房都到得了**，包括那些"走不到"的。
+
+      原来这里一律按 `reachable` 置灰加删除线，于是自由视角下的用户
+      看着一排划掉的房间名，明明能去却点不动 —— 那不是保守，那是错的。
+    -->
     <div v-if="walkable && !error && !webglFailed" class="border-t border-warm-border px-4 py-2.5">
-      <p class="mb-1.5 text-[10px] uppercase tracking-wide text-wood-muted">快速前往</p>
+      <p class="mb-1.5 text-[10px] uppercase tracking-wide text-wood-muted">
+        快速前往
+        <span v-if="mode === 'fly'" class="font-normal normal-case tracking-normal">
+          （自由视角下每间房都能去）
+        </span>
+      </p>
       <div class="flex flex-wrap gap-1.5">
         <button
           v-for="r in walkable.rooms"
           :key="r.index"
           class="rounded-lg border px-2.5 py-1 text-[11px] transition"
-          :class="r.reachable
+          :class="jumpable(r)
             ? 'border-warm-border text-wood hover:bg-botanical-surface'
             : 'border-warm-border text-wood-muted/60 line-through'"
-          :disabled="!r.reachable"
-          :title="r.reachable ? `跳到${r.name}（${r.size_m[0]}×${r.size_m[1]}m）` : '这间房没有可通行的门'"
+          :disabled="!jumpable(r)"
+          :title="
+            jumpable(r)
+              ? `跳到${r.name}（${r.size_m[0]}×${r.size_m[1]}m）` +
+                (r.reachable || mode === 'fly' ? '' : '')
+              : `${r.name} 没有可通行的门 —— 切到自由视角就能进去`
+          "
           @click="goToRoom(r.index)"
         >
           {{ r.name }}
@@ -715,9 +1048,32 @@ const controlHint = computed(() =>
             {{ (handlesRef?.doors ?? []).filter((d) => d.isOpen()).length }} 扇开着
             （默认全开，走到门口按 F 开关）
           </dd>
+          <dt class="text-wood-muted">天花板</dt>
+          <dd class="text-wood">
+            {{ mode === 'walk' ? '显示' : '飞行模式自动隐藏' }}
+            —— 飞行时被它挡住就看不到格局了
+          </dd>
           <dt class="text-wood-muted">阴影</dt>
           <dd class="text-wood">关闭 —— {{ SHADOWS_OFF_REASON }}</dd>
         </dl>
+
+        <!--
+          操作键位表。**从 `three/keys.ts` 推出来，不手写。**
+          手写的那份在加/改键时不会跟着变，界面就会教用户按一个不存在的键。
+        -->
+        <div class="mt-2.5">
+          <p class="mb-1.5 text-[10px] text-wood-muted">
+            操作（{{ mode === 'walk' ? '行走' : '自由视角' }}模式下可用）
+          </p>
+          <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[10px]">
+            <template v-for="b in keyChips" :key="b.code">
+              <dt>
+                <kbd class="tag !px-1.5 !text-[10px] font-mono">{{ b.cap }}</kbd>
+              </dt>
+              <dd class="text-wood">{{ b.help }}</dd>
+            </template>
+          </dl>
+        </div>
         <!--
           视野调节。**做成可调的是有意的** —— "房间看起来多大"是主观感受，
           跟屏幕尺寸、坐姿、个人习惯都有关系，写死一个值总有人觉得不对。

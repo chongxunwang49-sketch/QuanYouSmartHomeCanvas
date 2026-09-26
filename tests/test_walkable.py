@@ -411,16 +411,29 @@ class TestGraphAndSpawn:
         从"门最多的那间"出发，而不是第一间或最大的。
 
         从只有一扇门的卧室醒来，第一印象是"怎么出不去"。
+
+        ⚠️ **通过性空间（走廊/玄关）不参选。** 实测踩过：星形连通的户型里
+        每个房间的门都开向走廊，于是走廊门最多、永远被选中 ——
+        而按 `G` 下到地面后第一眼是一面墙。规则因此收窄了一格，
+        原意（不要死胡同）保留。见 `walkable._PASSAGE_ROOM_NAMES`。
         """
+        from backend.app.services.geometry.walkable import _is_passage
+
         w = _walk()
         spawn_room = next(r for r in w.rooms if r.index == w.spawn_room)
         degree = {}
         for d in w.doors:
             degree[d.from_room] = degree.get(d.from_room, 0) + 1
             degree[d.to_room] = degree.get(d.to_room, 0) + 1
-        assert degree.get(spawn_room.index, 0) == max(degree.values()), (
+
+        candidates = [r for r in w.rooms if not _is_passage(r)] or list(w.rooms)
+        best_deg = max(degree.get(r.index, 0) for r in candidates)
+        assert degree.get(spawn_room.index, 0) == best_deg, (
             f"出生在「{spawn_room.name}」（{degree.get(spawn_room.index, 0)} 扇门），"
-            f"但门最多的是 {max(degree.values())} 扇"
+            f"但候选里门最多的是 {best_deg} 扇"
+        )
+        assert spawn_room in candidates, (
+            f"出生点落在了通过性空间「{spawn_room.name}」—— 站进去看不到什么"
         )
 
     def test_出生点站得住(self):

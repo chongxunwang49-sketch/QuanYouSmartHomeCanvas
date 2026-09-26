@@ -38,6 +38,7 @@
 from __future__ import annotations
 
 from fastapi import Header
+from loguru import logger
 
 from ..core import auth
 from ..core.auth import TokenError, User
@@ -45,7 +46,12 @@ from ..core.redis_client import TaskType, get_quota_limiter
 from .schemas import ApiError
 
 #: 前端"需要开通会员"的提示要指向哪一页。放在响应里，避免前端再写一份。
-UPGRADE_HINT = "在「用户管理 → 我的套餐」里开通演示会员即可解锁（演示环境，不会真实扣费）。"
+#:
+#: ⚠️ 2026-09-24 改：原来是「用户管理 → 我的套餐」，而**用户管理页现在只有
+#:    管理员能看见**（普通用户的对应页面是「个人中心」）。不改的话，
+#:    这句提示会把免费用户指向一扇他进不去的门 —— 那句话本身是对的，
+#:    只是门换了地方。
+UPGRADE_HINT = "在「个人中心 → 我的套餐」里开通演示会员即可解锁（演示环境，不会真实扣费）。"
 
 
 def _bearer(authorization: str | None) -> str:
@@ -130,6 +136,14 @@ async def consume_quota(user: User, task_type: TaskType) -> None:
         user_id=user.id, role=user.role, task_type=task_type
     )
     if role_limit.allowed:
+        # ⚠️ **降级放行必须留下痕迹。** 这一支原来直接 return，
+        #    于是"Redis 挂了、额度没算"和"额度够用"在日志与响应里
+        #    完全一样。放行可以（见上面的降级策略），但不能看不出来。
+        if role_limit.degraded:
+            logger.warning(
+                f"[quota] Redis 不可用，本次未计数即放行："
+                f"user={user.username} task={task_type}"
+            )
         return
     raise ApiError(
         4006,

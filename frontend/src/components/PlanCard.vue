@@ -25,6 +25,15 @@ const props = defineProps<{
   plan: Plan
   /** 是否是推荐位（第二张卡）。由父组件决定，本组件不自行判断优劣 */
   featured?: boolean
+  /**
+   * 用户是否已经选定这一套。
+   *
+   * ⚠️ **与 `featured` 是两件事**：`featured` 是产品位的展示逻辑（中间那套），
+   * `selected` 是**用户的选择**。混在一起的话，用户选了第 1 套之后
+   * 界面上会同时出现两个"选中"的样子，而真正决定 3D 里摆哪套家具的
+   * 只有 `selected` 一个。
+   */
+  selected?: boolean
   /** 参考实景图的地址 */
   image?: string
   imageIndex?: number
@@ -71,13 +80,23 @@ const MISSING_LABEL: Record<string, string> = {
 <template>
   <article
     class="relative flex flex-col justify-between p-4"
-    :class="featured ? 'card-featured' : 'card card-hover'"
+    :class="[
+      featured ? 'card-featured' : 'card card-hover',
+      selected ? 'ring-2 ring-accent-gold' : '',
+    ]"
   >
     <div class="flex flex-col gap-2.5">
       <!-- ── 头部：档位徽章 + 编号 ── -->
       <div class="flex items-center justify-between gap-2">
         <span
-          v-if="featured"
+          v-if="selected"
+          class="inline-flex items-center gap-1 rounded-full bg-accent-gold px-2.5 py-0.5 text-[11px] font-semibold text-white shadow-xs"
+        >
+          <AppIcon name="check-circle" :size="13" />
+          <span>已选定 · 3D 里摆这套</span>
+        </span>
+        <span
+          v-else-if="featured"
           class="inline-flex items-center gap-1 rounded-full bg-botanical px-2.5 py-0.5 text-[11px] font-semibold text-white shadow-xs"
         >
           <AppIcon name="leaf" :size="13" />
@@ -244,14 +263,16 @@ const MISSING_LABEL: Record<string, string> = {
       <button
         class="rounded-xl px-3 py-2 text-[12px] font-medium transition-all"
         :class="
-          featured
-            ? 'border border-botanical/30 bg-botanical-light font-semibold text-botanical hover:bg-botanical hover:text-white'
-            : 'border border-warm-border bg-white text-wood shadow-xs hover:border-wood/40'
+          selected
+            ? 'border border-accent-gold bg-accent-gold/15 font-semibold text-wood-dark'
+            : featured
+              ? 'border border-botanical/30 bg-botanical-light font-semibold text-botanical hover:bg-botanical hover:text-white'
+              : 'border border-warm-border bg-white text-wood shadow-xs hover:border-wood/40'
         "
         type="button"
         @click="emit('select')"
       >
-        选定
+        {{ selected ? '已选定' : '选定' }}
       </button>
     </div>
   </article>

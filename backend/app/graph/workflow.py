@@ -38,12 +38,18 @@ fan-in 按分支规格列出方案，缺哪个产物写进 `missing_artifacts`�
 
 **加产出者只需改 `_BRANCH_PRODUCERS` 一张表**（节点名 → 产物键），
 节点列表、产物列表、fan-in 收集逻辑都从它派生。
-图像与热区节点位于 **fan-in 之后**，不在并行分支内 —— 9 路并发调图会打爆显存
-（需求文档 3.3 的关键结构调整）。
 
-**三个入口**（见 `build_graph`）：`full` 跑整条链（e2e 脚本用）、
-`parse` 到诊断为止（4.2 `/layout/parse`）、`generate` 从诊断进
-（4.3 `/design/generate`，布局由调用方提供，跳过已做过的视觉解析）。
+⚠️ **这里原先还写着一句「图像与热区节点位于 fan-in 之后」，那是过期描述。**
+本工作流**从来没有过图像或热区节点**（`build_graph` 里只有三处 `add_node`：
+Agent 注册循环、`precheck_image`、`aggregate_plans`）。出图路径已随 AC-08 作废；
+矢量图与热区**不是图节点**，而是 `/layout/{id}/plan.svg` 与 `/hotspots`
+两个接口按需计算的纯函数（`services/render/`，实测 0.5ms）——
+**渲染不需要 LLM，没必要占一个异步节点。**
+
+**四个入口**（见 `build_graph`）：`full` 跑整条链（e2e 脚本用）、
+`parse` 到诊断为止（`/layout/parse`）、`generate` 从诊断进
+（`/design/generate`，布局由调用方提供，跳过已做过的视觉解析）、
+`review` 只跑「检索 → 审查」（`/avoid-pit/review`，审的是用户给的报价单，与户型无关）。
 
 ═══════════════════════════════════════════════════════════════════
 三个实测得来的关键约定
@@ -83,6 +89,7 @@ from ..agents.risk_reviewer import RiskReviewAgent
 from ..agents.space_planner import SpacePlannerAgent
 from ..core.capabilities import check_operation
 from ..core.config import settings
+from ..services.environment import assess_environment
 from .state import HomeDecoState
 
 # ══════════════════════════════════════════════════════════════════
@@ -108,7 +115,7 @@ _BRANCH_PRODUCERS: dict[str, str] = {
 #: A-06 无法与产出者并行 —— **你没法审查一份还不存在的预算**。
 #: 所以它在图上是「三个产出者 → 审查 → fan-in」，而不是第四个并行分支。
 #:
-#: 需求文档 3.3 画的是"4 个 Agent 并行"，那是架构草图；真实的依赖关系是
+#: 需求文档早期画的是"4 个 Agent 并行"，那是架构草图；真实的依赖关系是
 #: "审查在产出之后"。这与 ADR-08（图像节点移出并行分支）是同一类修正：
 #: **并行的前提是互不依赖，而不是"看起来可以并行"。**
 #:
@@ -155,7 +162,7 @@ def get_agent(node: str):
 # 分支规格
 # ══════════════════════════════════════════════════════════════════
 
-#: 默认三套方案。与需求文档 2.2.2 的方案 A/B/C 一一对应。
+#: 默认三套方案。与需求文档 11.2.2 的方案 A/B/C 一一对应。
 DEFAULT_BRANCH_PAIRS: list[tuple[str, str]] = [
     ("modern", "economy"),
     ("nordic", "medium"),
@@ -164,6 +171,16 @@ DEFAULT_BRANCH_PAIRS: list[tuple[str, str]] = [
 
 #: 分支数上限。**防的是配置手滑**——请求里写了 20 个风格就会并发 20 路，
 #: 每路后续还要接 4 个 Agent。图像节点有串行锁保护，LLM 调用没有。
+#:
+#: ⚠️ **这个常量就是本项目的并发上限**，任何"再给 LLM 加个全局信号量"的
+#: 想法都应当先读这段。它乘以 `_BRANCH_PRODUCERS` 的 3 个产出者，
+#: 最坏情况 12 路并发 LLM 调用 —— 这就是全部。默认三套是 9 路。
+#:
+#: 实测默认三套的 fan-out 段：21.3s，三路分别 21.3 / 20.1 / 19.4s
+#: 同时段完成，**确实是真并行**。因此把并发放到 9 以下不是"更安全"，
+#: 而是把并行变成排队、直接让这一段变慢一倍。
+#: （`AGENT_MAX_CONCURRENCY` 那个从来没被调用过的配置已于 2026-09-24 删除，
+#: 原因见 `core/config.py` 里留下的说明。）
 MAX_PLAN_BRANCHES = 4
 
 #: 少于这个数量，对比表就没有意义（单列不成表）。
@@ -176,7 +193,7 @@ def build_branch_specs(state: HomeDecoState) -> list[dict[str, Any]]:
     把 styles / budget_grades 配对成若干分支规格。
 
     两个数组**按位置配对**：styles[0] 配 budget_grades[0]，以此类推。
-    这与 API 契约 4.3 的入参形态一致，也是前端一次提交三套组合的自然表达。
+    这与 API 契约 12.3 的入参形态一致，也是前端一次提交三套组合的自然表达。
 
     长度不等时 zip 会静默截断——这里显式告警，因为那多半是调用方写错了，
     而"少出一套方案"这种问题不告警很难被发现。
@@ -215,38 +232,98 @@ def build_branch_specs(state: HomeDecoState) -> list[dict[str, Any]]:
 # ══════════════════════════════════════════════════════════════════
 
 
-def _build_checkpointer():
-    """
-    构造 checkpointer。
+#: 启动时建好的持久化 checkpointer。**在 lifespan 里准备好**，见 `setup_checkpointer`。
+#:
+#: ⚠️ 为什么要"先建好再取"，而不是像以前那样在这里现建：
+#: `AsyncPostgresSaver` 的构造与 `setup()` 都是 **async** 的，而这个函数是同步的
+#: （`get_compiled_graph()` 在 `_run` 里同步调用）。以前那个 `RedisSaver` 分支
+#: 用 `cm.__enter__()` 硬掰成同步 —— 那条路径**从未真正跑过**，
+#: 所以这个取巧写法也从未被验证。
+_persistent_saver: Any = None
 
-    优先 RedisSaver（支持中断恢复，AC-12）；不可用时降级为内存版并告警。
-    实测：RedisSaver.from_conn_string 是**上下文管理器**（返回 Iterator），
-    因此这里取了底层的 __enter__ 结果并在进程存活期内保持。
-    """
-    if not settings.ENABLE_REDIS_CHECKPOINTER:
-        logger.info("已禁用 Redis checkpointer，使用内存版")
-        from langgraph.checkpoint.memory import InMemorySaver
 
-        return InMemorySaver()
+async def setup_checkpointer() -> Any:
+    """
+    建好持久化 checkpointer（AC-12）。**由 lifespan 在启动时调用一次。**
+
+    不可用时**降级为内存版并告警** —— 与项目一贯的降级纪律一致：
+    状态丢失可以接受，但必须看得见。
+
+    ⚠️ **为什么是 PostgreSQL 而不是 Redis**（口径变更，2026-09-24 实测撞墙）：
+    `langgraph-checkpoint-redis` 依赖 RediSearch，启动要发 `FT.INFO`，
+    而 §9.2 钉死的 `redis:7-alpine` **没有任何模块**：
+
+        redisvl.exceptions.RedisSearchError: unknown command 'FT.INFO'
+
+    换 `redis/redis-stack-server` 能解，但镜像明显更重，而本机 Docker VM
+    的内存余量本就紧张。改用旁边的 `qy-postgres`：它一直在跑、完全空闲。
+    **语义没变**（中断后状态可恢复），偏离的是"用哪个存储"。
+
+    ⚠️ **Windows 开发注意**：`psycopg` 的异步模式不支持 Windows 默认的
+    `ProactorEventLoop`，会在连接时抛
+    `Psycopg cannot use the 'ProactorEventLoop' to run in async mode`。
+    所以本机开发要用 `scripts/run_server.py` 起服务（它先切 Selector 事件循环）。
+    容器里是 Linux，不受影响。测试同理 —— pytest 跑在 Proactor 上，
+    所以检查点相关的用例用子进程 + 显式切换（见 tests/test_checkpoint.py）。
+    """
+    global _persistent_saver
+
+    if not settings.ENABLE_CHECKPOINTER:
+        logger.info("已禁用持久化 checkpointer，使用内存版（重启后状态丢失）")
+        return None
 
     try:
-        from langgraph.checkpoint.redis import RedisSaver
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-        cm = RedisSaver.from_conn_string(settings.REDIS_URL)
-        saver = cm.__enter__()
-        saver.setup()  # 建索引，幂等
-        # 保持引用防止被 GC，同时记录以便进程退出时清理
-        saver._qy_cm = cm  # type: ignore[attr-defined]
-        logger.info(f"Redis checkpointer 就绪: {settings.REDIS_URL}")
+        cm = AsyncPostgresSaver.from_conn_string(settings.checkpoint_dsn)
+        saver = await cm.__aenter__()
+        await saver.setup()          # 建表，幂等
+        saver._qy_cm = cm            # 保持引用，退出时好关
+        _persistent_saver = saver
+        # ⚠️ 必须让已编译图的缓存失效：`get_compiled_graph` 会把**编译结果**
+        #    连同当时的 checkpointer 一起缓存。若在持久化 saver 就绪之前
+        #    有谁编译过一次（拿到的是内存版），那份图会被一直用下去 ——
+        #    表现为"配置明明开了，检查点却没落库"，而且没有任何报错。
+        reset_compiled_graphs()
+        logger.info("PostgreSQL checkpointer 就绪 —— 中断后可从检查点续跑（AC-12）")
         return saver
     except Exception as e:  # noqa: BLE001
         logger.warning(
-            f"Redis checkpointer 不可用（{type(e).__name__}: {e}），"
-            f"降级为内存 checkpointer —— 进程重启后状态丢失，仅适用于开发期"
+            f"PostgreSQL checkpointer 不可用（{type(e).__name__}: {e}），"
+            f"降级为内存 checkpointer —— 进程重启后状态丢失，"
+            f"崩溃的任务**无法续跑**，只能落成终态"
         )
-        from langgraph.checkpoint.memory import InMemorySaver
+        _persistent_saver = None
+        return None
 
-        return InMemorySaver()
+
+async def teardown_checkpointer() -> None:
+    """停机时关掉连接（AC-31 的收尾）。"""
+    global _persistent_saver
+    cm = getattr(_persistent_saver, "_qy_cm", None)
+    _persistent_saver = None
+    # 同理：缓存里的图还绑着那个已经关掉的 saver，必须一起丢掉
+    reset_compiled_graphs()
+    if cm is not None:
+        try:
+            await cm.__aexit__(None, None, None)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"关闭 checkpointer 失败（忽略）：{type(e).__name__}: {e}")
+
+
+def _build_checkpointer():
+    """
+    取 checkpointer。**优先用启动时建好的那个**，没有就退回内存版。
+
+    内存版不是"另一个选择"，而是**降级**：进程重启后状态全丢，
+    所以它只适用于开发期与测试。降级的原因在 `setup_checkpointer` 里告警过。
+    """
+    if _persistent_saver is not None:
+        return _persistent_saver
+
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    return InMemorySaver()
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -267,6 +344,54 @@ class PrecheckError(RuntimeError):
         self.advice = advice
         self.result = result
         super().__init__(advice)
+
+
+def retrieve_knowledge(state: HomeDecoState) -> dict[str, Any]:
+    """
+    审查链的第一跳：**先把知识库依据查出来**，交给 `review_risks` 用。
+
+    ══════════════════════════════════════════════════════════════════
+    为什么把这一步从审查节点里拆出来
+    ══════════════════════════════════════════════════════════════════
+    两个理由，都不是"为了让进度条好看"：
+
+    1. **AC-36 在这条链上原本达不到。** 要求是"一次执行中 `phase` 至少
+       3 个不同取值"，而审查链只有一个节点 —— 实测只可能看到
+       `queued → reviewing` 两个。检索本来就真实发生（十几个查询、
+       约几秒），拆成节点之后 `on_chain_start` 会真的在那一刻触发，
+       阶段是**观测到的**而不是补上去的。
+
+    2. **检索与调用模型是两件可分别失败的事。** 知识库挂了应该只影响
+       "有没有引用依据"，而模型挂了是整条审查失败。拆开之后，
+       第一件失败的**位置**在阶段就看得见（停在 `retrieving`）。
+
+    ⚠️ **失败不抛**：检索层自己已经把"库挂了"降级成
+    `available=False` + `reason`，A-06 会把它如实写进 `data_gaps`
+    （"本次未取得知识库依据，风险判断主要基于常识"）。
+       在这里抛出去等于把"没有引用"升级成"审查失败"，那是两回事。
+
+    ⚠️ 结果**存成 dict**（`to_dict()`），因为它要穿过图状态、被
+    checkpointer 序列化 —— 自定义类过不去。返回体里的
+    `"phase"` 是给 `astream_events` 之外的一条兜底路径用的
+    （状态里也留一份阶段，便于离线排查）。
+    """
+    from ..agents.risk_reviewer import RETRIEVAL_TOP_K, review_queries_for_quote
+    from ..services.knowledge import retriever
+
+    quote = (state.get("quote_text") or "").strip()
+    if not quote:
+        # 没有报价单就没有可检索的东西。不报错 —— 让 review_risks
+        # 去报它那句"状态里既没有 quote_text 也没有 plan_bundles"。
+        return {}
+
+    queries = review_queries_for_quote(quote)
+    result = retriever.search_many(queries, top_k_each=3,
+                                   max_total=RETRIEVAL_TOP_K)
+    logger.info(
+        f"[graph] 检索完成：{len(queries)} 个查询 → {len(result.chunks)} 条依据"
+        f"{'（知识库不可用）' if not result.available else ''}"
+    )
+    return {"review_sources": result.to_dict(), "phase": "retrieving"}
 
 
 def precheck_image(state: HomeDecoState) -> dict[str, Any]:
@@ -375,6 +500,13 @@ def _fan_out_plans(state: HomeDecoState) -> list[Any]:
         "layout": state.get("layout"),
         "diagnosis": state.get("diagnosis"),
         "requirements": state.get("requirements") or {},
+        # ⚠️ AC-19：不加这两行，A-05 就永远读不到用户的材料偏好 ——
+        #    这正是 `quanyou_priority` 之前变成死开关的原因：
+        #    字段从 API 一路接到了 state，**却没人把它放进 Send 的 payload**，
+        #    分支里 `state.get("quanyou_priority")` 恒为 None。
+        #    接线漏在 fan-out 这一跳是最容易发生的，因为类型系统看不见它。
+        "material_filters": state.get("material_filters") or {},
+        "quanyou_priority": state.get("quanyou_priority", True),
         "task_id": state.get("task_id", ""),
         "trace_id": state.get("trace_id", ""),
         "detail_level": state.get("detail_level", "full"),
@@ -461,11 +593,11 @@ def _comparison_row(plan: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def aggregate_plans(state: HomeDecoState) -> dict[str, Any]:
+def assemble_plans(state: HomeDecoState) -> dict[str, Any]:
     """
-    fan-in：把各分支写入的 plan_bundles 汇总成 plans 与对比表。
+    把各分支写入的 plan_bundles 汇总成 plans 与对比表。
 
-    **纯函数节点，不调用 LLM。** 对比表是结构化数据的重排，
+    **纯函数，不调用 LLM。** 对比表是结构化数据的重排，
     没有任何需要"生成"的内容；交给模型反而会引入不一致
     （例如把三套方案的风格说反）。这与预算必须由规则引擎算是同一个原则。
 
@@ -482,87 +614,125 @@ def aggregate_plans(state: HomeDecoState) -> dict[str, Any]:
     4. **不排优劣**。没有业主的优先级信息（更看重预算还是环保？），
        任何"推荐方案"都是无依据的。只给数据质量信号，把选择权交回用户。
 
-    这是普通函数节点，异常不会被 BaseAgent 兜住，因此整体包了 try。
+    ⚠️ **为什么它单独成一个函数，而不是留在 `aggregate_plans` 里。**
+
+    `aggregate_plans` 位于图的最后，**在 A-06 审查之后**（边是
+    产出者 → review_risks → aggregate_plans）。而九路产出实际上早在审查
+    开始前就齐了 —— 实测：三套方案 38 秒就齐，A-06 还要再跑 82 秒。
+
+    于是用户要等满 123 秒才第一次看到方案，尽管方案已经躺在 checkpointer 里
+    一分半钟。runner 现在在 `review_risks` **开始**的那一刻取一次状态快照，
+    用本函数把方案先交出去（见 api/tasks.py 的 `_publish_partial`）——
+    用户 38 秒就能开始读方案，风险结论随后补上。
+
+    所以本函数必须**只有一种行为**：无论谁在什么时刻调用它，同样的状态
+    给同样的结果。快照里没有 `risks`，`missing_artifacts` 就会如实列出
+    `risks` —— 这正是我们要的"先给有的，并说清缺什么"。
+    """
+    bundles = state.get("plan_bundles") or {}
+    specs = build_branch_specs(state)
+
+    plans: list[dict[str, Any]] = []
+    empty_branches: list[str] = []
+
+    for spec in specs:
+        plan_id = spec["plan_id"]
+        bundle = bundles.get(plan_id) or {}
+
+        # 按 _BRANCH_PRODUCERS 逐项取值 —— 加分支 Agent 时这里自动跟上，
+        # 不会出现"新产物忘了收集"的漏洞。
+        artifacts = {key: bundle.get(key) for key in BRANCH_ARTIFACTS}
+        if not any(artifacts.values()):
+            empty_branches.append(plan_id)
+            continue
+
+        plans.append({
+            "plan_id": plan_id,
+            "plan_index": spec["index"],
+            "style": spec["style"],
+            "budget_grade": spec["budget_grade"],
+            **artifacts,
+            # ⚠️ 室内环境风险（AC-20）**在这里算**，不在诊断里：
+            #    A-02 诊断时还没有材料（选材在并行分支里同时跑），
+            #    而这条判据的输入正是材料环保等级。放在这里还有个好处：
+            #    三套方案档位不同、选材不同，风险本来就不该一样。
+            #    纯规则、无 LLM —— 见 services/environment.py 的说明。
+            #    ⚠️ 传的是**选材产物**（`artifacts["materials"]`），不是整个 bundle。
+            #       第一版传了 `bundle`，于是它在
+            #       `{"space_plan":…, "materials":{…}}` 上找 `items` 找不到，
+            #       判成"没有相关材料"→ unknown。用例当场就红了 ——
+            #       这类"参数传错一层"的错误不抛异常，只会安静地少一块数据。
+            "environment": assess_environment(
+                state.get("layout"), artifacts.get("materials")
+            ),
+            "missing_artifacts": [
+                key for key, value in artifacts.items() if not value
+            ],
+        })
+
+    expected = len(specs)
+    got = len(plans)
+
+    notes: list[str] = []
+    if got < expected:
+        notes.append(
+            f"请求生成 {expected} 套方案，实际产出 {got} 套"
+            + (f"（完全无产出：{'、'.join(empty_branches)}）" if empty_branches else "")
+            + "，可能是个别分支失败或超时"
+        )
+    missing = [p["plan_id"] for p in plans if p["missing_artifacts"]]
+    if missing:
+        notes.append(
+            f"有 {len(missing)} 套方案只产出了部分内容"
+            f"（{'、'.join(missing)}），缺失项见各行 missing_artifacts"
+        )
+
+    comparison: dict[str, Any] = {
+        "available": got >= MIN_PLANS_FOR_COMPARISON,
+        "plan_count": got,
+        "requested_count": expected,
+        "fields": [{"key": k, "label": v} for k, v in _COMPARISON_FIELDS],
+        "rows": [_comparison_row(p) for p in plans],
+        "notes": notes,
+    }
+
+    if got < MIN_PLANS_FOR_COMPARISON:
+        reason = (
+            "全部方案分支均未产出结果" if got == 0
+            else "仅产出 1 套方案，无法构成横向对比"
+        )
+        comparison["unavailable_reason"] = reason
+        logger.warning(f"[fan-in] {reason}")
+
+    if got >= 1:
+        # 方案优劣取决于业主优先级（预算 vs 环保 vs 风格），
+        # 系统不代为排序——这与「不编造依据」是同一条纪律。
+        comparison["recommendation"] = None
+        comparison["recommendation_note"] = (
+            "本系统不对方案做优劣排序：哪套更合适取决于您的实际优先级"
+            "（预算、居住人数、风格偏好）。请结合各方案的核心改动自行选择。"
+        )
+
+    return {"plans": plans, "comparison": comparison}
+
+
+def aggregate_plans(state: HomeDecoState) -> dict[str, Any]:
+    """
+    fan-in 节点：调用 `assemble_plans`，再补上图状态的相位与降级信息。
+
+    这是普通函数节点，异常不会被 BaseAgent 兜住，因此整体包了 try ——
+    **汇总失败不能连带丢掉已经产出的方案**。
     """
     try:
-        bundles = state.get("plan_bundles") or {}
-        specs = build_branch_specs(state)
-
-        plans: list[dict[str, Any]] = []
-        empty_branches: list[str] = []
-
-        for spec in specs:
-            plan_id = spec["plan_id"]
-            bundle = bundles.get(plan_id) or {}
-
-            # 按 _BRANCH_AGENTS 逐项取值 —— 加分支 Agent 时这里自动跟上，
-            # 不会出现"新产物忘了收集"的漏洞。
-            artifacts = {key: bundle.get(key) for key in BRANCH_ARTIFACTS}
-            if not any(artifacts.values()):
-                empty_branches.append(plan_id)
-                continue
-
-            plans.append({
-                "plan_id": plan_id,
-                "plan_index": spec["index"],
-                "style": spec["style"],
-                "budget_grade": spec["budget_grade"],
-                **artifacts,
-                "missing_artifacts": [
-                    key for key, value in artifacts.items() if not value
-                ],
-            })
-
-        expected = len(specs)
-        got = len(plans)
-
-        notes: list[str] = []
-        if got < expected:
-            notes.append(
-                f"请求生成 {expected} 套方案，实际产出 {got} 套"
-                + (f"（完全无产出：{'、'.join(empty_branches)}）" if empty_branches else "")
-                + "，可能是个别分支失败或超时"
-            )
-        partial = [p["plan_id"] for p in plans if p["missing_artifacts"]]
-        if partial:
-            notes.append(
-                f"有 {len(partial)} 套方案只产出了部分内容"
-                f"（{'、'.join(partial)}），缺失项见各行 missing_artifacts"
-            )
-
-        comparison: dict[str, Any] = {
-            "available": got >= MIN_PLANS_FOR_COMPARISON,
-            "plan_count": got,
-            "requested_count": expected,
-            "fields": [{"key": k, "label": v} for k, v in _COMPARISON_FIELDS],
-            "rows": [_comparison_row(p) for p in plans],
-            "notes": notes,
-        }
-
-        if got < MIN_PLANS_FOR_COMPARISON:
-            reason = (
-                "全部方案分支均未产出结果" if got == 0
-                else "仅产出 1 套方案，无法构成横向对比"
-            )
-            comparison["unavailable_reason"] = reason
-            logger.warning(f"[fan-in] {reason}")
-
-        if got >= 1:
-            # 方案优劣取决于业主优先级（预算 vs 环保 vs 风格），
-            # 系统不代为排序——这与「不编造依据」是同一条纪律。
-            comparison["recommendation"] = None
-            comparison["recommendation_note"] = (
-                "本系统不对方案做优劣排序：哪套更合适取决于您的实际优先级"
-                "（预算、居住人数、风格偏好）。请结合各方案的核心改动自行选择。"
-            )
-            logger.info(
-                f"[fan-in] 汇总 {got} 套方案，对比表"
-                f"{'可用' if comparison['available'] else '不可用'}"
-            )
+        assembled = assemble_plans(state)
+        got = len(assembled["plans"])
+        logger.info(
+            f"[fan-in] 汇总 {got} 套方案，对比表"
+            f"{'可用' if assembled['comparison']['available'] else '不可用'}"
+        )
 
         result: dict[str, Any] = {
-            "plans": plans,
-            "comparison": comparison,
+            **assembled,
             "phase": "finalizing",
             "progress": 90,
         }
@@ -669,7 +839,11 @@ def build_graph(
     # 只跑审查一个节点：报价单审查**与户型无关**（用户上传的是装修公司的报价单，
     # 不是自己的房子）。硬塞进完整图的话，会因为缺 layout 而在 A-03 就炸掉。
     if stages == "review":
-        builder.add_edge(START, _REVIEW_NODE)
+        # 审查链两跳：先检索（真实 IO，约几秒），再审查。
+        # 见 `retrieve_knowledge` 的说明 —— 拆开是描述事实，不是为了凑阶段数。
+        builder.add_node("retrieve_knowledge", retrieve_knowledge)
+        builder.add_edge(START, "retrieve_knowledge")
+        builder.add_edge("retrieve_knowledge", _REVIEW_NODE)
         builder.add_edge(_REVIEW_NODE, END)
         if not with_checkpointer:
             return builder.compile()
@@ -731,12 +905,16 @@ def build_graph(
 _compiled: dict[str, Any] = {}
 
 
-def get_compiled_graph(stages: Literal["full", "parse", "generate"] = "full"):
+def get_compiled_graph(stages: Literal["full", "parse", "generate", "review"] = "full"):
     """
     进程级单例编译图（避免每次请求重建 checkpointer 连接）。
 
-    三种 stages 各缓存一份 —— 解析接口与方案接口会同时存在，
-    不能互相覆盖。
+    ⚠️ **四种 stages 各缓存一份**（`full` / `parse` / `generate` / `review`）——
+    解析接口、方案接口与报价单审查会同时存在，不能互相覆盖。
+
+    ⚠️ 这里的标注原先只写了三种，漏了 `review` —— 而 `/avoid-pit/review`
+    确实在用它（见 `api/tasks.py`）。标注漏一种不会报错，只会让类型检查
+    与自动补全在那条路径上失效，**而那正是"清单在手，代码在脚"的另一种形态**。
     """
     if stages not in _compiled:
         _compiled[stages] = build_graph(stages=stages)
@@ -756,7 +934,9 @@ def reset_compiled_graphs() -> None:
 
 __all__ = [
     "build_graph", "get_compiled_graph", "reset_compiled_graphs", "get_agent", "NODES",
-    "build_branch_specs", "aggregate_plans", "precheck_image", "PrecheckError",
+    "setup_checkpointer", "teardown_checkpointer",
+    "build_branch_specs", "assemble_plans", "aggregate_plans", "precheck_image",
+    "PrecheckError",
     "DEFAULT_BRANCH_PAIRS", "MAX_PLAN_BRANCHES", "MIN_PLANS_FOR_COMPARISON",
     "BRANCH_ARTIFACTS",
 ]

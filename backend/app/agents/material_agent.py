@@ -33,6 +33,13 @@
     若低于 60%，由代码在同品类里换成全友的替代品，并记录每一次替换。
     实测：目录里全友占比恰好 50%，**随机选只有 50%，过不了 60% 的线** ——
     所以这条 AC 是一道真门槛，不是自我感觉良好的声明。
+
+【4】AC-19 的用户偏好**对代码兜底同样生效**
+    本 Agent 有两轮挑选：模型挑一次，AC-18 兜底时代码再挑一次。
+    过滤条件必须同时约束这两轮。只管第一轮的话，会出现
+    「初始选择守规矩、补足环节冒出被排除品牌」——
+    而这种不一致**只在覆盖率不达标时才显形**，平时跑不到那条分支，
+    单元测试也测不到。详见 `_postprocess` 的说明。
 """
 
 from __future__ import annotations
@@ -44,6 +51,7 @@ from ..core.capabilities import OperationNotAllowedError, check_operation
 from ..graph.state import HomeDecoState
 from ..schemas.material import MaterialPlan
 from ..services.material import catalog
+from ..services.material.filters import MaterialFilters, applicable_categories
 from .base import BaseAgent
 
 #: 模型挑选的独立超时。比节点总超时短 —— 让"兜底"先于"熔断"发生。
@@ -85,6 +93,11 @@ SYSTEM_PROMPT = """你是一名装修材料选配顾问，为业主在一份**�
 价格由系统从目录里直接取用，**你不需要也不允许计算、估算或提及任何金额**。
 你的价值在于"选得对、说得清"，不在于报价。
 
+【不在清单里的品类 = 本次不选】
+候选清单里**没有出现的品类**，表示这次不选它（可能是业主排除了，
+也可能是这个户型不需要）。不要提及它、不要在 summary 里解释"为什么没选"、
+更不要试图补选 —— 把注意力放在清单里有的品类上。
+
 【边界】
 你只负责**选材**。报价单审查、增项漏项、合同风险都不属于你 ——
 那是避坑审查 Agent 的职责，不要写进 warnings。"""
@@ -118,11 +131,26 @@ class MaterialAgent(BaseAgent):
         spec = self._branch_spec(state)
         requirements = state.get("requirements") or {}
 
+        # ══ 第 0 层：AC-19 过滤条件（纯数据，无网络）═══════════
+        # 两个来源叠加：
+        #   · 户型里有哪些房间 —— 决定"该考虑哪些品类"（没卫生间就不买洁具）
+        #   · 用户排除/偏好 —— 在上一层的结果里再减
+        # 两者都**在请求期已经校验过**（filters.validate_filters），
+        # 走到这里不应该再出现"池子空了"的情况；真空了说明校验漏了，
+        # 那时抛错是对的（宁可失败，也不要静默少一项）。
+        filters = MaterialFilters.from_payload(_filter_payload(state))
+        applicable = applicable_categories(_room_names(layout))
+        offered = tuple(c for c in applicable if c not in filters.excluded_categories)
+        excluded_by_user = tuple(
+            c for c in applicable if c in filters.excluded_categories
+        )
+
         # ══ 第 1 层：确定性检索（纯函数，无网络）══════════════
         pool = catalog.candidates(
             grade=spec["budget_grade"],
             style=spec["style"],
             requirements=requirements,
+            **filters.candidate_kwargs(only_categories=offered),
         )
 
         if not any(pool.values()):
@@ -134,7 +162,10 @@ class MaterialAgent(BaseAgent):
         parsed, degraded, reasons = await self._select(pool, spec, requirements)
 
         # ══ 第 3 层：代码回填与校验 ════════════════════════════
-        payload = self._postprocess(parsed, pool, spec)
+        payload = self._postprocess(
+            parsed, pool, spec,
+            filters=filters, offered=offered, excluded_by_user=excluded_by_user,
+        )
 
         self.log.info(
             f"选材 {spec['plan_id']} 完成 "
@@ -322,14 +353,25 @@ class MaterialAgent(BaseAgent):
         parsed: MaterialPlan,
         pool: dict[str, list[catalog.ScoredProduct]],
         spec: dict[str, Any],
+        *,
+        filters: MaterialFilters,
+        offered: tuple[str, ...],
+        excluded_by_user: tuple[str, ...],
     ) -> dict[str, Any]:
         """
-        代码兜底。四件事：
+        代码兜底。五件事：
 
         1. **剔除幻觉商品** —— id 不在候选集里的一律丢掉（纪律 1）
         2. **回填商品事实** —— 名称/品牌/价格/链接全部取自目录（纪律 2）
         3. **同品类去重** —— 一个品类只保留第一份选择
         4. **AC-18 兜底** —— 覆盖率不达标时由代码换成全友的（纪律 3）
+        5. **AC-19 过滤** —— 兜底替换同样受用户偏好约束（纪律 4，见下）
+
+        ⚠️ 第 5 条是本模块最容易漏的一处。`valid_ids` 已经由过滤后的
+        `pool` 决定，所以模型**选不出**被排除的商品 —— 但 `_enforce_quanyou`
+        是**代码发起**的额外一轮挑选，如果不把 `exclude_brands` 传进去，
+        就会出现「初始选择守规矩、补足环节冒出被排除品牌」的不一致。
+        这类不一致只在覆盖率不达标时才显形，平时测不到。
         """
         valid_ids = {sp.product.id for group in pool.values() for sp in group}
         product_index = catalog.by_id()
@@ -341,7 +383,9 @@ class MaterialAgent(BaseAgent):
         for choice in parsed.choices:
             pid = (choice.product_id or "").strip()
             if pid not in valid_ids:
-                # 编造的、或者虽然存在但不在本档候选里（例如经济档选了高端岩板）
+                # 编造的、不在本档候选里的（如经济档选了高端岩板）、
+                # 以及被用户排除的。后者模型本不该看到（提示词里就没有），
+                # 真出现了按"不在候选清单里"处理 —— 与纪律 1 同一条路。
                 invented.append(pid or "（空 id）")
                 continue
             product = product_index[pid]
@@ -364,7 +408,7 @@ class MaterialAgent(BaseAgent):
 
         if kept and cov < catalog.MIN_QUANYOU_COVERAGE:
             kept, auto_subs = MaterialAgent._enforce_quanyou(
-                kept, pool, spec, product_index
+                kept, pool, spec, product_index, filters=filters
             )
             chosen_ids = [it["id"] for it in kept]
             cov = catalog.coverage(chosen_ids)
@@ -391,9 +435,14 @@ class MaterialAgent(BaseAgent):
             gaps.append(
                 f"为满足全友产品覆盖率要求，系统替换了 {len(auto_subs)} 项选材"
             )
+        # ⚠️ 只统计**我们真的问过模型**的品类（`offered`）。
+        # 用户排除掉的品类不该进 data_gaps —— 那不是"数据缺口"，
+        # 是用户的选择。把两者混在一起，用户会看到系统在为一件
+        # 他本人要求的事道歉，还会反复"建议补充"。
+        cat_labels = {c["key"]: c["label"] for c in catalog.categories()}
         missing_cats = [
-            c["label"] for c in catalog.categories()
-            if c["key"] not in seen_categories and (pool.get(c["key"]) or [])
+            cat_labels.get(k, k) for k in offered
+            if k not in seen_categories and (pool.get(k) or [])
         ]
         if missing_cats:
             gaps.append(f"以下品类未选材：{'、'.join(missing_cats)}")
@@ -413,6 +462,17 @@ class MaterialAgent(BaseAgent):
             "quanyou_met": cov >= catalog.MIN_QUANYOU_COVERAGE,
             "auto_substitutions": auto_subs,
             "invented_products": invented,
+            # ── AC-19：把"这份清单是怎么筛出来的"如实带上 ──────
+            # 前端不重新推导这些 —— 让界面自己算"哪些品类被排除了"
+            # 等于把同一条规则实现两遍，迟早两边不一致。
+            "offered_categories": [
+                {"key": k, "label": cat_labels.get(k, k)} for k in offered
+            ],
+            "excluded_by_user": [
+                {"key": k, "label": cat_labels.get(k, k)} for k in excluded_by_user
+            ],
+            "filter_basis": filters.basis(),
+            "quanyou_priority": filters.quanyou_priority,
             "summary": parsed.summary,
             "eco_note": parsed.eco_note,
             "warnings": list(parsed.warnings),
@@ -428,6 +488,8 @@ class MaterialAgent(BaseAgent):
         pool: dict[str, list[catalog.ScoredProduct]],
         spec: dict[str, Any],
         product_index: dict[str, catalog.Product],
+        *,
+        filters: MaterialFilters,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """
         AC-18 的代码兜底：尽量少改动地把非全友项换成全友等价物。
@@ -435,6 +497,10 @@ class MaterialAgent(BaseAgent):
         策略：逐项处理非全友商品，在其品类里找一件**未被选中**的全友替代品。
         找不到就保留原选择 —— 宁可覆盖率不达标并如实上报，
         也不为了凑指标换一个规格不符的东西。
+
+        ⚠️ `exclude_brands` 必须传下去（见 `_postprocess` 的纪律 5）。
+        `preferred_brands` / `quanyou_bonus` 不必传：这里找的就是全友，
+        与"要不要给全友加分"无关。
         """
         out = list(kept)
         swaps: list[dict[str, Any]] = []
@@ -448,6 +514,7 @@ class MaterialAgent(BaseAgent):
                 grade=spec["budget_grade"],
                 exclude=used,
                 style=spec["style"],
+                exclude_brands=filters.excluded_brands,
             )
             if alt is None:
                 continue
@@ -467,6 +534,39 @@ class MaterialAgent(BaseAgent):
                 **alt.to_dict(),
             }
         return out, swaps
+
+
+def _filter_payload(state: HomeDecoState) -> dict[str, Any]:
+    """
+    组装 AC-19 的过滤条件。**以 `material_filters` 为准**，
+    缺失时从老的 `quanyou_priority` 布尔字段补上。
+
+    为什么留这个回退：`quanyou_priority` 在 state 里存在已久
+    （`state.py` 的输入段、`routes.py` 的 initial_state），
+    而 `material_filters` 是随 AC-19 新加的。保留回退，
+    那些只设 `quanyou_priority` 的既有调用方与测试不会静默改变行为 ——
+    两边都设时以 **`material_filters` 为准**，避免两个来源各说各话。
+    """
+    raw = dict(state.get("material_filters") or {})
+    raw.setdefault("quanyou_priority", state.get("quanyou_priority", True))
+    return raw
+
+
+def _room_names(layout: dict[str, Any]) -> list[str]:
+    """
+    从户型里取房间名，供 AC-19 判断"该考虑哪些品类"。
+
+    容忍结构差异：Room 是对象、降级模式下的 DegradedRoom 也是对象，
+    但真出现过模型把 rooms 扁平化成字符串数组的情况（见
+    `schemas/layout.py` 的 `_accept_flat_string_list`），这里一并接住。
+    """
+    out: list[str] = []
+    for room in layout.get("rooms") or []:
+        if isinstance(room, str):
+            out.append(room)
+        elif isinstance(room, dict):
+            out.append(str(room.get("name") or ""))
+    return out
 
 
 def _unit_of(cats: list[dict[str, Any]], key: str) -> str:

@@ -36,10 +36,14 @@ name: quanyou-smart-homecanvas
 services:
 
   # ── 1/4 PostgreSQL ──────────────────────────────────────────
-  # ⚠️ 它是「Healthy 但空」的容器，**这不是问题**：
-  #    项目目前没有任何数据库层（户型存内存 + Redis，见 api/store.py 的注释），
-  #    psycopg2/sqlalchemy 一行代码都没 import。AC-16 只数 Healthy 容器数。
-  #    ⚠️ 别被它带偏去写 schema / ORM —— 那是 AC-14 审计日志的活。
+  # 2026-09-24 起它**不再是空容器**，两件事都落在它上面：
+  #   · 图执行的检查点（AC-12，由 `AsyncPostgresSaver.setup()` 自建表）
+  #   · 业务数据三张表：`house_layouts` / `design_plans` / `audit_logs`
+  #     （由宿主机 `python scripts/init_db.py` 建，见 backend/app/db/migrations/）
+  # ⚠️ 建表**不在应用启动时做**：应用容器不该有 DDL 能力，
+  #    而且"表是谁建的、建的哪个版本"必须能回答 —— `schema_migrations` 就是答案。
+  # ⚠️ 这张注释此前写的是「Healthy 但空，项目没有任何数据库层」，
+  #    在落库之后成了误导，已改。落库不改变 AC-16 的口径（仍只数 Healthy）。
   qy-postgres:
     image: postgres:15-alpine
     container_name: qy-postgres
@@ -200,6 +204,14 @@ services:
         condition: service_healthy
     mem_limit: 900m
     networks: [qy-net]
+
+    # ⚠️ **AC-31 的配套项，缺了它整条验收不成立。**
+    #    Docker 默认给容器 10 秒就 SIGKILL。而我们的停机口径是
+    #    "不打断在飞任务，等它们自然跑完（上限 150s）" ——
+    #    没有这一行，第 10 秒就被硬杀，等待逻辑一行都跑不到，
+    #    任务照样留在 processing 上，等于什么都没做。
+    #    180s = 150s 排空 + 30s 收尾（关闭 Redis 连接、退出钩子）。
+    stop_grace_period: 180s
 
   # ── 4/4 前端 ────────────────────────────────────────────────
   # ⚠️ **compose 模式下前端在 80 端口，不是 5173。**

@@ -30,6 +30,7 @@ from backend.app.schemas.layout import LayoutSchema
 
 try:
     from mcp.server.mcpserver import MCPServer
+    from mcp.server.mcpserver.exceptions import ToolError
 except ImportError as e:  # pragma: no cover
     raise SystemExit(
         "需要 mcp >= 2.0（FastMCP 已更名为 MCPServer）。"
@@ -64,14 +65,18 @@ def _load_image(image_path: str | None, image_base64: str | None) -> ImagePart:
             return ImagePart.from_data_uri(image_base64)
         return ImagePart(data_b64=image_base64)
 
+    # ⚠️ 入参问题一律 `ToolError`（2026-09-24 改）。
+    #    原来抛的是 `ValueError` / `FileNotFoundError` —— SDK 把它们当**崩溃**，
+    #    调用方只能看到 "Error executing tool parse_house_layout"，**原因全部丢失**。
+    #    三个工具用同一个约定，见 calc_budget.py 里那段契约说明。
     if not image_path:
-        raise ValueError("必须提供 image_path 或 image_base64 之一")
+        raise ToolError("必须提供 image_path 或 image_base64 之一")
 
     p = Path(image_path)
     if not p.exists():
-        raise FileNotFoundError(f"图像不存在: {image_path}")
+        raise ToolError(f"图像不存在: {image_path}")
     if p.stat().st_size > settings.MAX_UPLOAD_MB * 1024 * 1024:
-        raise ValueError(f"图像超过 {settings.MAX_UPLOAD_MB}MB 上限")
+        raise ToolError(f"图像超过 {settings.MAX_UPLOAD_MB}MB 上限")
     return ImagePart.from_raw(p.read_bytes(), _guess_mime(p.suffix))
 
 

@@ -2,7 +2,7 @@
 2D 矢量渲染器 —— 把米制场景画成 SVG。
 
 ═══════════════════════════════════════════════════════════════════
-为什么不是 Pillow 位图（需求文档 2.2.5 写的是"Pillow / SVG"）
+为什么不是 Pillow 位图（需求文档 11.2.5 写的是"Pillow / SVG"）
 ═══════════════════════════════════════════════════════════════════
 三条理由，每条都对应一个具体的验收项：
 
@@ -15,7 +15,7 @@
     位图方案下热区只能靠第二套坐标计算，两套坐标迟早会漂 —— 见 projection.py。
 
 【3】这是"必出"承诺的技术前提
-    需求文档 4.4：「`vector.status` 必须恒为 `ready`」。纯字符串拼接，
+    需求文档 12.4：「`vector.status` 必须恒为 `ready`」。纯字符串拼接，
     零依赖、纯 CPU、没有模型、没有 GPU、没有网络。**它不可能失败。**
 
 ═══════════════════════════════════════════════════════════════════
@@ -33,6 +33,7 @@ SVG 里画的是什么，不画什么
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from xml.sax.saxutils import escape as _xml_escape
 
@@ -135,6 +136,7 @@ def render_scene_svg(
     min_side_px: int = DEFAULT_MIN_SIDE_PX,
     pad_px: int = DEFAULT_PAD_PX,
     with_hotspots: bool = True,
+    floor_fills: Mapping[int, str] | None = None,
 ) -> RenderedPlan:
     """
     场景 → SVG。**纯函数**：同样的 scene 永远得到逐字节相同的 SVG。
@@ -152,7 +154,7 @@ def render_scene_svg(
     parts.append(f'<rect x="0" y="0" width="{proj.width_px}" '
                  f'height="{proj.height_px}" fill="{BACKGROUND}"/>')
 
-    parts.append(_rooms_layer(scene, proj, warnings))
+    parts.append(_rooms_layer(scene, proj, warnings, floor_fills))
     parts.append(_walls_layer(scene, proj, warnings))
     parts.append(_openings_layer(scene, proj, warnings))
 
@@ -195,7 +197,18 @@ def _header(scene: Scene, proj: Projection) -> str:
     )
 
 
-def _rooms_layer(scene: Scene, proj: Projection, warnings: list[str]) -> str:
+def _rooms_layer(scene: Scene, proj: Projection, warnings: list[str],
+                 floor_fills: Mapping[int, str] | None = None) -> str:
+    """
+    ⚠️ `floor_fills` 是**房间下标 → 填充色**的覆盖表（AC-10 的「局部替换」）。
+
+    有这个参数而不是让渲染器自己去查材料目录：`render_scene_svg` 是
+    **纯函数**（见它的说明），自己查库就变成有副作用了，而 AC-32 要求
+    同一个 scene 重放出逐字节相同的 SVG。
+
+    覆盖色是**材料的代表色**，不是贴图 —— 图上读得出"这块换成那个材料了"，
+    但真实纹理要看实物。这一点在界面上也写明了。
+    """
     if not scene.rooms:
         return ""
 
@@ -210,12 +223,18 @@ def _rooms_layer(scene: Scene, proj: Projection, warnings: list[str]) -> str:
         n = seen.get(kind, 0)
         seen[kind] = n + 1
         fill = _tint(ROOM_FILLS[kind], _TINT_STEP ** n)
+        # AC-10：这间房的地面被换过材料 → 用它自己的代表色，
+        # **并打一个 class**，前端据此知道"这块换过了"（不必再比对颜色）
+        replaced = bool(floor_fills and idx in floor_fills)
+        if replaced:
+            fill = str(floor_fills[idx])
 
         pts = " ".join(
             f"{_n(x)},{_n(y)}" for x, y in proj.polyline_to_px(room.polygon)
         )
         out.append(
-            f'<polygon id="room-{idx}" class="room room-{_esc(kind)}" '
+            f'<polygon id="room-{idx}" '
+            f'class="room room-{_esc(kind)}{" room-replaced" if replaced else ""}" '
             f'points="{pts}" fill="{fill}" stroke="none"/>'
         )
         out.append(_room_label(room, proj, idx))

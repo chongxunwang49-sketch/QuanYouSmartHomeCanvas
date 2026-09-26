@@ -28,6 +28,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -61,6 +63,28 @@ class KnowledgeChunk:
     tags: list[str] = field(default_factory=list)
     similarity: float = 0.0
     rerank_score: float | None = None
+
+    # ⚠️ **`to_dict` 在本类的下面**（它要带上 `citation`，而 `citation`
+    #    是个 property，定义在中间）。这里**不要**再加一个 ——
+    #    实测踩过：我加 `from_dict` 时顺手也写了一个 `to_dict`，
+    #    于是同一个类里有了两个同名方法，**Python 不报错**，
+    #    后面那个（原来的）胜出，我加的那个成了死代码。
+    #    一个"看起来有、其实永远不执行"的方法，比没有更难查。
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "KnowledgeChunk":
+        """
+        `to_dict()` 的逆。`citation` 是派生属性，不从字典里读 —— 它会由
+        `source` 与 `headings` 重新拼出来，所以往返之后仍然相等。
+        """
+        return cls(
+            text=str(d.get("text") or ""),
+            source=str(d.get("source") or ""),
+            headings=str(d.get("headings") or ""),
+            doc_type=str(d.get("doc_type") or "avoid_pit"),
+            tags=[str(t) for t in (d.get("tags") or [])],
+            similarity=float(d.get("similarity") or 0.0),
+            rerank_score=d.get("rerank_score"),
+        )
 
     @property
     def citation(self) -> str:
@@ -118,6 +142,29 @@ class RetrievalResult:
             "citations": self.citations,
             "chunks": [c.to_dict() for c in self.chunks],
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "RetrievalResult":
+        """
+        `to_dict()` 的逆。**给"检索先跑、审查后用"这条路径用。**
+
+        ⚠️ 为什么要有它：审查链里检索与调用模型是同一个节点内的两步，
+        于是 `/task/status` 只看得到 2 个阶段（`queued` → `reviewing`）——
+        而 AC-36 要求一次执行里至少 3 个不同取值（见
+        `core/progress.py` 里 `_REVIEW_STEPS` 的说明）。
+        把检索拆成独立节点之后，它的结果要**穿过图状态**交给下一个节点，
+        而状态是要被 checkpointer 序列化的 —— 所以走 dict。
+
+        ⚠️ 键名与 `to_dict()` 逐字对应。少一个字段（比如 `reranked`）
+        不会报错，只会让"本次是否重排过"这一条静默变成 False。
+        """
+        return cls(
+            query=str(d.get("query") or ""),
+            chunks=[KnowledgeChunk.from_dict(c) for c in (d.get("chunks") or [])],
+            available=bool(d.get("available", True)),
+            reason=str(d.get("reason") or ""),
+            reranked=bool(d.get("reranked", False)),
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -299,7 +346,93 @@ def search_many(
     )
 
 
+# ══════════════════════════════════════════════════════════════════
+# 异步入口：**不许在事件循环里做检索**
+# ══════════════════════════════════════════════════════════════════
+#
+# 上面那两个函数是**同步阻塞**的：`embed_texts` 走同步 httpx 打 Ollama
+# （实测单条 636ms），`query_vectors` 走 ChromaDB 的同步客户端
+# （实测单次查询 844ms）。而 A-06 是在 async 节点里、用 `asyncio.gather`
+# 对三套方案并发调它们的。
+#
+# 实测后果（2026-09-24，方案生成链第三次采样）：`review_risks` 一开始，
+# **整个事件循环被卡住约 28–30 秒** —— 证据是那个窗口里轮询接口完全
+# 没有响应（前后两条轮询记录之间凭空少了一次），而 `/task/{id}/status`
+# 是纯内存查询。日志里 A-06 的三次 LLM 调用也因此错开 8 秒才发出。
+#
+# 连带后果直接打在用户可见的地方：**"方案先交付"晚到了 28 秒**
+# （本该在第 54 秒交付，实际第 82 秒）—— 因为负责交付它的那段代码
+# 也在同一个被卡住的循环上。
+#
+# ⚠️ **池子必须是单线程的。**
+#
+# 第一版想当然地写成 `asyncio.to_thread`（默认多线程），实测**直接坏掉** ——
+# 三路并发同时碰 Chroma，三路全部失败：
+#     ValueError: Could not connect to tenant default_tenant. Are you sure it exists?
+#     AttributeError: 'RustBindingsAPI' object has no attribute 'bindings'
+#     KeyError: 'E:\quanyou\data\chroma'
+# 而检索层的设计是"失败即返回空结果 + 原因"，所以**它不会报错，只会静默地
+# 拿不到依据** —— A-06 于是退化成"凭常识审"，界面上看不出任何异常。
+# 这正是本项目最防的那种失败。
+#
+# 单线程池把 Chroma 的访问收敛回"永远只有一个线程"，实测三路并发
+# 全部正常（10.6s 跑完，事件循环心跳稳定在 0.25–0.27s，最大间隔 0.27s）。
+
+_POOL: ThreadPoolExecutor | None = None
+
+
+def _pool() -> ThreadPoolExecutor:
+    global _POOL
+    if _POOL is None:
+        _POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="qy-rag")
+    return _POOL
+
+
+async def search_many_async(
+    queries: list[str], *, top_k_each: int = 3, doc_type: str | None = None,
+    max_total: int | None = None,
+) -> RetrievalResult:
+    """
+    `search_many` 的非阻塞版本。**async 调用方一律用这个。**
+
+    语义与 `search_many` 完全一致 —— 同一个函数丢到单线程池里跑，
+    唯一的区别是事件循环期间不会被阻塞。
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _pool(),
+        lambda: search_many(
+            queries, top_k_each=top_k_each, doc_type=doc_type, max_total=max_total
+        ),
+    )
+
+
+def shutdown_retrieval_pool() -> None:
+    """
+    停机时收掉检索线程池（AC-31）。
+
+    ⚠️ **`cancel_futures=True` 是有意的。**
+
+    池线程是**非 daemon** 的（`ThreadPoolExecutor` 一贯如此），解释器退出时
+    `concurrent.futures` 会 join 它们 —— 而一次检索的超时上限是
+    `EMBED_TIMEOUT=180s`，比 AC-31 定的 150 秒停机上限还长。
+
+    ⚠️ **诚实地说清它做到了多少**：`cancel_futures=True` 能丢掉**排队中**的
+    那些（并发三套方案时最多丢掉两套），但**正在跑的那一个丢不掉** ——
+    Python 没有办法安全地打断一个卡在同步 IO 里的线程。所以最坏情况仍然要等
+    它在飞的这一次检索自然结束（实测一次检索 3.5 秒量级；180 秒只是超时上限，
+    不是常态）。这一点不能靠这段代码解决，只能靠把 `EMBED_TIMEOUT` 调到
+    与停机预算相容，那是另一个决定。
+    """
+    global _POOL
+    if _POOL is None:
+        return
+    _POOL.shutdown(wait=False, cancel_futures=True)
+    _POOL = None
+
+
 __all__ = [
     "KnowledgeChunk", "RetrievalResult", "search", "search_many",
+    "search_many_async", "shutdown_retrieval_pool",
     "DEFAULT_TOP_K", "DEFAULT_MIN_SIMILARITY",
 ]

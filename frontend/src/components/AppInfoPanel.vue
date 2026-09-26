@@ -205,7 +205,15 @@ const sessionStats = computed(() => ({
           <div
             class="flex flex-shrink-0 items-center justify-between border-t border-warm-grid bg-warm-sidebar/60 px-6 py-3 text-[11px] text-wood-muted"
           >
-            <span>演示环境 · M1 认证未实现</span>
+            <!--
+              ⚠️ 这里原来写的是「演示环境 · M1 认证未实现」—— **它现在在说谎。**
+              AC-01 的三角色登录、RBAC、按角色/档位的功能可见性、
+              用户管理都已经上线（2026-09-24）。一行不改的后果是：
+              面试官打开这个面板，看到的第一条就是"认证没做"，
+              而屏幕左上角正显示着登录进来的那个账号。
+              换成本仓库始终成立的两条事实（数据是虚构的、服务只绑本机）。
+            -->
+            <span>演示环境 · 账号与数据均为虚构样本，服务仅监听 127.0.0.1</span>
             <button
               class="rounded-lg border border-warm-border bg-white px-3 py-1.5 text-wood transition-colors hover:bg-warm-sidebar"
               type="button"

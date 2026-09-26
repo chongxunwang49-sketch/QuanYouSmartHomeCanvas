@@ -400,6 +400,75 @@ class TestSendPayload:
 
         assert all("image_ref" not in s.arg for s in sends)
 
+    def test_payload带上材料偏好与全友优先(self):
+        """
+        ⚠️ AC-19 补的回归防线，因为**变异测试证明原来没有**。
+
+        实测（2026-09-24）：把这两行从 `_fan_out_plans` 的 `shared` 里删掉，
+        整个 `test_fanout.py` 仍然 31 条全绿 —— 也就是说漏接线**测不出来**。
+
+        而这个漏点是有前科的：`quanyou_priority` 就是这么变成死开关的 ——
+        字段从 API 一路接到了 state，**却没人把它放进 Send 的 payload**，
+        分支内 `state.get()` 恒为 None，界面上那个复选框从来没有作用过。
+
+        类型系统看不见这一跳（payload 是 dict），运行起来也不报错
+        （`.get()` 返回 None，A-05 回退默认值），所以只能靠这条断言守。
+        """
+        filters = {"excluded_categories": ["lighting"],
+                   "excluded_brands": ["立邦"],
+                   "quanyou_priority": False}
+        sends = workflow._fan_out_plans(_state(
+            layout=LAYOUT, diagnosis=DIAGNOSIS,
+            styles=["modern"], budget_grades=["economy"],
+            material_filters=filters, quanyou_priority=False))
+
+        for send in sends:
+            assert send.arg["material_filters"] == filters, (
+                f"{send.node} 拿不到材料偏好 —— 用户在界面上勾的排除项会石沉大海"
+            )
+            assert send.arg["quanyou_priority"] is False
+
+    def test_材料偏好走完fanout真的被A05用上(self):
+        """
+        上一条只证明 payload 里有这个键名；这一条把**整跳**跑通：
+        从 `_fan_out_plans` 拿一个 Send，喂给真的 A-05，看排除项在产物里生效。
+
+        为什么两条都要：只测 payload 的话，A-05 把键名读错
+        （`material_filter` 少个 s）照样测不出来 —— 因为 `.get()` 返回 None，
+        A-05 回退到默认过滤，一切正常，只是用户的勾选石沉大海。
+        这正是当初 `quanyou_priority` 变成死开关的完整路径。
+        """
+        class _StubLLM:
+            """照着 `_material_payload` 的规矩挑：id 必须真在候选里。"""
+
+            async def complete_json(self, schema, **kwargs):
+                prompt = kwargs.get("user") or ""
+                return (
+                    schema.model_validate(_material_payload(prompt)),
+                    LLMResult(text="{}", provider="stub", model_used="stub",
+                              degraded=False, degrade_reason=None,
+                              prompt_tokens=100, completion_tokens=50,
+                              elapsed_ms=10),
+                )
+
+        send = next(
+            s for s in workflow._fan_out_plans(_state(
+                layout=LAYOUT, diagnosis=DIAGNOSIS,
+                styles=["modern"], budget_grades=["economy"],
+                material_filters={"excluded_categories": ["lighting"]},
+            ))
+            if s.node == "select_materials"
+        )
+
+        out = asyncio.run(MaterialAgent(llm=_StubLLM()).execute(send.arg))
+        materials = out["plan_bundles"]["plan_modern_economy"]["materials"]
+
+        assert materials["excluded_by_user"] == [{"key": "lighting", "label": "灯具"}]
+        assert all(it["category"] != "lighting" for it in materials["items"])
+        # 灯具在经济档本是有货的（QY-LT-101），所以"没选"确实是排除起的作用，
+        # 不是碰巧没货 —— 这一条把上一条断言从"可能"变成"确定"。
+        assert catalog.candidates(grade="economy")["lighting"]
+
 
 # ══════════════════════════════════════════════════════════════════
 # 并发性 —— fan-out 存在的理由

@@ -16,9 +16,9 @@ from typing import Any
 
 import pytest
 
+from backend.app.core.progress import PHASE_TEXT, STEPS, progress_at
 from backend.app.core.redis_client import (
-    PHASE_PROGRESS,
-    PHASE_TEXT,
+    QuotaResult,
     RedisClient,
 )
 
@@ -69,12 +69,39 @@ class TestGracefulDegradation:
 
     def test_task_progress_noop_not_raise(self):
         c = self._offline()
-        run(c.set_task_progress("t1", status="processing", phase="analyzing"))
+        run(c.set_task_progress("t1", kind="parse", status="processing",
+                                phase="analyzing", progress=2))
         assert run(c.get_task_progress("t1")) is None
 
     def test_peek_quota_degrades(self):
         r = run(self._offline().peek_quota(user_id=1, role="user", task_type="parse"))
         assert r.degraded is True
+
+    def test_降级标记必须能传到调用方(self):
+        """
+        `degraded` 必须在 `to_dict()` 里。
+
+        ⚠️ 它原来**不在**。后果是"Redis 挂了、额度没算"与"额度够用"
+        在 API 响应里长得一模一样 —— 降级能发生，但传不出去。
+
+        这不是理论问题，是实测踩出来的：`tests/test_api.py` 的配额用例
+        偶发失败，报 `assert 0 == 4006`，看着像权限逻辑写错，
+        真因却是 Redis 超时导致额度降级放行，而**降级这个事实
+        没有任何出口**，只能靠翻日志。（见 `_assert_quota_counted` 的说明。）
+
+        对应 AC-17：降级状态要在 API、审计日志、前端 UI 三处可见。
+        这是"API 那处"的地基。
+        """
+        r = run(self._offline().check_and_consume_quota(
+            user_id=1, role="user", task_type="parse"))
+        d = r.to_dict()
+        assert "degraded" in d, "降级标记必须序列化出去，否则调用方看不见"
+        assert d["degraded"] is True
+
+        # 正常路径也要有这个字段（值 False），否则前端得靠 `in` 判断
+        ok = QuotaResult(allowed=True, used=1, limit=5, remaining=4,
+                         role="user", reset_at="2026-01-01 24:00")
+        assert ok.to_dict()["degraded"] is False
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -258,16 +285,34 @@ class TestSemanticCache:
 class TestTaskProgress:
     def test_phase_maps_to_text_and_progress(self):
         """
-        4.4 要求：用户看到「正在识别房间…」而不是「60%」。
+        4.4 要求：用户看到「正在分析图片…」而不是「60%」。
         phase / phase_text / progress 三者必须一起返回。
         """
         c = _wired(_FakeRedis())
-        run(c.set_task_progress("t1", status="processing", phase="detecting_rooms"))
+        run(c.set_task_progress("t1", kind="parse", status="processing",
+                                phase="analyzing", progress=2))
         p = run(c.get_task_progress("t1"))
 
-        assert p["phase"] == "detecting_rooms"
-        assert p["phase_text"] == PHASE_TEXT["detecting_rooms"]
-        assert p["progress"] == PHASE_PROGRESS["detecting_rooms"]
+        assert p["phase"] == "analyzing"
+        assert p["phase_text"] == PHASE_TEXT["analyzing"]
+        assert p["progress"] == 2
+
+    def test_kind_and_times_roundtrip(self):
+        """
+        ⚠️ **`kind` 和两个时间戳必须能读回来。**
+        剩余时间是 `(kind, phase, 时间)` 的函数（core/progress.py）。
+        进程重启后内存里的 TaskRecord 已经没了，只能靠 Hash 里这几个字段
+        把倒计时重新算出来 —— 缺一个，重启后的任务就再也给不出剩余时间。
+        """
+        c = _wired(_FakeRedis())
+        run(c.set_task_progress("t1", kind="generate", status="processing",
+                                phase="checking_risks", progress=31,
+                                started_at=1000.5, phase_entered_at=1037.25))
+        p = run(c.get_task_progress("t1"))
+
+        assert p["kind"] == "generate"
+        assert p["started_at"] == 1000.5
+        assert p["phase_entered_at"] == 1037.25
 
     def test_trace_id_persisted_for_async_resume(self):
         """
@@ -275,28 +320,47 @@ class TestTaskProgress:
         异步上下文不会自动继承，丢了就断链。
         """
         c = _wired(_FakeRedis())
-        run(c.set_task_progress("t1", status="processing", phase="analyzing",
-                                trace_id="abc-123"))
+        run(c.set_task_progress("t1", kind="parse", status="processing",
+                                phase="analyzing", trace_id="abc-123",
+                                progress=2))
         assert run(c.get_task_progress("t1"))["trace_id"] == "abc-123"
 
     def test_degraded_flag_roundtrip(self):
         """降级标志必须能从进度里读回来（AC-17 三处可见之一）。"""
         c = _wired(_FakeRedis())
-        run(c.set_task_progress("t1", status="completed", phase="degraded", degraded=True))
+        run(c.set_task_progress("t1", kind="parse", status="completed",
+                                phase="degraded", progress=100, degraded=True))
         p = run(c.get_task_progress("t1"))
         assert p["degraded"] is True and p["phase"] == "degraded"
 
     def test_result_serialized(self):
         c = _wired(_FakeRedis())
-        run(c.set_task_progress("t1", status="completed", phase="done",
+        run(c.set_task_progress("t1", kind="generate", status="completed",
+                                phase="done", progress=100,
                                 result={"plans": [{"id": "a"}]}))
         assert run(c.get_task_progress("t1"))["result"] == {"plans": [{"id": "a"}]}
 
     def test_unknown_task_returns_none(self):
         assert run(_wired(_FakeRedis()).get_task_progress("nope")) is None
 
-    def test_all_phases_have_text_and_progress(self):
-        """每个阶段都必须有文案与进度值，否则前端会显示空白。"""
-        for phase in PHASE_TEXT:
-            assert PHASE_TEXT[phase].strip(), f"{phase} 缺文案"
-            assert phase in PHASE_PROGRESS, f"{phase} 缺进度值"
+    def test_每个阶段的进度都能算出来(self):
+        """
+        模型里的每个阶段都必须有文案，且能算出一个百分比 ——
+        缺文案前端显示空白，算不出百分比则进度条会跳回 0（比不动更让人困惑）。
+        """
+        for kind, steps in STEPS.items():
+            for step in steps:
+                assert PHASE_TEXT.get(step.phase, "").strip(), \
+                    f"{kind}/{step.phase} 缺文案"
+                assert progress_at(kind, step.phase) is not None, \
+                    f"{kind}/{step.phase} 算不出进度"
+                assert step.seconds > 0, f"{kind}/{step.phase} 的期望耗时必须为正"
+
+    def test_未知阶段不给进度而不是给0(self):
+        """
+        ⚠️ `0` 和"不知道"必须分得开。
+
+        未知阶段若回 0，进度条会**跳回起点**；回 None 则调用方保留上一次的值。
+        曾经那张全局表用 `.get(phase, 0)` 兜底，就是这个行为。
+        """
+        assert progress_at("generate", "不存在的阶段") is None

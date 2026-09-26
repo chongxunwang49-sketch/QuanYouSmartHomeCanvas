@@ -1,6 +1,7 @@
 import axios, { AxiosError, type AxiosInstance, type AxiosResponse } from 'axios'
 
-import { BizError, type ApiEnvelope } from './types'
+import { getToken } from './token'
+import { BizError, ErrorCode, type ApiEnvelope } from './types'
 
 /**
  * axios 封装。三件事：拆信封、分流错误、透传 trace_id。
@@ -68,8 +69,31 @@ http.interceptors.request.use((config) => {
   const traceId = newTraceId()
   lastMeta = { traceId, elapsedMs: null }
   config.headers.set('X-Trace-Id', traceId)
+
+  // 有令牌就带上。**登录接口自己也会走这里** —— 那时还没有令牌，
+  // 值为空就不加这个头，后端对 `/auth/login` 本来就不要求它。
+  const token = getToken()
+  if (token) config.headers.set('Authorization', `Bearer ${token}`)
   return config
 })
+
+/**
+ * 登录失效时的回调。**由 `main.ts`（组合根）注册**，本模块不 import 路由。
+ *
+ * ══════════════════════════════════════════════════════════════════
+ * 为什么要绕这一下，而不是直接 `router.replace('/login')`
+ * ══════════════════════════════════════════════════════════════════
+ * `router` 会 import 各页面，页面会 import `api/index`，而 `api/index`
+ * import 本模块 —— 直接引就成了一个环。环在打包器里有时能过、有时
+ * 报 `Cannot access before initialization`，取决于求值顺序，很难查。
+ *
+ * 用「注册回调」把方向倒过来：组合根知道路由，本模块不知道。
+ */
+let unauthorizedHandler: ((message: string) => void) | null = null
+
+export function setUnauthorizedHandler(fn: ((message: string) => void) | null): void {
+  unauthorizedHandler = fn
+}
 
 http.interceptors.response.use(
   (resp: AxiosResponse<ApiEnvelope>) => resp,
@@ -135,6 +159,12 @@ export async function request<T>(
   }
 
   if (body.code !== 0) {
+    // 4003 = 未登录 / 令牌过期。**先通知组合根去跳登录页**，再抛错。
+    // 顺序反过来的话，抛出的 BizError 会先被组件的 catch 接住并弹一个
+    // 转瞬即逝的 toast，然后页面才跳走 —— 用户只看到闪了一下。
+    if (body.code === ErrorCode.UNAUTHORIZED) {
+      unauthorizedHandler?.(body.msg || '登录已失效，请重新登录')
+    }
     throw new BizError(body.code, body.msg || '操作失败', { ...(body.data as object), traceId })
   }
 

@@ -79,6 +79,69 @@
            border border-botanical/20 bg-botanical-light text-botanical font-semibold;
   }
 
+  /* ── 可点选的开关标签（AC-19 的材料偏好）──
+
+     与 `.chip` 分开是有意的：`.chip` 是**静态标签**（角色、状态），
+     它天生就长成"已选中"的样子。如果复用它做开关，用户看到一排
+     绿色标签，分不清哪个是自己勾的。
+
+     所以这里给开关一套中性底色，只有选中才染成 botanical。 */
+  .chip-toggle {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px]
+           border border-warm-border bg-white text-wood-muted font-medium
+           transition-colors cursor-pointer;
+  }
+  .chip-toggle:hover {
+    @apply border-botanical/40 text-wood-dark;
+  }
+  .chip-toggle-on {
+    @apply border-botanical/30 bg-botanical-light text-botanical font-semibold;
+  }
+  /* 不可选项（排除全友）。用 `not-allowed` 而不是隐藏 —— 隐藏会让用户
+     以为这个品牌不存在，标灰+说明才让他知道"有，但平台不允许排掉"。
+
+     ⚠️ 刻意**不加 `line-through`**：删除线在品牌名上读作"这个牌子被去掉了"，
+     而实际含义恰好相反 —— "它在这儿，只是不能排掉"。第一版就是这么写的，
+     看着像坏了。改用降低不透明 + 悬停时不变色来表达"点不动"。 */
+  .chip-toggle-locked {
+    @apply cursor-not-allowed opacity-45;
+  }
+  .chip-toggle-locked:hover {
+    @apply border-warm-border text-wood-muted;
+  }
+
+  /* ── 标题下的短下划线 ──
+     取自全友官网的标志性装置（其首页每个分区标题下方都有一段两端收尖的
+     短横条，视觉上像"艺术字"的下缘）。目前只用在登录页 —— 全站其它页面的
+     标题层级由 `PageHeader` 负责，那里的结构不同，不该硬套这个件。
+     宽度由调用方给（`w-12` / `w-20`），因为要跟标题字号成比例。 */
+  .rule {
+    @apply rounded-full bg-botanical/70;
+  }
+
+  /*
+    ── 关于"文字压在实拍图上"的可读性（实测记录，别再试一遍）──
+
+    登录页左栏去掉遮罩之后（用户 2026-09-24 的决定：案例图为底、
+    文字压在图上），**小字在部分照片下确实读不了**。逐张轮播量过：
+
+        H1 第一行 38–46px   11.9–13.7:1   OK
+        说明段落 13px            1.7–2.8:1   低于正文门槛 4.5
+        主张描述 12px            1.2–2.6:1   低于门槛
+
+    试过 `text-shadow` 浅色晕影（`0 1px 2px /0.92 + 0 0 10px /0.75`），
+    **A/B 量下来是无效的**（有晕影 2.76/1.45/1.44/1.41，无晕影
+    1.74/2.58/1.34/1.42 —— 差值在噪声内）。所以没有采用：
+    加一个量不出效果的类，比不加更糟，它会让下一个人以为这里已经处理过。
+
+    要真的解决，只有三条路，都需要产品决策：
+      ① 接受现状（用户当前的明确选择）
+      ② 紧贴笔画的高不透明描边（`0 0 3px` 叠三层）—— 字会有白边，
+         视觉上比晕影重得多
+      ③ 把这两块小字从英雄区撤掉（H1 与主张标题本身是够看的）
+    不要再默默把横向遮罩加回来。
+  */
+
   /* ── 表单 ── */
   .field {
     @apply w-full rounded-xl border border-warm-border bg-white text-[13px] text-wood-dark

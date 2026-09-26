@@ -250,10 +250,60 @@ def query_vectors(
     return out
 
 
+def list_documents() -> tuple[list[dict[str, Any]], str]:
+    """
+    库里的文档清单（按 `source` 聚合）。返回 `(文档列表, 不可用原因)`。
+
+    ⚠️ **这是只读的、按来源聚合的一层，不是"把整个库读出来"。**
+    Chroma 的 `get()` 会把命中行的 document 正文一起返回，几百条 chunk
+    的正文有好几 MB —— 而清单只需要元数据。所以 `include` 里**只要
+    `metadatas`**，正文一个字节都不取。这条由
+    `tests/test_knowledge_api.py::test_清单只读元数据不读正文` 盯着。
+
+    ⚠️ 不可用时返回空清单 + 一句原因，**不抛异常**：
+    调用方是「知识库管理」页，它要能显示"依赖挂了"而不是自己崩掉。
+    与 `/system/health` 的立场一致（哪个依赖挂了由响应说清楚）。
+    """
+    info = collection_info()
+    if not info.available:
+        return [], info.reason or "知识库不可用"
+
+    try:
+        col = get_collection(create=False)
+        if col is None:
+            return [], "知识库集合不存在（还没入过库）"
+        got = col.get(include=["metadatas"])
+    except Exception as e:  # noqa: BLE001
+        return [], f"{type(e).__name__}: {e}"
+
+    metas = list(got.get("metadatas") or [])
+    buckets: dict[str, dict[str, Any]] = {}
+    for m in metas:
+        m = m or {}
+        src = str(m.get("source") or "(未标注来源)")
+        b = buckets.setdefault(src, {
+            "source": src,
+            "source_dir": str(m.get("source_dir") or ""),
+            "doc_type": str(m.get("doc_type") or ""),
+            "priority": str(m.get("priority") or ""),
+            "tags": tags_from_str(m.get("tags")),
+            "chunks": 0,
+            "headings": [],
+        })
+        b["chunks"] += 1
+        # 章节路径去重后留前几条 —— 清单是给人看的，不是全量目录
+        h = str(m.get("headings") or "").strip()
+        if h and h not in b["headings"] and len(b["headings"]) < 6:
+            b["headings"].append(h)
+
+    docs = sorted(buckets.values(), key=lambda d: (-d["chunks"], d["source"]))
+    return docs, ""
+
+
 __all__ = [
     "KnowledgeUnavailableError", "CollectionInfo",
     "embed_texts", "get_collection", "collection_info", "reset_collection",
-    "upsert_chunks", "query_vectors",
+    "upsert_chunks", "query_vectors", "list_documents",
     "chunk_id", "tags_to_str", "tags_from_str",
     "EMBED_BATCH", "EMBED_TIMEOUT",
 ]

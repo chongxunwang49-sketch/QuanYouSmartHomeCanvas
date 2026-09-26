@@ -6,6 +6,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import DegradedNotice from '@/components/DegradedNotice.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import PaidGateNotice from '@/components/PaidGateNotice.vue'
 import PhaseProgress from '@/components/PhaseProgress.vue'
 import { avoidPitReview } from '@/api'
 import { toast } from '@/utils/toast'
@@ -13,6 +14,7 @@ import { messageOf } from '@/api/client'
 import type { ReviewResult } from '@/api/types'
 import { SEVERITY_LABEL, label } from '@/api/types'
 import { useTaskPolling } from '@/composables/useTaskPolling'
+import { useAuthStore } from '@/stores/auth'
 import { useTaskStore } from '@/stores/task'
 
 /**
@@ -26,7 +28,11 @@ import { useTaskStore } from '@/stores/task'
 const route = useRoute()
 const router = useRouter()
 const tasks = useTaskStore()
+const auth = useAuthStore()
 const poll = useTaskPolling<ReviewResult>()
+
+/** 付费门控（AC-01）。只用于界面置灰 —— 真正的拦截在后端 4005，见 PaidGateNotice 的说明 */
+const paidBlocked = computed(() => Boolean(auth.user) && !auth.canUsePaid)
 
 const quoteText = ref('')
 const submitting = ref(false)
@@ -94,7 +100,8 @@ async function submit() {
 
     const snap = await poll.start(created.task_id, created.estimated_seconds)
     if (poll.timedOut.value) {
-      toast.warning('轮询超时（120 秒）。任务可能仍在后台执行。')
+      // 期限由后端估算算出（见 useTaskPolling），报实际值而不是写死"120 秒"
+      toast.warning(`轮询超时（${poll.timeoutSeconds.value} 秒）。任务可能仍在后台执行。`)
       return
     }
     if (!snap) return
@@ -142,6 +149,9 @@ onMounted(async () => {
       "
     />
 
+    <!-- 会员门控（AC-01）：入口在、不可用、原因写在旁边 -->
+    <PaidGateNotice feature="REVIEW" />
+
     <div class="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
       <!-- ══ 左：输入 ══ -->
       <section class="flex flex-col gap-4">
@@ -173,7 +183,9 @@ onMounted(async () => {
             <button
               class="btn-primary px-4 py-2"
               type="button"
-              :disabled="submitting || poll.running.value || quoteText.trim().length < 20"
+              :disabled="
+                submitting || poll.running.value || quoteText.trim().length < 20 || paidBlocked
+              "
               @click="submit"
             >
               <AppIcon :name="poll.running.value ? 'spinner' : 'magnifying-glass'" :size="16" />
@@ -187,7 +199,8 @@ onMounted(async () => {
           :text="poll.status.value.phase_text"
           :progress="poll.status.value.progress"
           :elapsed-ms="poll.elapsedMs.value"
-          :over-estimate="poll.overEstimate.value"
+          :eta-seconds="poll.etaSeconds.value"
+          :overrun="poll.overrun.value"
           :log="poll.phaseLog.value"
           :status="poll.status.value.status"
         />

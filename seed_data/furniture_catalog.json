@@ -1,139 +1,1466 @@
 {
-  "_readme": [
-    "家具目录 —— 3D 场景里「家具长什么样、占多大地方」的唯一真源。",
-    "",
-    "⚠️ 这是**演示数据**，和 seed_data/ 下其它文件同一个定位（见 material_catalog.json）。",
-    "   但和价格表不同：**尺寸不是编的**，是国标/行业通行规格（双人床 1.8×2.0m、",
-    "   三人沙发 2.1×0.9m、衣柜进深 0.6m 这类）。因为这些数字要直接变成 3D 里的体块，",
-    "   编一个「沙发宽 3 米」会让整个场景一眼假。",
-    "",
-    "   价格、品牌、材质一律**不在这里** —— 那是 material_catalog.json 的职责，",
-    "   本文件只管几何。这条分界是刻意的：ADR-07 说「可计算的不交给模型」，",
-    "   同理「可测量的不混进报价」。",
-    "",
-    "── 字段说明 ──",
-    "  id            稳定标识，落进 3D 场景后用它选颜色",
-    "  label         中文名，界面上显示",
-    "  mount         floor / wall / ceiling —— **决定摆放规则**，不是装饰性字段：",
-    "                floor   靠墙或不靠墙落地，占地面，要参与碰撞",
-    "                wall    贴墙悬挂，离地有高度，**不占地面**（不参与行走碰撞）",
-    "                ceiling 吊装，只在视觉上存在",
-    "  size          米。w=宽（沿墙方向） d=深（垂直墙面） h=高",
-    "  aliases       关键词。方案里的品类名是**长描述短语**",
-    "                （实测形如「1.8m 浅木色布艺软包双人床」「成品玄关鞋柜（进深 25-30cm）」），",
-    "                所以只能按关键词匹配，不能精确相等",
-    "  rooms         该家具常出现的房间类型（房间名关键词）。空数组=不限",
-    "  need_wall     必须靠墙。false 的（茶几/餐桌/地毯）摆在房间中部",
-    "  prefer        选墙偏好：longest（最长墙，床/衣柜）/ opposite_door（门对面，沙发/电视柜）",
-    "                / blank（空墙，不挡门窗）/ any",
-    "  clearance     摆放后前方需留出的净空（米）。床前要能过人，餐桌四周要能拉椅子",
-    "  wall_height   仅 mount=wall：离地高度（米）",
-    "  y_offset      离地偏移。地毯贴地 0、地台略高",
-    "  color_role    在风格配色里的角色：wood / fabric / metal / stone / green / white"
-  ],
-
-  "styles": {
-    "_comment": "风格 → 配色。三个方案分别用它给同一批体块上色，这是「三套方案在 3D 里真的看得出差别」的全部来源。",
-    "_note": "色值取自 ui参考/stitch_ai 的 DESIGN.md（项目已落地的设计令牌），不是另起一套。",
-    "modern": {
-      "label": "现代简约",
-      "palette": {
-        "wood": "#C8B8A4",
-        "fabric": "#D9D5CE",
-        "metal": "#9A9A9A",
-        "stone": "#E8E6E1",
-        "green": "#7E9B7A",
-        "white": "#F5F4F1"
-      },
-      "wall": "#F2F0EC",
-      "floor": "#DCD6CC"
-    },
-    "nordic": {
-      "label": "北欧原木",
-      "palette": {
-        "wood": "#D9BE96",
-        "fabric": "#EDE6DA",
-        "metal": "#B9B2A6",
-        "stone": "#EFEBE2",
-        "green": "#6E9163",
-        "white": "#FAF8F4"
-      },
-      "wall": "#F6F3EC",
-      "floor": "#E4D6BE"
-    },
-    "chinese": {
-      "label": "新中式",
-      "palette": {
-        "wood": "#6B4A32",
-        "fabric": "#D8CDBB",
-        "metal": "#8C7A5E",
-        "stone": "#E4DED2",
-        "green": "#4F6B4A",
-        "white": "#F3EFE7"
-      },
-      "wall": "#EFE9DE",
-      "floor": "#C9A87C"
-    }
+ "_readme": [
+  "家具目录 —— 3D 场景里「家具长什么样、占多大地方」的唯一真源。",
+  "",
+  "⚠️ 这是**演示数据**，和 seed_data/ 下其它文件同一个定位（见 material_catalog.json）。",
+  "   但和价格表不同：**尺寸不是编的**，是国标/行业通行规格（双人床 1.8×2.0m、",
+  "   三人沙发 2.1×0.9m、衣柜进深 0.6m 这类）。因为这些数字要直接变成 3D 里的体块，",
+  "   编一个「沙发宽 3 米」会让整个场景一眼假。",
+  "",
+  "   价格、品牌、材质一律**不在这里** —— 那是 material_catalog.json 的职责，",
+  "   本文件只管几何。这条分界是刻意的：ADR-07 说「可计算的不交给模型」，",
+  "   同理「可测量的不混进报价」。",
+  "",
+  "── 3D 表面色（与 palette 分开，2026-09-24 实测补上）──",
+  "  surface_floor  3D 场景自己的地面色，**比 palette.floor 深**（下面说为什么）",
+  "  surface        6 个角色在 3D 里的颜色。**palette 不能拿来当表面色**：",
+  "                 那是给界面卡片用的（要跟白底拉开），而 3D 要跟地面拉开。",
+  "                 实测差异很直接 —— modern 的 fabric 对地面只有 1.01:1，",
+  "                 也就是沙发和地面同色，等于没画。",
+  "                 两个约束都实测过：",
+  "                   ① 每个角色对 surface_floor ≥ 2:1（从地面里分得出家具）",
+  "                   ② 角色两两 Lab ΔE ≥ 6.6（彼此分得出；大色块的恰可分辨",
+  "                      差约 2.3，所以是三倍余量。最紧的是 chinese 的 metal/green）",
+  "                 ⚠️ 地面压深是**必须的**：只有中调地面才能让浅色家具向上对比、",
+  "                    深色家具向下对比。全用浅色会让两侧都挤成一团（试过）。",
+  "",
+  "── 字段说明 ──",
+  "  id            稳定标识，落进 3D 场景后用它选颜色",
+  "  label         中文名，界面上显示",
+  "  mount         floor / wall / ceiling —— **决定摆放规则**，不是装饰性字段：",
+  "                floor   靠墙或不靠墙落地，占地面，要参与碰撞",
+  "                wall    贴墙悬挂，离地有高度，**不占地面**（不参与行走碰撞）",
+  "                ceiling 吊装，只在视觉上存在",
+  "  size          米。w=宽（沿墙方向） d=深（垂直墙面） h=高",
+  "  aliases       关键词。方案里的品类名是**长描述短语**",
+  "                （实测形如「1.8m 浅木色布艺软包双人床」「成品玄关鞋柜（进深 25-30cm）」），",
+  "                所以只能按关键词匹配，不能精确相等",
+  "  rooms         该家具常出现的房间类型（房间名关键词）。空数组=不限",
+  "  need_wall     必须靠墙。false 的（茶几/餐桌/地毯）摆在房间中部",
+  "  prefer        选墙偏好：longest（最长墙，床/衣柜）/ opposite_door（门对面，沙发/电视柜）",
+  "                / blank（空墙，不挡门窗）/ any",
+  "  clearance     摆放后前方需留出的净空（米）。床前要能过人，餐桌四周要能拉椅子",
+  "  wall_height   仅 mount=wall：离地高度（米）",
+  "  y_offset      离地偏移。地毯贴地 0、地台略高",
+  "  color_role    在风格配色里的角色：wood / fabric / metal / stone / green / white",
+  "  family       同类互斥的**分组名**。同一间房里同一族只摆一件 —— 否则客厅会被摆上三张沙发（实测踩过）。\n               不靠 id 前缀猜：`dining_chair` 与 `dining_table` 前缀相同但**不是同一族**，餐桌与餐椅本来就要成套出现。"
+ ],
+ "styles": {
+  "_comment": "风格 → 配色。三个方案分别用它给同一批体块上色，这是「三套方案在 3D 里真的看得出差别」的全部来源。",
+  "_note": "色值取自 ui参考/stitch_ai 的 DESIGN.md（项目已落地的设计令牌），不是另起一套。",
+  "modern": {
+   "label": "现代简约",
+   "palette": {
+    "wood": "#C8B8A4",
+    "fabric": "#D9D5CE",
+    "metal": "#9A9A9A",
+    "stone": "#E8E6E1",
+    "green": "#7E9B7A",
+    "white": "#F5F4F1"
+   },
+   "wall": "#F2F0EC",
+   "floor": "#DCD6CC",
+   "surface_floor": "#988971",
+   "surface": {
+    "wood": "#784729",
+    "fabric": "#D2CAB3",
+    "metal": "#625858",
+    "stone": "#C6C6C8",
+    "green": "#2A5D3E",
+    "white": "#DCDDDA"
+   },
+   "family_colors": {
+    "bed": "#244E54",
+    "desk": "#CECE8C",
+    "nightstand": "#564AAD",
+    "bookshelf": "#E3BEE3",
+    "bin": "#8F3D3D",
+    "chest": "#96D2D2",
+    "lamp": "#575E28",
+    "plant": "#67456B",
+    "rug": "#5A423A",
+    "wall_shelf": "#DFC4B4",
+    "wardrobe": "#853985",
+    "bench": "#E3BEE3",
+    "washer": "#425799",
+    "sofa": "#4A4AAD",
+    "balcony_cabinet": "#CECE8C",
+    "deck": "#8F3D3D",
+    "dining_table": "#285E43",
+    "drying_rack": "#275037",
+    "planter_rack": "#E7C7E7",
+    "dresser": "#A0D6A0",
+    "entry_cabinet": "#285E28",
+    "mirror": "#3D3D8F",
+    "shoe_cabinet": "#7B3535",
+    "shower": "#CECE8C",
+    "toilet": "#8F3D3D",
+    "vanity": "#275037",
+    "coffee_table": "#BDCE8C",
+    "dining_chair": "#564AAD",
+    "fridge": "#564AAD",
+    "kitchen_cabinet": "#EBD1EB",
+    "sideboard": "#EBD1EB",
+    "tv_cabinet": "#853939",
+    "armchair": "#354A6C",
+    "cart": "#8F3D66",
+    "coat_rack": "#D0E0C0",
+    "office_chair": "#B4C9DF",
+    "screen": "#7B4F35",
+    "side_table": "#53563E"
+   }
   },
-
-  "items": [
-    { "id": "bed_double",   "label": "双人床",     "mount": "floor", "size": {"w": 1.8, "d": 2.0, "h": 0.45}, "aliases": ["双人床", "1.8m", "双人实木床"], "rooms": ["主卧", "卧室"], "need_wall": true, "prefer": "longest", "clearance": 0.6, "color_role": "fabric", "extras": [{"id": "headboard", "h": 1.0, "d": 0.08, "role": "wood"}] },
-    { "id": "bed_queen",    "label": "双人床(1.5m)", "mount": "floor", "size": {"w": 1.5, "d": 2.0, "h": 0.45}, "aliases": ["1.5m 单人床", "高低床"], "rooms": ["次卧"], "need_wall": true, "prefer": "longest", "clearance": 0.6, "color_role": "fabric", "extras": [{"id": "headboard", "h": 1.0, "d": 0.08, "role": "wood"}] },
-    { "id": "bed_single",   "label": "单人床",     "mount": "floor", "size": {"w": 1.2, "d": 2.0, "h": 0.45}, "aliases": ["1.2m 单人床", "单人床"], "rooms": ["次卧", "书房"], "need_wall": true, "prefer": "longest", "clearance": 0.6, "color_role": "fabric", "extras": [{"id": "headboard", "h": 0.95, "d": 0.08, "role": "wood"}] },
-    { "id": "tatami",       "label": "榻榻米地台", "mount": "floor", "size": {"w": 1.5, "d": 2.0, "h": 0.35}, "aliases": ["榻榻米", "地台式"], "rooms": ["次卧"], "need_wall": true, "prefer": "longest", "clearance": 0.5, "color_role": "wood" },
-    { "id": "nightstand",   "label": "床头柜",     "mount": "floor", "size": {"w": 0.45, "d": 0.4, "h": 0.55}, "aliases": ["床头柜"], "rooms": ["主卧", "次卧"], "need_wall": true, "prefer": "longest", "clearance": 0.3, "color_role": "wood" },
-    { "id": "wardrobe",     "label": "衣柜",       "mount": "floor", "size": {"w": 2.0, "d": 0.6, "h": 2.2}, "aliases": ["衣柜", "一体化衣柜"], "rooms": [], "need_wall": true, "prefer": "blank", "clearance": 0.7, "color_role": "wood" },
-    { "id": "wardrobe_tall","label": "通顶衣柜",   "mount": "floor", "size": {"w": 2.0, "d": 0.6, "h": 2.6}, "aliases": ["通顶衣柜", "通顶定制", "整墙衣柜", "通顶", "整墙"], "rooms": [], "need_wall": true, "prefer": "blank", "clearance": 0.7, "color_role": "wood" },
-    { "id": "dresser",      "label": "梳妆台",     "mount": "floor", "size": {"w": 1.0, "d": 0.45, "h": 0.75}, "aliases": ["梳妆台"], "rooms": ["主卧"], "need_wall": true, "prefer": "longest", "clearance": 0.6, "color_role": "wood" },
-    { "id": "chest",        "label": "斗柜",       "mount": "floor", "size": {"w": 0.8, "d": 0.45, "h": 1.0}, "aliases": ["斗柜"], "rooms": [], "need_wall": true, "prefer": "blank", "clearance": 0.5, "color_role": "wood" },
-    { "id": "bench_end",    "label": "床尾凳",     "mount": "floor", "size": {"w": 1.2, "d": 0.4, "h": 0.45}, "aliases": ["床尾", "卧榻", "长条软凳"], "rooms": ["主卧", "次卧"], "need_wall": false, "prefer": "any", "clearance": 0.3, "color_role": "fabric" },
-    { "id": "coat_rack",    "label": "衣帽架",     "mount": "floor", "size": {"w": 0.5, "d": 0.5, "h": 1.75}, "aliases": ["衣帽架", "挂衣"], "rooms": [], "need_wall": false, "prefer": "any", "clearance": 0.3, "color_role": "wood" },
-
-    { "id": "sofa_3",       "label": "三人沙发",   "mount": "floor", "size": {"w": 2.1, "d": 0.9, "h": 0.85}, "aliases": ["三人沙发", "三人位", "布艺沙发", "低背三人", "低矮实木三人"], "rooms": ["客厅", "起居"], "need_wall": true, "prefer": "blank", "clearance": 0.6, "color_role": "fabric" },
-    { "id": "sofa_2",       "label": "双人沙发",   "mount": "floor", "size": {"w": 1.6, "d": 0.9, "h": 0.85}, "aliases": ["双人沙发", "两人位"], "rooms": ["客厅", "起居"], "need_wall": true, "prefer": "blank", "clearance": 0.5, "color_role": "fabric" },
-    { "id": "sofa_l",       "label": "L形沙发",    "mount": "floor", "size": {"w": 2.6, "d": 1.6, "h": 0.85}, "aliases": ["l 形沙发", "l形沙发", "转角沙发"], "rooms": ["客厅", "起居"], "need_wall": true, "prefer": "blank", "clearance": 0.6, "color_role": "fabric" },
-    { "id": "sofa_bed",     "label": "沙发床",     "mount": "floor", "size": {"w": 1.9, "d": 0.9, "h": 0.8}, "aliases": ["沙发床", "折叠沙发"], "rooms": ["书房"], "need_wall": true, "prefer": "blank", "clearance": 0.5, "color_role": "fabric" },
-    { "id": "armchair",     "label": "单人椅",     "mount": "floor", "size": {"w": 0.75, "d": 0.8, "h": 0.85}, "aliases": ["单人", "休闲椅", "扶手椅", "单椅", "阅读椅"], "rooms": [], "need_wall": false, "prefer": "any", "clearance": 0.4, "color_role": "fabric" },
-    { "id": "coffee_table", "label": "茶几",       "mount": "floor", "size": {"w": 1.2, "d": 0.6, "h": 0.42}, "aliases": ["茶几", "矮几", "茶桌", "茶席"], "rooms": ["客厅"], "need_wall": false, "prefer": "any", "clearance": 0.35, "color_role": "wood" },
-    { "id": "side_table",   "label": "边几",       "mount": "floor", "size": {"w": 0.5, "d": 0.5, "h": 0.55}, "aliases": ["边几", "窄边几", "小几"], "rooms": [], "need_wall": false, "prefer": "any", "clearance": 0.25, "color_role": "wood" },
-    { "id": "tv_cabinet",   "label": "电视柜",     "mount": "floor", "size": {"w": 1.8, "d": 0.4, "h": 0.45}, "aliases": ["电视柜", "条案"], "rooms": ["客厅"], "need_wall": true, "prefer": "blank", "clearance": 0.5, "color_role": "wood" },
-    { "id": "rug",          "label": "地毯",       "mount": "floor", "size": {"w": 2.4, "d": 1.6, "h": 0.02}, "aliases": ["地毯", "地垫"], "rooms": [], "need_wall": false, "prefer": "any", "clearance": 0, "y_offset": 0.0, "color_role": "fabric", "no_collide": true },
-    { "id": "floor_lamp",   "label": "落地灯",     "mount": "floor", "size": {"w": 0.4, "d": 0.4, "h": 1.6}, "aliases": ["落地灯", "落地阅读灯"], "rooms": [], "need_wall": false, "prefer": "any", "clearance": 0.2, "color_role": "metal" },
-    { "id": "plant",        "label": "绿植",       "mount": "floor", "size": {"w": 0.5, "d": 0.5, "h": 1.2}, "aliases": ["绿植", "盆栽", "陶罐"], "rooms": [], "need_wall": false, "prefer": "any", "clearance": 0.2, "color_role": "green" },
-
-    { "id": "dining_table", "label": "餐桌",       "mount": "floor", "size": {"w": 1.4, "d": 0.8, "h": 0.75}, "aliases": ["餐桌", "长条餐桌", "四人餐桌"], "rooms": ["餐厅", "厨房"], "need_wall": false, "prefer": "any", "clearance": 0.75, "color_role": "wood" },
-    { "id": "dining_round", "label": "圆餐桌",     "mount": "floor", "size": {"w": 1.2, "d": 1.2, "h": 0.75}, "aliases": ["圆桌", "实木圆桌"], "rooms": ["餐厅"], "need_wall": false, "prefer": "any", "clearance": 0.75, "color_role": "wood" },
-    { "id": "dining_chair", "label": "餐椅",       "mount": "floor", "size": {"w": 0.45, "d": 0.45, "h": 0.9}, "aliases": ["餐椅", "圈椅", "餐凳", "长凳"], "rooms": ["餐厅"], "need_wall": false, "prefer": "any", "clearance": 0.3, "color_role": "wood" },
-    { "id": "sideboard",    "label": "餐边柜",     "mount": "floor", "size": {"w": 1.4, "d": 0.45, "h": 0.85}, "aliases": ["餐边柜", "茶水柜", "水吧台"], "rooms": ["餐厅"], "need_wall": true, "prefer": "blank", "clearance": 0.5, "color_role": "wood" },
-
-    { "id": "desk",         "label": "书桌",       "mount": "floor", "size": {"w": 1.2, "d": 0.6, "h": 0.75}, "aliases": ["书桌", "长书桌", "长条书桌", "可折叠书桌"], "rooms": ["书房", "次卧"], "need_wall": true, "prefer": "blank", "clearance": 0.75, "color_role": "wood" },
-    { "id": "office_chair", "label": "办公椅",     "mount": "floor", "size": {"w": 0.6, "d": 0.6, "h": 1.1}, "aliases": ["工学椅", "办公椅"], "rooms": [], "need_wall": false, "prefer": "any", "clearance": 0.3, "color_role": "fabric" },
-    { "id": "bookshelf",    "label": "书柜",       "mount": "floor", "size": {"w": 0.9, "d": 0.35, "h": 2.0}, "aliases": ["书柜", "书架", "开放式书架", "矮书柜"], "rooms": [], "need_wall": true, "prefer": "blank", "clearance": 0.5, "color_role": "wood" },
-    { "id": "bookshelf_wall","label": "整墙书架",  "mount": "floor", "size": {"w": 2.4, "d": 0.35, "h": 2.2}, "aliases": ["整墙书架", "整墙"], "rooms": ["书房"], "need_wall": true, "prefer": "blank", "clearance": 0.5, "color_role": "wood" },
-
-    { "id": "shoe_cabinet", "label": "鞋柜",       "mount": "floor", "size": {"w": 1.0, "d": 0.32, "h": 1.0}, "aliases": ["通顶鞋柜", "入户鞋柜", "鞋柜"], "rooms": ["走廊", "玄关"], "need_wall": true, "prefer": "blank", "clearance": 0.5, "color_role": "wood" },
-    { "id": "entry_cabinet","label": "玄关柜",     "mount": "floor", "size": {"w": 1.2, "d": 0.38, "h": 2.2}, "aliases": ["玄关柜", "家政柜", "清洁工具", "窄边柜", "窄条案"], "rooms": ["走廊", "玄关"], "need_wall": true, "prefer": "blank", "clearance": 0.6, "color_role": "wood" },
-    { "id": "bench_shoe",   "label": "换鞋凳",     "mount": "floor", "size": {"w": 0.8, "d": 0.35, "h": 0.45}, "aliases": ["换鞋凳", "软凳"], "rooms": ["走廊", "玄关"], "need_wall": true, "prefer": "any", "clearance": 0.35, "color_role": "fabric" },
-    { "id": "screen",       "label": "屏风隔断",   "mount": "floor", "size": {"w": 1.6, "d": 0.06, "h": 2.0}, "aliases": ["屏风", "格栅", "隔断"], "rooms": [], "need_wall": false, "prefer": "any", "clearance": 0.3, "color_role": "wood" },
-
-    { "id": "kitchen_l",    "label": "L形橱柜",    "mount": "floor", "size": {"w": 2.4, "d": 0.6, "h": 0.9}, "aliases": ["l 形橱柜", "l形橱柜", "橱柜", "地柜", "水槽", "沥水", "灶台", "抽油烟机", "u 型", "u型"], "rooms": ["厨房"], "need_wall": true, "prefer": "longest", "clearance": 0.9, "color_role": "white", "extras": [{"id": "wall_cabinet", "h": 0.7, "d": 0.35, "wall_height": 1.6, "role": "white"}] },
-    { "id": "kitchen_tall", "label": "厨房高柜",   "mount": "floor", "size": {"w": 0.7, "d": 0.65, "h": 2.2}, "aliases": ["高柜", "嵌入电器"], "rooms": ["厨房"], "need_wall": true, "prefer": "blank", "clearance": 0.6, "color_role": "white" },
-    { "id": "fridge",       "label": "冰箱",       "mount": "floor", "size": {"w": 0.7, "d": 0.7, "h": 1.8}, "aliases": ["冰箱"], "rooms": ["厨房"], "need_wall": true, "prefer": "blank", "clearance": 0.6, "color_role": "metal" },
-    { "id": "cart",         "label": "小推车",     "mount": "floor", "size": {"w": 0.5, "d": 0.4, "h": 0.85}, "aliases": ["推车"], "rooms": [], "need_wall": false, "prefer": "any", "clearance": 0.3, "color_role": "metal" },
-
-    { "id": "vanity",       "label": "浴室柜",     "mount": "floor", "size": {"w": 1.0, "d": 0.5, "h": 0.85}, "aliases": ["浴室柜", "台盆", "洗手台"], "rooms": ["卫生间", "卫浴"], "need_wall": true, "prefer": "blank", "clearance": 0.7, "color_role": "white", "extras": [{"id": "mirror_cabinet", "h": 0.7, "d": 0.15, "wall_height": 1.1, "role": "metal"}] },
-    { "id": "toilet",       "label": "马桶",       "mount": "floor", "size": {"w": 0.4, "d": 0.7, "h": 0.75}, "aliases": ["马桶"], "rooms": ["卫生间", "卫浴"], "need_wall": true, "prefer": "blank", "clearance": 0.6, "color_role": "white" },
-    { "id": "shower",       "label": "淋浴房",     "mount": "floor", "size": {"w": 0.9, "d": 0.9, "h": 2.0}, "aliases": ["淋浴房", "淋浴隔断", "玻璃淋浴", "浴帘", "挡水条", "淋浴"], "rooms": ["卫生间", "卫浴"], "need_wall": true, "prefer": "blank", "clearance": 0.6, "color_role": "stone", "no_collide": true },
-    { "id": "washer",       "label": "洗衣机",     "mount": "floor", "size": {"w": 0.6, "d": 0.6, "h": 0.85}, "aliases": ["洗衣机", "洗烘一体"], "rooms": ["阳台", "卫生间"], "need_wall": true, "prefer": "blank", "clearance": 0.6, "color_role": "white" },
-    { "id": "balcony_cab",  "label": "阳台柜",     "mount": "floor", "size": {"w": 1.0, "d": 0.5, "h": 0.9}, "aliases": ["阳台收纳柜", "收纳矮柜", "拖把池"], "rooms": ["阳台"], "need_wall": true, "prefer": "blank", "clearance": 0.5, "color_role": "wood" },
-    { "id": "planter_rack", "label": "盆栽架",     "mount": "floor", "size": {"w": 0.8, "d": 0.35, "h": 0.8}, "aliases": ["盆栽架", "花架", "绿植架"], "rooms": ["阳台"], "need_wall": true, "prefer": "blank", "clearance": 0.4, "color_role": "wood" },
-
-    { "id": "full_mirror",  "label": "全身镜",     "mount": "wall", "size": {"w": 0.5, "d": 0.05, "h": 1.7}, "aliases": ["全身镜", "穿衣镜"], "rooms": ["走廊", "玄关"], "need_wall": true, "prefer": "blank", "wall_height": 0.15, "color_role": "metal", "no_collide": true },
-    { "id": "wall_shelf",   "label": "墙面搁板",   "mount": "wall", "size": {"w": 1.2, "d": 0.25, "h": 0.04}, "aliases": ["墙面搁板", "壁挂置物架", "壁挂式书架", "置物架", "调料架", "挂钩", "镜柜", "挂杆", "壁龛", "吊柜"], "rooms": [], "need_wall": true, "prefer": "blank", "wall_height": 1.4, "color_role": "wood", "no_collide": true },
-    { "id": "wall_lamp",   "label": "壁灯/台灯", "mount": "wall", "size": {"w": 0.24, "d": 0.18, "h": 0.3}, "aliases": ["台灯", "壁灯", "阅读灯", "床头灯"], "rooms": [], "need_wall": true, "prefer": "blank", "wall_height": 1.1, "color_role": "metal", "no_collide": true },
-    { "id": "deck",        "label": "防腐木地台", "mount": "floor", "size": {"w": 1.8, "d": 1.2, "h": 0.12}, "aliases": ["地台", "防腐木"], "rooms": ["阳台"], "need_wall": false, "prefer": "any", "clearance": 0, "color_role": "wood", "no_collide": true },
-    { "id": "bin",         "label": "垃圾桶",   "mount": "floor", "size": {"w": 0.3, "d": 0.3, "h": 0.6}, "aliases": ["垃圾桶"], "rooms": [], "need_wall": false, "prefer": "any", "clearance": 0.2, "color_role": "metal" },
-    { "id": "pendant",      "label": "吊灯",       "mount": "ceiling", "size": {"w": 0.5, "d": 0.5, "h": 0.35}, "aliases": ["吊灯", "吸顶灯"], "rooms": [], "need_wall": false, "prefer": "any", "color_role": "metal", "no_collide": true },
-    { "id": "drying_rack",  "label": "晾衣架",     "mount": "ceiling", "size": {"w": 1.4, "d": 0.5, "h": 0.1}, "aliases": ["晾衣架", "晒衣", "晾衣"], "rooms": ["阳台"], "need_wall": false, "prefer": "any", "color_role": "metal", "no_collide": true }
-  ]
+  "nordic": {
+   "label": "北欧原木",
+   "palette": {
+    "wood": "#D9BE96",
+    "fabric": "#EDE6DA",
+    "metal": "#B9B2A6",
+    "stone": "#EFEBE2",
+    "green": "#6E9163",
+    "white": "#FAF8F4"
+   },
+   "wall": "#F6F3EC",
+   "floor": "#E4D6BE",
+   "surface_floor": "#A48B64",
+   "surface": {
+    "wood": "#794831",
+    "fabric": "#D6D3C1",
+    "metal": "#605555",
+    "stone": "#CBCBC9",
+    "green": "#3E583A",
+    "white": "#DDDCDF"
+   },
+   "family_colors": {
+    "bed": "#1C4D4B",
+    "desk": "#6149BC",
+    "nightstand": "#CCD387",
+    "bookshelf": "#9F3B3F",
+    "bin": "#E4C5EA",
+    "chest": "#5F3C66",
+    "lamp": "#6C5828",
+    "plant": "#9CDAD0",
+    "rug": "#276224",
+    "wall_shelf": "#95378D",
+    "wardrobe": "#E2C7B0",
+    "bench": "#9F3B3F",
+    "washer": "#305B81",
+    "sofa": "#CCD387",
+    "balcony_cabinet": "#CCD387",
+    "deck": "#9F3B3F",
+    "dining_table": "#604442",
+    "drying_rack": "#314D1C",
+    "planter_rack": "#EDCFEB",
+    "dresser": "#5349BC",
+    "entry_cabinet": "#9EDA9C",
+    "mirror": "#5349BC",
+    "shoe_cabinet": "#245562",
+    "shower": "#CCD387",
+    "toilet": "#9F3B3F",
+    "vanity": "#314D1C",
+    "coffee_table": "#4C43B4",
+    "dining_chair": "#5349BC",
+    "fridge": "#5349BC",
+    "kitchen_cabinet": "#9EDA9C",
+    "sideboard": "#9EDA9C",
+    "tv_cabinet": "#813033",
+    "armchair": "#4756A2",
+    "cart": "#8B3363",
+    "coat_rack": "#CDE3BE",
+    "office_chair": "#545B47",
+    "screen": "#BBD2E6",
+    "side_table": "#653A84"
+   }
+  },
+  "chinese": {
+   "label": "新中式",
+   "palette": {
+    "wood": "#6B4A32",
+    "fabric": "#D8CDBB",
+    "metal": "#8C7A5E",
+    "stone": "#E4DED2",
+    "green": "#4F6B4A",
+    "white": "#F3EFE7"
+   },
+   "wall": "#EFE9DE",
+   "floor": "#C9A87C",
+   "surface_floor": "#9C7E56",
+   "surface": {
+    "wood": "#833E20",
+    "fabric": "#C8BFA2",
+    "metal": "#5D5152",
+    "stone": "#BCBCBE",
+    "green": "#335C37",
+    "white": "#DCDDDA"
+   },
+   "family_colors": {
+    "bed": "#194E50",
+    "desk": "#513BBC",
+    "nightstand": "#BEC342",
+    "bookshelf": "#E9B8E7",
+    "bin": "#91322E",
+    "chest": "#98DEC7",
+    "lamp": "#65386A",
+    "plant": "#DBB78D",
+    "rug": "#5B4E1D",
+    "wall_shelf": "#77D47B",
+    "wardrobe": "#1D5B1F",
+    "bench": "#E9B8E7",
+    "washer": "#A2C7E2",
+    "sofa": "#BEC342",
+    "balcony_cabinet": "#413BBC",
+    "deck": "#BEC342",
+    "dining_table": "#664A4C",
+    "drying_rack": "#91322E",
+    "planter_rack": "#195029",
+    "dresser": "#413BBC",
+    "entry_cabinet": "#75D16D",
+    "mirror": "#413BBC",
+    "shoe_cabinet": "#5B461D",
+    "shower": "#413BBC",
+    "toilet": "#BEC342",
+    "vanity": "#91322E",
+    "coffee_table": "#413BBC",
+    "dining_chair": "#75D16D",
+    "fridge": "#75D16D",
+    "kitchen_cabinet": "#413BBC",
+    "sideboard": "#413BBC",
+    "tv_cabinet": "#912E36",
+    "armchair": "#2A5486",
+    "cart": "#CADE98",
+    "coat_rack": "#384094",
+    "office_chair": "#EBD2D4",
+    "screen": "#7C2E91",
+    "side_table": "#912E5B"
+   }
+  },
+  "_family_colors_note": "按**家具族**上色：不同种类不同色，同一种类同色。由 scripts/derive_family_palette.py 推出，约束是「对 3D 地面 ≥2.0:1」+「族两两 ΔE ≥6.0」。色相按黄金角铺开 —— 族按 id 排序后任意相邻两族色相也拉得开。"
+ },
+ "items": [
+  {
+   "id": "bed_double",
+   "label": "双人床",
+   "mount": "floor",
+   "size": {
+    "w": 1.8,
+    "d": 2.0,
+    "h": 0.45
+   },
+   "aliases": [
+    "双人床",
+    "1.8m",
+    "双人实木床"
+   ],
+   "rooms": [
+    "主卧",
+    "卧室",
+    "儿童房"
+   ],
+   "need_wall": true,
+   "prefer": "longest",
+   "clearance": 0.6,
+   "color_role": "fabric",
+   "extras": [
+    {
+     "id": "headboard",
+     "h": 1.0,
+     "d": 0.08,
+     "role": "wood"
+    }
+   ],
+   "family": "bed"
+  },
+  {
+   "id": "bed_queen",
+   "label": "双人床(1.5m)",
+   "mount": "floor",
+   "size": {
+    "w": 1.5,
+    "d": 2.0,
+    "h": 0.45
+   },
+   "aliases": [
+    "1.5m 单人床",
+    "高低床"
+   ],
+   "rooms": [
+    "次卧",
+    "儿童房"
+   ],
+   "need_wall": true,
+   "prefer": "longest",
+   "clearance": 0.6,
+   "color_role": "fabric",
+   "extras": [
+    {
+     "id": "headboard",
+     "h": 1.0,
+     "d": 0.08,
+     "role": "wood"
+    }
+   ],
+   "family": "bed"
+  },
+  {
+   "id": "bed_single",
+   "label": "单人床",
+   "mount": "floor",
+   "size": {
+    "w": 1.2,
+    "d": 2.0,
+    "h": 0.45
+   },
+   "aliases": [
+    "1.2m 单人床",
+    "单人床"
+   ],
+   "rooms": [
+    "次卧",
+    "书房",
+    "儿童房"
+   ],
+   "need_wall": true,
+   "prefer": "longest",
+   "clearance": 0.6,
+   "color_role": "fabric",
+   "extras": [
+    {
+     "id": "headboard",
+     "h": 0.95,
+     "d": 0.08,
+     "role": "wood"
+    }
+   ],
+   "family": "bed"
+  },
+  {
+   "id": "tatami",
+   "label": "榻榻米地台",
+   "mount": "floor",
+   "size": {
+    "w": 1.5,
+    "d": 2.0,
+    "h": 0.35
+   },
+   "aliases": [
+    "榻榻米",
+    "地台式"
+   ],
+   "rooms": [
+    "次卧"
+   ],
+   "need_wall": true,
+   "prefer": "longest",
+   "clearance": 0.5,
+   "color_role": "wood",
+   "family": "bed"
+  },
+  {
+   "id": "nightstand",
+   "label": "床头柜",
+   "mount": "floor",
+   "size": {
+    "w": 0.45,
+    "d": 0.4,
+    "h": 0.55
+   },
+   "aliases": [
+    "床头柜"
+   ],
+   "rooms": [
+    "主卧",
+    "次卧",
+    "儿童房"
+   ],
+   "need_wall": true,
+   "prefer": "longest",
+   "clearance": 0.3,
+   "color_role": "wood",
+   "family": "nightstand"
+  },
+  {
+   "id": "wardrobe",
+   "label": "衣柜",
+   "mount": "floor",
+   "size": {
+    "w": 2.0,
+    "d": 0.6,
+    "h": 2.2
+   },
+   "aliases": [
+    "衣柜",
+    "一体化衣柜"
+   ],
+   "rooms": [
+    "儿童房"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.7,
+   "color_role": "wood",
+   "family": "wardrobe"
+  },
+  {
+   "id": "wardrobe_tall",
+   "label": "通顶衣柜",
+   "mount": "floor",
+   "size": {
+    "w": 2.0,
+    "d": 0.6,
+    "h": 2.6
+   },
+   "aliases": [
+    "通顶衣柜",
+    "通顶定制",
+    "整墙衣柜",
+    "通顶",
+    "整墙"
+   ],
+   "rooms": [
+    "儿童房"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.7,
+   "color_role": "wood",
+   "family": "wardrobe"
+  },
+  {
+   "id": "dresser",
+   "label": "梳妆台",
+   "mount": "floor",
+   "size": {
+    "w": 1.0,
+    "d": 0.45,
+    "h": 0.75
+   },
+   "aliases": [
+    "梳妆台"
+   ],
+   "rooms": [
+    "主卧"
+   ],
+   "need_wall": true,
+   "prefer": "longest",
+   "clearance": 0.6,
+   "color_role": "wood",
+   "family": "dresser"
+  },
+  {
+   "id": "chest",
+   "label": "斗柜",
+   "mount": "floor",
+   "size": {
+    "w": 0.8,
+    "d": 0.45,
+    "h": 1.0
+   },
+   "aliases": [
+    "斗柜"
+   ],
+   "rooms": [
+    "儿童房"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.5,
+   "color_role": "wood",
+   "family": "chest"
+  },
+  {
+   "id": "bench_end",
+   "label": "床尾凳",
+   "mount": "floor",
+   "size": {
+    "w": 1.2,
+    "d": 0.4,
+    "h": 0.45
+   },
+   "aliases": [
+    "床尾",
+    "卧榻",
+    "长条软凳"
+   ],
+   "rooms": [
+    "主卧",
+    "次卧"
+   ],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.3,
+   "color_role": "fabric",
+   "family": "bench"
+  },
+  {
+   "id": "coat_rack",
+   "label": "衣帽架",
+   "mount": "floor",
+   "size": {
+    "w": 0.5,
+    "d": 0.5,
+    "h": 1.75
+   },
+   "aliases": [
+    "衣帽架",
+    "挂衣"
+   ],
+   "rooms": [],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.3,
+   "color_role": "wood",
+   "family": "coat_rack"
+  },
+  {
+   "id": "sofa_3",
+   "label": "三人沙发",
+   "mount": "floor",
+   "size": {
+    "w": 2.1,
+    "d": 0.9,
+    "h": 0.85
+   },
+   "aliases": [
+    "三人沙发",
+    "三人位",
+    "布艺沙发",
+    "低背三人",
+    "低矮实木三人"
+   ],
+   "rooms": [
+    "客厅",
+    "起居"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.6,
+   "color_role": "fabric",
+   "family": "sofa"
+  },
+  {
+   "id": "sofa_2",
+   "label": "双人沙发",
+   "mount": "floor",
+   "size": {
+    "w": 1.6,
+    "d": 0.9,
+    "h": 0.85
+   },
+   "aliases": [
+    "双人沙发",
+    "两人位"
+   ],
+   "rooms": [
+    "客厅",
+    "起居"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.5,
+   "color_role": "fabric",
+   "family": "sofa"
+  },
+  {
+   "id": "sofa_l",
+   "label": "L形沙发",
+   "mount": "floor",
+   "size": {
+    "w": 2.6,
+    "d": 1.6,
+    "h": 0.85
+   },
+   "aliases": [
+    "l 形沙发",
+    "l形沙发",
+    "转角沙发"
+   ],
+   "rooms": [
+    "客厅",
+    "起居"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.6,
+   "color_role": "fabric",
+   "family": "sofa"
+  },
+  {
+   "id": "sofa_bed",
+   "label": "沙发床",
+   "mount": "floor",
+   "size": {
+    "w": 1.9,
+    "d": 0.9,
+    "h": 0.8
+   },
+   "aliases": [
+    "沙发床",
+    "折叠沙发"
+   ],
+   "rooms": [
+    "书房"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.5,
+   "color_role": "fabric",
+   "family": "sofa"
+  },
+  {
+   "id": "armchair",
+   "label": "单人椅",
+   "mount": "floor",
+   "size": {
+    "w": 0.75,
+    "d": 0.8,
+    "h": 0.85
+   },
+   "aliases": [
+    "单人",
+    "休闲椅",
+    "扶手椅",
+    "单椅",
+    "阅读椅"
+   ],
+   "rooms": [],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.4,
+   "color_role": "fabric",
+   "family": "armchair"
+  },
+  {
+   "id": "coffee_table",
+   "label": "茶几",
+   "mount": "floor",
+   "size": {
+    "w": 1.2,
+    "d": 0.6,
+    "h": 0.42
+   },
+   "aliases": [
+    "茶几",
+    "矮几",
+    "茶桌",
+    "茶席"
+   ],
+   "rooms": [
+    "客厅"
+   ],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.35,
+   "color_role": "wood",
+   "family": "coffee_table"
+  },
+  {
+   "id": "side_table",
+   "label": "边几",
+   "mount": "floor",
+   "size": {
+    "w": 0.5,
+    "d": 0.5,
+    "h": 0.55
+   },
+   "aliases": [
+    "边几",
+    "窄边几",
+    "小几"
+   ],
+   "rooms": [],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.25,
+   "color_role": "wood",
+   "family": "side_table"
+  },
+  {
+   "id": "tv_cabinet",
+   "label": "电视柜",
+   "mount": "floor",
+   "size": {
+    "w": 1.8,
+    "d": 0.4,
+    "h": 0.45
+   },
+   "aliases": [
+    "电视柜",
+    "条案"
+   ],
+   "rooms": [
+    "客厅"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.5,
+   "color_role": "wood",
+   "family": "tv_cabinet"
+  },
+  {
+   "id": "rug",
+   "label": "地毯",
+   "mount": "floor",
+   "size": {
+    "w": 2.4,
+    "d": 1.6,
+    "h": 0.02
+   },
+   "aliases": [
+    "地毯",
+    "地垫"
+   ],
+   "rooms": [
+    "儿童房"
+   ],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0,
+   "y_offset": 0.0,
+   "color_role": "fabric",
+   "no_collide": true,
+   "family": "rug"
+  },
+  {
+   "id": "floor_lamp",
+   "label": "落地灯",
+   "mount": "floor",
+   "size": {
+    "w": 0.4,
+    "d": 0.4,
+    "h": 1.6
+   },
+   "aliases": [
+    "落地灯",
+    "落地阅读灯"
+   ],
+   "rooms": [],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.2,
+   "color_role": "metal",
+   "family": "lamp"
+  },
+  {
+   "id": "plant",
+   "label": "绿植",
+   "mount": "floor",
+   "size": {
+    "w": 0.5,
+    "d": 0.5,
+    "h": 1.2
+   },
+   "aliases": [
+    "绿植",
+    "盆栽",
+    "陶罐"
+   ],
+   "rooms": [
+    "儿童房"
+   ],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.2,
+   "color_role": "green",
+   "family": "plant"
+  },
+  {
+   "id": "dining_table",
+   "label": "餐桌",
+   "mount": "floor",
+   "size": {
+    "w": 1.4,
+    "d": 0.8,
+    "h": 0.75
+   },
+   "aliases": [
+    "餐桌",
+    "长条餐桌",
+    "四人餐桌"
+   ],
+   "rooms": [
+    "餐厅",
+    "厨房"
+   ],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.75,
+   "color_role": "wood",
+   "family": "dining_table"
+  },
+  {
+   "id": "dining_round",
+   "label": "圆餐桌",
+   "mount": "floor",
+   "size": {
+    "w": 1.2,
+    "d": 1.2,
+    "h": 0.75
+   },
+   "aliases": [
+    "圆桌",
+    "实木圆桌"
+   ],
+   "rooms": [
+    "餐厅"
+   ],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.75,
+   "color_role": "wood",
+   "family": "dining_table"
+  },
+  {
+   "id": "dining_chair",
+   "label": "餐椅",
+   "mount": "floor",
+   "size": {
+    "w": 0.45,
+    "d": 0.45,
+    "h": 0.9
+   },
+   "aliases": [
+    "餐椅",
+    "圈椅",
+    "餐凳",
+    "长凳"
+   ],
+   "rooms": [
+    "餐厅"
+   ],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.3,
+   "color_role": "wood",
+   "family": "dining_chair"
+  },
+  {
+   "id": "sideboard",
+   "label": "餐边柜",
+   "mount": "floor",
+   "size": {
+    "w": 1.4,
+    "d": 0.45,
+    "h": 0.85
+   },
+   "aliases": [
+    "餐边柜",
+    "茶水柜",
+    "水吧台"
+   ],
+   "rooms": [
+    "餐厅"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.5,
+   "color_role": "wood",
+   "family": "sideboard"
+  },
+  {
+   "id": "desk",
+   "label": "书桌",
+   "mount": "floor",
+   "size": {
+    "w": 1.2,
+    "d": 0.6,
+    "h": 0.75
+   },
+   "aliases": [
+    "书桌",
+    "长书桌",
+    "长条书桌",
+    "可折叠书桌"
+   ],
+   "rooms": [
+    "书房",
+    "次卧",
+    "儿童房"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.75,
+   "color_role": "wood",
+   "family": "desk"
+  },
+  {
+   "id": "office_chair",
+   "label": "办公椅",
+   "mount": "floor",
+   "size": {
+    "w": 0.6,
+    "d": 0.6,
+    "h": 1.1
+   },
+   "aliases": [
+    "工学椅",
+    "办公椅"
+   ],
+   "rooms": [],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.3,
+   "color_role": "fabric",
+   "family": "office_chair"
+  },
+  {
+   "id": "bookshelf",
+   "label": "书柜",
+   "mount": "floor",
+   "size": {
+    "w": 0.9,
+    "d": 0.35,
+    "h": 2.0
+   },
+   "aliases": [
+    "书柜",
+    "书架",
+    "开放式书架",
+    "矮书柜"
+   ],
+   "rooms": [
+    "儿童房"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.5,
+   "color_role": "wood",
+   "family": "bookshelf"
+  },
+  {
+   "id": "bookshelf_wall",
+   "label": "整墙书架",
+   "mount": "floor",
+   "size": {
+    "w": 2.4,
+    "d": 0.35,
+    "h": 2.2
+   },
+   "aliases": [
+    "整墙书架",
+    "整墙"
+   ],
+   "rooms": [
+    "书房"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.5,
+   "color_role": "wood",
+   "family": "bookshelf"
+  },
+  {
+   "id": "shoe_cabinet",
+   "label": "鞋柜",
+   "mount": "floor",
+   "size": {
+    "w": 1.0,
+    "d": 0.32,
+    "h": 1.0
+   },
+   "aliases": [
+    "通顶鞋柜",
+    "入户鞋柜",
+    "鞋柜"
+   ],
+   "rooms": [
+    "走廊",
+    "玄关"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.5,
+   "color_role": "wood",
+   "family": "shoe_cabinet"
+  },
+  {
+   "id": "entry_cabinet",
+   "label": "玄关柜",
+   "mount": "floor",
+   "size": {
+    "w": 1.2,
+    "d": 0.38,
+    "h": 2.2
+   },
+   "aliases": [
+    "玄关柜",
+    "家政柜",
+    "清洁工具",
+    "窄边柜",
+    "窄条案"
+   ],
+   "rooms": [
+    "走廊",
+    "玄关"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.6,
+   "color_role": "wood",
+   "family": "entry_cabinet"
+  },
+  {
+   "id": "bench_shoe",
+   "label": "换鞋凳",
+   "mount": "floor",
+   "size": {
+    "w": 0.8,
+    "d": 0.35,
+    "h": 0.45
+   },
+   "aliases": [
+    "换鞋凳",
+    "软凳"
+   ],
+   "rooms": [
+    "走廊",
+    "玄关"
+   ],
+   "need_wall": true,
+   "prefer": "any",
+   "clearance": 0.35,
+   "color_role": "fabric",
+   "family": "bench"
+  },
+  {
+   "id": "screen",
+   "label": "屏风隔断",
+   "mount": "floor",
+   "size": {
+    "w": 1.6,
+    "d": 0.06,
+    "h": 2.0
+   },
+   "aliases": [
+    "屏风",
+    "格栅",
+    "隔断"
+   ],
+   "rooms": [],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.3,
+   "color_role": "wood",
+   "family": "screen"
+  },
+  {
+   "id": "kitchen_l",
+   "label": "L形橱柜",
+   "mount": "floor",
+   "size": {
+    "w": 2.4,
+    "d": 0.6,
+    "h": 0.9
+   },
+   "aliases": [
+    "l 形橱柜",
+    "l形橱柜",
+    "橱柜",
+    "地柜",
+    "水槽",
+    "沥水",
+    "灶台",
+    "抽油烟机",
+    "u 型",
+    "u型"
+   ],
+   "rooms": [
+    "厨房"
+   ],
+   "need_wall": true,
+   "prefer": "longest",
+   "clearance": 0.9,
+   "color_role": "white",
+   "extras": [
+    {
+     "id": "wall_cabinet",
+     "h": 0.7,
+     "d": 0.35,
+     "wall_height": 1.6,
+     "role": "white"
+    }
+   ],
+   "family": "kitchen_cabinet"
+  },
+  {
+   "id": "kitchen_tall",
+   "label": "厨房高柜",
+   "mount": "floor",
+   "size": {
+    "w": 0.7,
+    "d": 0.65,
+    "h": 2.2
+   },
+   "aliases": [
+    "高柜",
+    "嵌入电器"
+   ],
+   "rooms": [
+    "厨房"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.6,
+   "color_role": "white",
+   "family": "kitchen_cabinet"
+  },
+  {
+   "id": "fridge",
+   "label": "冰箱",
+   "mount": "floor",
+   "size": {
+    "w": 0.7,
+    "d": 0.7,
+    "h": 1.8
+   },
+   "aliases": [
+    "冰箱"
+   ],
+   "rooms": [
+    "厨房"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.6,
+   "color_role": "metal",
+   "family": "fridge"
+  },
+  {
+   "id": "cart",
+   "label": "小推车",
+   "mount": "floor",
+   "size": {
+    "w": 0.5,
+    "d": 0.4,
+    "h": 0.85
+   },
+   "aliases": [
+    "推车"
+   ],
+   "rooms": [],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.3,
+   "color_role": "metal",
+   "family": "cart"
+  },
+  {
+   "id": "vanity",
+   "label": "浴室柜",
+   "mount": "floor",
+   "size": {
+    "w": 1.0,
+    "d": 0.5,
+    "h": 0.85
+   },
+   "aliases": [
+    "浴室柜",
+    "台盆",
+    "洗手台"
+   ],
+   "rooms": [
+    "卫生间",
+    "卫浴"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.7,
+   "color_role": "white",
+   "extras": [
+    {
+     "id": "mirror_cabinet",
+     "h": 0.7,
+     "d": 0.15,
+     "wall_height": 1.1,
+     "role": "metal"
+    }
+   ],
+   "family": "vanity"
+  },
+  {
+   "id": "toilet",
+   "label": "马桶",
+   "mount": "floor",
+   "size": {
+    "w": 0.4,
+    "d": 0.7,
+    "h": 0.75
+   },
+   "aliases": [
+    "马桶"
+   ],
+   "rooms": [
+    "卫生间",
+    "卫浴"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.6,
+   "color_role": "white",
+   "family": "toilet"
+  },
+  {
+   "id": "shower",
+   "label": "淋浴房",
+   "mount": "floor",
+   "size": {
+    "w": 0.9,
+    "d": 0.9,
+    "h": 2.0
+   },
+   "aliases": [
+    "淋浴房",
+    "淋浴隔断",
+    "玻璃淋浴",
+    "浴帘",
+    "挡水条",
+    "淋浴"
+   ],
+   "rooms": [
+    "卫生间",
+    "卫浴"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.6,
+   "color_role": "stone",
+   "no_collide": true,
+   "family": "shower"
+  },
+  {
+   "id": "washer",
+   "label": "洗衣机",
+   "mount": "floor",
+   "size": {
+    "w": 0.6,
+    "d": 0.6,
+    "h": 0.85
+   },
+   "aliases": [
+    "洗衣机",
+    "洗烘一体"
+   ],
+   "rooms": [
+    "阳台",
+    "卫生间"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.6,
+   "color_role": "white",
+   "family": "washer"
+  },
+  {
+   "id": "balcony_cab",
+   "label": "阳台柜",
+   "mount": "floor",
+   "size": {
+    "w": 1.0,
+    "d": 0.5,
+    "h": 0.9
+   },
+   "aliases": [
+    "阳台收纳柜",
+    "收纳矮柜",
+    "拖把池"
+   ],
+   "rooms": [
+    "阳台"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.5,
+   "color_role": "wood",
+   "family": "balcony_cabinet"
+  },
+  {
+   "id": "planter_rack",
+   "label": "盆栽架",
+   "mount": "floor",
+   "size": {
+    "w": 0.8,
+    "d": 0.35,
+    "h": 0.8
+   },
+   "aliases": [
+    "盆栽架",
+    "花架",
+    "绿植架"
+   ],
+   "rooms": [
+    "阳台"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "clearance": 0.4,
+   "color_role": "wood",
+   "family": "planter_rack"
+  },
+  {
+   "id": "full_mirror",
+   "label": "全身镜",
+   "mount": "wall",
+   "size": {
+    "w": 0.5,
+    "d": 0.05,
+    "h": 1.7
+   },
+   "aliases": [
+    "全身镜",
+    "穿衣镜"
+   ],
+   "rooms": [
+    "走廊",
+    "玄关"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "wall_height": 0.15,
+   "color_role": "metal",
+   "no_collide": true,
+   "family": "mirror"
+  },
+  {
+   "id": "wall_shelf",
+   "label": "墙面搁板",
+   "mount": "wall",
+   "size": {
+    "w": 1.2,
+    "d": 0.25,
+    "h": 0.04
+   },
+   "aliases": [
+    "墙面搁板",
+    "壁挂置物架",
+    "壁挂式书架",
+    "置物架",
+    "调料架",
+    "挂钩",
+    "镜柜",
+    "挂杆",
+    "壁龛",
+    "吊柜"
+   ],
+   "rooms": [
+    "儿童房"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "wall_height": 1.4,
+   "color_role": "wood",
+   "no_collide": true,
+   "family": "wall_shelf"
+  },
+  {
+   "id": "wall_lamp",
+   "label": "壁灯/台灯",
+   "mount": "wall",
+   "size": {
+    "w": 0.24,
+    "d": 0.18,
+    "h": 0.3
+   },
+   "aliases": [
+    "台灯",
+    "壁灯",
+    "阅读灯",
+    "床头灯"
+   ],
+   "rooms": [
+    "儿童房"
+   ],
+   "need_wall": true,
+   "prefer": "blank",
+   "wall_height": 1.1,
+   "color_role": "metal",
+   "no_collide": true,
+   "family": "lamp"
+  },
+  {
+   "id": "deck",
+   "label": "防腐木地台",
+   "mount": "floor",
+   "size": {
+    "w": 1.8,
+    "d": 1.2,
+    "h": 0.12
+   },
+   "aliases": [
+    "地台",
+    "防腐木"
+   ],
+   "rooms": [
+    "阳台"
+   ],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0,
+   "color_role": "wood",
+   "no_collide": true,
+   "family": "deck"
+  },
+  {
+   "id": "bin",
+   "label": "垃圾桶",
+   "mount": "floor",
+   "size": {
+    "w": 0.3,
+    "d": 0.3,
+    "h": 0.6
+   },
+   "aliases": [
+    "垃圾桶"
+   ],
+   "rooms": [
+    "儿童房"
+   ],
+   "need_wall": false,
+   "prefer": "any",
+   "clearance": 0.2,
+   "color_role": "metal",
+   "family": "bin"
+  },
+  {
+   "id": "pendant",
+   "label": "吊灯",
+   "mount": "ceiling",
+   "size": {
+    "w": 0.5,
+    "d": 0.5,
+    "h": 0.35
+   },
+   "aliases": [
+    "吊灯",
+    "吸顶灯"
+   ],
+   "rooms": [],
+   "need_wall": false,
+   "prefer": "any",
+   "color_role": "metal",
+   "no_collide": true,
+   "family": "lamp"
+  },
+  {
+   "id": "drying_rack",
+   "label": "晾衣架",
+   "mount": "ceiling",
+   "size": {
+    "w": 1.4,
+    "d": 0.5,
+    "h": 0.1
+   },
+   "aliases": [
+    "晾衣架",
+    "晒衣",
+    "晾衣"
+   ],
+   "rooms": [
+    "阳台"
+   ],
+   "need_wall": false,
+   "prefer": "any",
+   "color_role": "metal",
+   "no_collide": true,
+   "family": "drying_rack"
+  }
+ ]
 }

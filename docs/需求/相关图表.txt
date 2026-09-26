@@ -1,0 +1,602 @@
+图 1
+功能地图与三条业务线（对应 §5.1）
+```mermaid
+flowchart LR
+    subgraph L1["户型解析线"]
+        A1[上传户型图] --> A2[质量预检]
+        A2 --> A3[多模态解析]
+        A3 --> A4[五维诊断]
+        A4 --> A5[矢量户型图]
+        A5 --> A6[物品热区]
+        A6 --> A7[地面材质替换]
+        A7 --> A8[3D 户型漫游]
+    end
+
+    subgraph L2["方案生成线"]
+        B1[一键三套方案] --> B2[三路并行]
+        B2 --> B3[空间规划]
+        B2 --> B4[预算造价]
+        B2 --> B5[材料选型]
+        B3 --> B6[避坑审查]
+        B4 --> B6
+        B5 --> B6
+        B6 --> B7[横向对比矩阵]
+        B7 --> B8[3D 装修漫游]
+    end
+
+    subgraph L3["避坑审查线"]
+        C1[粘贴报价单] --> C2[RAG 检索依据]
+        C2 --> C3[风险清单]
+        C3 --> C4[引用溯源]
+        C4 --> C5[剔除编造引用]
+        C5 --> C6[议价要点]
+    end
+
+    classDef parseNode fill:#E8F0E5,stroke:#4A7C59,stroke-width:2px,color:#2C2418
+    classDef planNode fill:#FFF4E0,stroke:#C9A961,stroke-width:2px,color:#2C2418
+    classDef pitNode fill:#FBE9E7,stroke:#C85A48,stroke-width:2px,color:#2C2418
+
+    class A1,A2,A3,A4,A5,A6,A7,A8 parseNode
+    class B1,B2,B3,B4,B5,B6,B7,B8 planNode
+    class C1,C2,C3,C4,C5,C6 pitNode
+```
+
+图 2
+整体系统架构（对应 §9.1）
+```mermaid
+flowchart TB
+    subgraph Access["接入层"]
+        FE["Vue3 + TypeScript<br/>Element Plus + Pinia + ECharts"]
+        NG["Nginx<br/>静态资源 + /api 反代 + SSE"]
+        FE --> NG
+    end
+
+    subgraph Service["服务层 · FastAPI 单进程异步"]
+        direction TB
+        subgraph APIs["API 路由"]
+            AUTH["auth.py"]
+            LAYOUT["layout.py"]
+            DESIGN["design.py"]
+            BUDGET["budget.py"]
+            MAT["material.py"]
+            PIT["avoid_pit.py"]
+            QY["quanyou.py"]
+            IMG["image.py<br/>(串行锁)"]
+        end
+        MCP["MCP 工具中心<br/>注册 / 发现 / 调用"]
+    end
+
+    subgraph Data["数据层"]
+        PG[("PostgreSQL 15<br/>用户/方案/预算/审计")]
+        CHROMA[("ChromaDB 嵌入式<br/>PersistentClient")]
+        REDIS[("Redis 7<br/>会话/缓存/限流/进度")]
+        FS["本地文件<br/>E:/quanyou/"]
+    end
+
+    subgraph Model["模型层 · 可插拔"]
+        direction TB
+        M1["多模态主: DeepSeek deepseek-flash"]
+        M2["多模态备: Ollama minicpm-v4.6"]
+        M3["文本兜底: Ollama qwen2.5:3b"]
+        M4["Embedding: Ollama bge-large-zh-v1.5 (1024维)"]
+        M5["Reranker: my-rerank:9999 按需启停"]
+        M6["图像: VectorRenderer 必出<br/>→ SD1.5+ControlNet 增强"]
+        M1 -.->|失败降级| M2 -.-> M3
+    end
+
+    NG --> APIs
+    APIs --> MCP
+    APIs --> PG
+    APIs --> CHROMA
+    APIs --> REDIS
+    APIs --> FS
+    APIs --> Model
+
+    classDef accessNode fill:#F5F2EC,stroke:#6B4F3A,stroke-width:2px,color:#2C2418
+    classDef svcNode fill:#E8F0E5,stroke:#4A7C59,stroke-width:2px,color:#2C2418
+    classDef dataNode fill:#FFF4E0,stroke:#C9A961,stroke-width:2px,color:#2C2418
+    classDef modelNode fill:#E8F0E5,stroke:#4A7C59,stroke-width:1.5px,color:#2C2418
+
+    class FE,NG accessNode
+    class AUTH,LAYOUT,DESIGN,BUDGET,MAT,PIT,QY,IMG,MCP svcNode
+    class PG,CHROMA,REDIS,FS dataNode
+    class M1,M2,M3,M4,M5,M6 modelNode
+```
+
+图 3
+Docker Compose 拓扑（对应 §9.2）
+```mermaid
+flowchart LR
+    subgraph Host["宿主机 Windows 11"]
+        direction TB
+        subgraph VM["Docker VM 上限 7.63GB"]
+            subgraph Containers["4 容器 · 端口全绑 127.0.0.1"]
+                PG["qy-postgres<br/>postgres:15-alpine<br/>~80MB<br/>127.0.0.1:5432"]
+                RD["qy-redis<br/>redis:7-alpine<br/>~30MB<br/>maxmemory 256mb<br/>127.0.0.1:6379"]
+                BE["qy-backend<br/>python:3.11-slim<br/>~600MB (含 torch)<br/>127.0.0.1:8000"]
+                NX["qy-nginx<br/>nginx:alpine<br/>~15MB<br/>127.0.0.1:80"]
+            end
+        end
+
+        OL["Ollama 宿主机原生<br/>:11434<br/>~1.5–2.0GB"]
+        RR["my-rerank 按需启停<br/>:9999<br/>~2.2–2.5GB"]
+
+        NX --> BE
+        BE --> PG
+        BE --> RD
+        BE -.-> OL
+        BE -.-> RR
+    end
+
+    classDef container fill:#E8F0E5,stroke:#4A7C59,stroke-width:2px,color:#2C2418
+    classDef host fill:#FFF4E0,stroke:#C9A961,stroke-width:2px,color:#2C2418
+    classDef note fill:#F5F2EC,stroke:#6B4F3A,stroke-dasharray:4 4,color:#2C2418
+
+    class PG,RD,BE,NX container
+    class OL,RR host
+```
+
+图 4
+LangGraph 全状态图（对应 §9.3）
+```mermaid
+flowchart TB
+    START([START]) --> PRECHECK[质量预检<br/>本地 · 零 Token]
+    PRECHECK -->|不合格| REJECT[拒绝 · 不消耗 Token]
+    PRECHECK -->|合格| PARSE[parse_layout<br/>DeepSeek 主模型<br/>allow_degrade=False]
+
+    PARSE -->|成功| FULL[mode = full]
+    PARSE -->|失败| DEGRADE[降级路径<br/>minicpm-v4.6<br/>force_local=True]
+
+    DEGRADE --> GATE{质量闸门<br/>房间数 ≥ 2<br/>JSON 合法}
+    GATE -->|通过| BASIC[mode = degraded_basic<br/>仅房间名]
+    GATE -->|不通过| CHAINFAIL[整条链失败<br/>建议稍后重试]
+
+    FULL --> DIAG[diagnose_layout<br/>采光/通风/动线/绿色]
+    BASIC --> CAP[capabilities 守卫<br/>仅允许 view / export]
+
+    DIAG --> FANOUT{{fan-out 9 个并发任务}}
+
+    FANOUT --> PA[方案 A<br/>现代简约·经济]
+    FANOUT --> PB[方案 B<br/>北欧·中档]
+    FANOUT --> PC[方案 C<br/>中式·高端]
+
+    PA --> A03A[空间规划] & A04A[预算规则引擎] & A05A[材料选型]
+    PB --> A03B[空间规划] & A04B[预算规则引擎] & A05B[材料选型]
+    PC --> A03C[空间规划] & A04C[预算规则引擎] & A05C[材料选型]
+
+    A03A & A04A & A05A --> PITA[避坑审查]
+    A03B & A04B & A05B --> PITB[避坑审查]
+    A03C & A04C & A05C --> PITC[避坑审查]
+
+    PITA & PITB & PITC --> FANIN{{fan-in 汇总}}
+    FANIN --> RENDER[render_images<br/>全局串行锁]
+    RENDER --> HOTSPOT[build_hotspots<br/>坐标映射]
+    HOTSPOT --> REPORT[generate_report<br/>Markdown / HTML]
+    REPORT --> END([END])
+
+    classDef okNode fill:#E8F0E5,stroke:#4A7C59,stroke-width:2px,color:#2C2418
+    classDef warnNode fill:#FFF4E0,stroke:#C9A961,stroke-width:2px,color:#2C2418
+    classDef failNode fill:#FBE9E7,stroke:#C85A48,stroke-width:2px,color:#2C2418
+    classDef gateNode fill:#F5F2EC,stroke:#6B4F3A,stroke-width:2px,color:#2C2418
+
+    class START,PARSE,FULL,DIAG,PA,PB,PC,A03A,A04A,A05A,A03B,A04B,A05B,A03C,A04C,A05C,PITA,PITB,PITC,FANIN,RENDER,HOTSPOT,REPORT,END okNode
+    class PRECHECK,DEGRADE,BASIC warnNode
+    class REJECT,CHAINFAIL,CAP failNode
+    class GATE,FANOUT gateNode
+```
+
+图 5
+户型解析降级链（对应 §11.2.1）
+```mermaid
+flowchart TB
+    IMG[用户上传户型图] --> PRE{本地质量预检<br/>分辨率/模糊/长宽比/大小}
+    PRE -->|不合格| R1[拒绝 · 0 Token<br/>建议重新上传]
+    PRE -->|合格| MAIN[DeepSeek deepseek-flash<br/>全量 LayoutSchema<br/>allow_degrade=False]
+
+    MAIN -->|成功 6.1s| OK[mode = full<br/>房间/墙/门/窗/尺寸/朝向]
+    MAIN -->|超时/429/5xx| LOCAL[minicpm-v4.6<br/>force_local=True]
+
+    LOCAL --> Q{质量闸门<br/>房间数 ≥ 2 且 JSON 合法}
+    Q -->|通过| DM[mode = degraded_basic<br/>rooms[].name 真实<br/>其余字段留空]
+    Q -->|不通过| FAIL[整条链失败]
+
+    OK --> CAPA[capabilities 报告<br/>全部操作 allowed]
+    DM --> CAPB[capabilities 报告<br/>仅 view/export allowed]
+    FAIL --> REJ2[建议用户稍后重试]
+
+    classDef okN fill:#E8F0E5,stroke:#4A7C59,stroke-width:2px,color:#2C2418
+    classDef warnN fill:#FFF4E0,stroke:#C9A961,stroke-width:2px,color:#2C2418
+    classDef failN fill:#FBE9E7,stroke:#C85A48,stroke-width:2px,color:#2C2418
+    classDef gateN fill:#F5F2EC,stroke:#6B4F3A,stroke-width:2px,color:#2C2418
+
+    class IMG,MAIN,OK,CAPA okN
+    class LOCAL,DM,CAPB warnN
+    class R1,FAIL,REJ2 failN
+    class PRE,Q gateN
+```
+
+图 6
+业务连续性守卫（对应 §11.2.1 · capabilities）
+```mermaid
+flowchart LR
+    LAYOUT[解析结果] --> GUARD{capabilities.py<br/>数据层判断}
+
+    GUARD -->|rooms + doors + area| OP_DIAG[diagnose ✓]
+    GUARD -->|rooms + area + walls| OP_PLAN[generate_plan ✓]
+    GUARD -->|total_area > 0| OP_BUDGET[estimate_budget ✓]
+    GUARD -->|room bbox| OP_IMG[generate_image ✓]
+    GUARD -->|room bbox| OP_HOT[generate_hotspots ✓]
+    GUARD -->|room bbox + area| OP_EDIT[edit_layout ✓]
+    GUARD -->|无需前置| OP_VIEW[view_rooms ✓]
+    GUARD -->|无需前置| OP_EXP[export_room_list ✓]
+
+    GUARD -->|缺字段| BLOCK[HTTP 200 + code 4002<br/>reason/missing/suggestion]
+
+    BLOCK --> FE[前端置灰按钮<br/>tooltip 显示 suggestion]
+    BLOCK --> BE[后端再次拦截<br/>绕过前端也拦得住]
+
+    classDef okN fill:#E8F0E5,stroke:#4A7C59,stroke-width:2px,color:#2C2418
+    classDef warnN fill:#FFF4E0,stroke:#C9A961,stroke-width:2px,color:#2C2418
+    classDef gateN fill:#F5F2EC,stroke:#6B4F3A,stroke-width:2px,color:#2C2418
+
+    class OP_DIAG,OP_PLAN,OP_BUDGET,OP_IMG,OP_HOT,OP_EDIT,OP_VIEW,OP_EXP okN
+    class BLOCK warnN
+    class GUARD gateN
+```
+
+图 7
+多 Agent 并行方案生成（对应 §11.2.2）
+```mermaid
+flowchart TB
+    PARSE[户型解析完成] --> DIAG[户型诊断完成]
+    DIAG --> SPLIT{{三路 fan-out}}
+
+    SPLIT --> A[方案 A<br/>现代简约 · 经济<br/>¥800-1200/㎡]
+    SPLIT --> B[方案 B<br/>北欧 · 中档<br/>¥1500-2000/㎡]
+    SPLIT --> C[方案 C<br/>中式 · 高端<br/>¥2500-3500/㎡]
+
+    subgraph PlanA["方案 A 并行分支"]
+        direction LR
+        AA1[空间规划<br/>~17.7s]
+        AA2[预算规则引擎<br/>~11.6s 躲影子]
+        AA3[材料选型<br/>~8.3s 躲影子]
+    end
+
+    subgraph PlanB["方案 B 并行分支"]
+        direction LR
+        BB1[空间规划<br/>~16.3s]
+        BB2[预算规则引擎<br/>~9.5s]
+        BB3[材料选型<br/>~12.4s]
+    end
+
+    subgraph PlanC["方案 C 并行分支"]
+        direction LR
+        CC1[空间规划<br/>~22.5s]
+        CC2[预算规则引擎<br/>~8.8s]
+        CC3[材料选型<br/>~8.4s]
+    end
+
+    A --> PlanA
+    B --> PlanB
+    C --> PlanC
+
+    AA1 & AA2 & AA3 --> PIT_A[避坑审查 A<br/>~13s]
+    BB1 & BB2 & BB3 --> PIT_B[避坑审查 B]
+    CC1 & CC2 & CC3 --> PIT_C[避坑审查 C]
+
+    PIT_A & PIT_B & PIT_C --> MERGE{{fan-in 汇总<br/>对比矩阵}}
+    MERGE --> REPORT[三方案报告<br/>总墙钟 ~111.3s]
+
+    classDef planA fill:#E8F0E5,stroke:#4A7C59,stroke-width:2px,color:#2C2418
+    classDef planB fill:#FFF4E0,stroke:#C9A961,stroke-width:2px,color:#2C2418
+    classDef planC fill:#FBE9E7,stroke:#C85A48,stroke-width:2px,color:#2C2418
+    classDef gateN fill:#F5F2EC,stroke:#6B4F3A,stroke-width:2px,color:#2C2418
+
+    class A,AA1,AA2,AA3,PIT_A planA
+    class B,BB1,BB2,BB3,PIT_B planB
+    class C,CC1,CC2,CC3,PIT_C planC
+    class SPLIT,MERGE gateN
+```
+
+图 8
+异步任务进度模型（对应 §11.2.4）
+```mermaid
+stateDiagram-v2
+    [*] --> queued: 已接收，正在排队…
+    queued --> prechecking: 正在检查图片质量…
+    prechecking --> analyzing: 正在分析图片…
+    analyzing --> diagnosing: 正在生成户型诊断…
+    diagnosing --> done: 完成
+    diagnosing --> degraded: 已完成（降级模式）
+
+    state generate {
+        [*] --> queued
+        queued --> diagnosing_g: 正在生成户型诊断…
+        diagnosing_g --> planning: 正在生成装修方案…
+        planning --> checking_risks: 正在复核方案风险…
+        checking_risks --> finalizing: 即将完成…
+        finalizing --> done_g: 完成
+    }
+
+    state review {
+        [*] --> queued
+        queued --> reviewing: 正在审查报价单…
+        reviewing --> done_r: 完成
+    }
+
+    note right of queued
+        语义化 phase 而非 progress 数字
+        阶段百分比由耗时占比推出
+        eta_seconds 估不出时返回 null 而非 0
+        overrun=true 时文案必须改口
+    end note
+```
+
+图 9
+图像生成双轨设计（对应 §11.2.5 · 已作废保留为技术记录）
+```mermaid
+flowchart LR
+    LJ[layout_json] --> VR[VectorRenderer<br/>Pillow / SVG<br/>纯 CPU]
+    LJ --> SD[LocalSD15Provider<br/>SD1.5 + LCM + ControlNet]
+
+    VR --> VOUT[矢量户型渲染图<br/>✅ 必出 · < 3s<br/>热区 100% 精确]
+    SD --> SOUT[AI 风格效果图<br/>⚠️ 尽力 · < 25s<br/>热区为房间级近似]
+
+    SD -->|失败/超时| DEG[降级]
+    DEG --> VOUT
+    DEG --> FLAG[degraded=true]
+
+    subgraph Track["降级预案 L0–L3（顺序不可颠倒）"]
+        L0[L0: SD1.5+CN @512<br/>全部 slicing]
+        L1[L1: 448×448]
+        L2[L2: 卸载 ControlNet<br/>丧失结构一致性 → 关闭热区]
+        L3[L3: 只出矢量图]
+        L0 --> L1 --> L2 --> L3
+    end
+
+    classDef okN fill:#E8F0E5,stroke:#4A7C59,stroke-width:2px,color:#2C2418
+    classDef warnN fill:#FFF4E0,stroke:#C9A961,stroke-width:2px,color:#2C2418
+    classDef noteN fill:#F5F2EC,stroke:#6B4F3A,stroke-dasharray:4 4,color:#2C2418
+
+    class VR,VOUT okN
+    class SD,SOUT,DEG warnN
+    class L0,L1,L2,L3 noteN
+```
+
+图 10
+物品热区几何一致性自检（对应 §11.2.6）
+```mermaid
+flowchart TB
+    IMG[AI 生成图] --> EDGE_G[Canny 边缘检测]
+    LAYOUT[layout 几何] --> EDGE_R[conditioning 边缘图渲染]
+
+    EDGE_R --> IOU[二值化 + 膨胀 1-2px<br/>求 IoU]
+    EDGE_G --> IOU
+
+    IOU --> CHECK{阈值判定}
+    CHECK -->|IoU ≥ 0.85| PASS[precision = room_level<br/>正常展示热区]
+    CHECK -->|0.70 ≤ IoU < 0.85| WARN[precision = room_level<br/>+ 提示文案]
+    CHECK -->|IoU < 0.70| NONE[precision = none<br/>不放热区 · 引导矢量图]
+
+    NONE --> VEC[矢量图路径<br/>precision = exact<br/>热区 100% 精确]
+
+    note1[⚠️ 阈值 0.70/0.85 未经实测标定<br/>默认关闭 IMAGE_HOTSPOT_ENABLED=false]
+    CHECK -.-> note1
+
+    classDef okN fill:#E8F0E5,stroke:#4A7C59,stroke-width:2px,color:#2C2418
+    classDef warnN fill:#FFF4E0,stroke:#C9A961,stroke-width:2px,color:#2C2418
+    classDef failN fill:#FBE9E7,stroke:#C85A48,stroke-width:2px,color:#2C2418
+    classDef gateN fill:#F5F2EC,stroke:#6B4F3A,stroke-width:2px,color:#2C2418
+
+    class PASS,VEC okN
+    class WARN warnN
+    class NONE failN
+    class IOU,CHECK gateN
+```
+
+图 11
+3D 家具摆放规则（对应 ADR-14）
+```mermaid
+flowchart TB
+    ROOM[房间轮廓 bbox] --> PLACE{furniture/placement.py<br/>规则计算}
+
+    PLACE --> R1{在房间里?}
+    R1 -->|否| REJ1[拒绝 · 记入 rejected]
+    R1 -->|是| R2{不堵门?}
+
+    R2 -->|否| REJ2[拒绝 · 记入 rejected]
+    R2 -->|是| R3{不压别的家具?}
+
+    R3 -->|否| REJ3[拒绝 · 记入 rejected]
+    R3 -->|是| OK[坐标确定]
+
+    OK --> FAMILY{同族检查<br/>每房一件?}
+    FAMILY -->|重复| REJ4[拒绝 · 记入 rejected]
+    FAMILY -->|通过| SORT[按占地面积降序]
+    SORT --> EMIT[输出坐标<br/>35 件 / 13 条拒绝]
+
+    note2[关键纪律: 坐标由规则计算<br/>不调用 LLM · 见 ADR-07/14]
+    PLACE -.-> note2
+
+    classDef okN fill:#E8F0E5,stroke:#4A7C59,stroke-width:2px,color:#2C2418
+    classDef failN fill:#FBE9E7,stroke:#C85A48,stroke-width:2px,color:#2C2418
+    classDef gateN fill:#F5F2EC,stroke:#6B4F3A,stroke-width:2px,color:#2C2418
+
+    class OK,SORT,EMIT okN
+    class REJ1,REJ2,REJ3,REJ4 failN
+    class R1,R2,R3,FAMILY,PLACE gateN
+```
+
+图 12
+3D 表面色约束搜索（对应 ADR-16）
+```mermaid
+flowchart LR
+    C1["约束 1: 对地面 ≥ 2:1 对比度<br/>能从地面分出家具"]
+    C2["约束 2: 角色两两 Lab ΔE ≥ 6.6<br/>彼此分得出"]
+
+    C1 --> SEARCH[derive_surface_palette.py<br/>约束下的搜索]
+    C2 --> SEARCH
+
+    SEARCH --> OBJ[目标函数: 最大化最小的一对 ΔE]
+    OBJ --> SOL[解]
+
+    SOL --> R1[木 #784729]
+    SOL --> R2[绿 #2A5D3E]
+    SOL --> R3[金属 #625858]
+    SOL --> R4[布艺 #D2CAB3]
+    SOL --> R5[石面 #C6C6C8]
+    SOL --> R6[白 #DCDDDA]
+
+    note3["搜索撞出的三件事:<br/>① 原调色板擦线过<br/>② 两中性色数学上拉不开 6.6<br/>③ 搜索引擎会用掉约束余量 → 石面被搞绿两次"]
+    SEARCH -.-> note3
+
+    classDef okN fill:#E8F0E5,stroke:#4A7C59,stroke-width:2px,color:#2C2418
+    classDef gateN fill:#F5F2EC,stroke:#6B4F3A,stroke-width:2px,color:#2C2418
+
+    class R1,R2,R3,R4,R5,R6 okN
+    class SEARCH,OBJ,SOL gateN
+```
+
+图 13
+3D 漫游模式（对应 ADR-17）
+```mermaid
+stateDiagram-v2
+    [*] --> Fly: 开局默认自由视角<br/>天花板之上 +2.0m<br/>俯角 38°
+    Fly --> Fly: WASD 水平移动<br/>鼠标转视角<br/>可穿墙
+
+    Fly --> Walk: 按 G 下到地面
+    Walk --> Walk: 贴地行走<br/>含碰撞检测<br/>仅可达房间
+    Walk --> Fly: 按 G 浮起<br/>保持当前高度
+
+    Walk --> Fast: 快速前往房间<br/>按 reachable 判定
+    Fly --> Fast2: 快速前往房间<br/>降到眼高
+
+    note right of Fly
+        开局一律自由视角
+        不跟 walkable.mode 走
+        6 次解析仅 3 次可贴地行走
+    end note
+
+    note right of Walk
+        可达房间在界面上不标灰
+        不可达的标灰并写明是哪间
+    end note
+```
+
+图 14
+认证与权限（对应 §11.2.7）
+```mermaid
+flowchart TB
+    LOGIN[用户登录] --> JWT{JWT 验证}
+    JWT -->|失败| R401[401 未认证]
+    JWT -->|成功| ROLE{角色判定}
+
+    ROLE -->|admin| ALL[全部功能<br/>+ 用户管理<br/>+ 系统监控<br/>+ 全友产品管理]
+    ROLE -->|designer| DSG[户型解析 + 方案生成<br/>+ 知识库管理<br/>+ 数据分析<br/>+ 方案编辑/批注]
+    ROLE -->|user| USR[户型解析 + 方案查看<br/>+ 预算估算 + 避坑审查]
+
+    ALL --> QUOTA0[额度: 不限量]
+    DSG --> QUOTA0
+    USR --> QUOTA{额度检查<br/>Redis 原子计数}
+    QUOTA -->|解析 5 次/日<br/>生成 3 次/日| QUOTA_OK[放行]
+    QUOTA -->|超出| QUOTA_NO[拒绝 · code 4003]
+
+    subgraph Defense["两条防线"]
+        D1[前端: 菜单按角色过滤<br/>config/nav.ts + meta.roles]
+        D2[后端: api/deps.py<br/>真正的判据]
+    end
+
+    note4[藏菜单不是防线<br/>后端拦截才是]
+    Defense -.-> note4
+
+    classDef okN fill:#E8F0E5,stroke:#4A7C59,stroke-width:2px,color:#2C2418
+    classDef warnN fill:#FFF4E0,stroke:#C9A961,stroke-width:2px,color:#2C2418
+    classDef failN fill:#FBE9E7,stroke:#C85A48,stroke-width:2px,color:#2C2418
+    classDef gateN fill:#F5F2EC,stroke:#6B4F3A,stroke-width:2px,color:#2C2418
+
+    class ALL,DSG,USR,QUOTA0,QUOTA_OK okN
+    class QUOTA warnN
+    class R401,QUOTA_NO failN
+    class JWT,ROLE,D1,D2 gateN
+```
+
+图 15
+主流程时序图（对应 §6.1）
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as 用户
+    participant FE as Vue3 前端
+    participant BE as FastAPI 后端
+    participant LG as LangGraph
+    participant LLM as DeepSeek
+    participant DB as PostgreSQL
+    participant RD as Redis
+
+    U->>FE: 上传户型图
+    FE->>BE: POST /layout/parse
+    BE->>BE: 本地质量预检
+    BE->>RD: 创建任务 + 状态 queued
+    BE-->>FE: 返回 task_id + trace_id
+
+    loop 轮询（1s/2s/5s 递减）
+        FE->>BE: GET /task/{id}/status
+        BE-->>FE: phase / progress / eta
+    end
+
+    BE->>LG: 启动解析工作流
+    LG->>LLM: A-01 视觉解析
+    LLM-->>LG: 结构化 JSON
+    LG->>LLM: A-02 五维诊断
+    LLM-->>LG: 诊断报告
+    LG->>DB: 落库 house_layouts
+    LG->>RD: 状态 completed
+
+    FE->>BE: GET /layout/{id}/hotspots
+    BE-->>FE: 热区 + 价格 + 购买链接
+    FE->>U: 展示矢量图 + 热区悬停
+
+    U->>FE: 一键三套方案
+    FE->>BE: POST /design/generate
+    BE->>LG: fan-out 三路并行
+    par 方案 A
+        LG->>LLM: 空间规划 + 材料选型
+        LG->>LG: 预算规则引擎
+    and 方案 B
+        LG->>LLM: 空间规划 + 材料选型
+        LG->>LG: 预算规则引擎
+    and 方案 C
+        LG->>LLM: 空间规划 + 材料选型
+        LG->>LG: 预算规则引擎
+    end
+    LG->>LLM: A-06 避坑审查（汇聚）
+    LG->>DB: 落库 design_plans
+    LG-->>BE: 对比矩阵
+    BE-->>FE: 三方案结果
+    FE->>U: 展示对比矩阵 + 3D 漫游入口
+```
+
+图 16
+验证流程（对应 §14.4）
+```mermaid
+flowchart LR
+    subgraph Verify["五条验证命令"]
+        V1["scripts/e2e_smoke.py<br/>23 条真实产物断言"]
+        V2["scripts/review_sample_quote.py<br/>避坑召回率（带标注样本）"]
+        V3["scripts/replay_golden_path.py<br/>黄金路径一致性"]
+        V4["scripts/mcp_smoke.py<br/>三个 MCP 工具真实 stdio"]
+        V5["pytest<br/>全量 1130 通过"]
+    end
+
+    V1 --> R1[23/23 ✅]
+    V2 --> R2[8 类全中 / 召回 93–100% ✅]
+    V3 --> R3[通过 ✅]
+    V4 --> R4[通过 ✅]
+    V5 --> R5[1130 passed ✅]
+
+    classDef okN fill:#E8F0E5,stroke:#4A7C59,stroke-width:2px,color:#2C2418
+    classDef gateN fill:#F5F2EC,stroke:#6B4F3A,stroke-width:2px,color:#2C2418
+
+    class V1,V2,V3,V4,V5 gateN
+    class R1,R2,R3,R4,R5 okN
+```

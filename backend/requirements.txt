@@ -73,6 +73,13 @@ chromadb==1.5.9
 #   precheck_image 是**主链路上的图节点**（每个任务都会走），所以是真依赖。
 numpy==2.4.6
 
+# AC-12 检查点（2026-09-24 起改用 PostgreSQL，理由见下方【C】段的说明）。
+#   workflow.py 的 setup_checkpointer() 在 lifespan 里懒加载它们，
+#   不装则检查点降级为内存版：**服务照跑，但崩溃的任务接不回来**（会告警）。
+langgraph-checkpoint-postgres==3.1.2
+#   ⚠️ `[binary]` 不能省：纯 python 实现依赖系统 libpq，slim 镜像里没有。
+psycopg[binary]==3.3.6
+
 # ── 【C】刻意不装的，以及为什么不装 ─────────────────────────────
 #
 # ▶ torch / diffusers / opencv-python —— **不装**
@@ -84,7 +91,18 @@ numpy==2.4.6
 #     注：需求文档 §3.2 的 qy-backend 预算行写「~600 MB（含 torch，故偏大）」，
 #        本镜像**有意偏离**这一句，此处即差异标注。
 #
-# ▶ langgraph-checkpoint-redis —— **不装**（这是个需要你知道的判断）
+# ▶ langgraph-checkpoint-postgres + psycopg[binary] —— **装**（2026-09-24）
+#     AC-12 的会话恢复改用它。**原计划是 langgraph-checkpoint-redis，实测撞墙**：
+#     它依赖 RediSearch，启动要发 `FT.INFO`，而 compose 钉死的 redis:7-alpine
+#     没有任何模块 → `redisvl.exceptions.RedisSearchError: unknown command 'FT.INFO'`。
+#     换 redis-stack 镜像能解，但明显更重，而本机 Docker VM 余量本就紧张；
+#     改用旁边的 qy-postgres（一直在跑、完全空闲）。
+#     ⚠️ 是对 AC-12「Redis 会话恢复」字面口径的偏离，语义未变，已记 V2.4 修订。
+#     ⚠️ **必须是 `psycopg[binary]`**：纯 python 版要有 libpq，而 slim 镜像里没有，
+#        实测报 `no pq wrapper available ... libpq library not found`。
+#        binary extra 自带 libpq，且是 manylinux wheel，装得上。
+#
+# ▶ langgraph-checkpoint-redis —— **不装**（保留这段，因为它记录了一次实测）
 #     实测本机 base 环境里**根本没装它**（`pip show` 查无此包，
 #     `import langgraph.checkpoint.redis` 报 ModuleNotFoundError）。
 #     也就是说：workflow.py 的 RedisSaver 分支**从未真正跑过**，
@@ -97,15 +115,41 @@ numpy==2.4.6
 #       让它走 InMemorySaver —— 与今天 dev 的行为**完全一致**，不引入新变量。
 #       AC-12（Redis 会话恢复）要单独做，届时再装、再测。
 #
-# ▶ mcp —— 不装。只有 core/mcp_client.py 懒加载它，服务于 AC-11（MCP 工具层），
-#     那个还没做。mcp_servers/ 是独立进程，由宿主/脚本拉起，不进本镜像的运行路径。
-#     （不过 mcp_servers/ 目录还是会 COPY 进去，见 Dockerfile —— 成本极低，
-#      省得将来做 AC-11 时才发现镜像里缺文件。）
+# ▶ mcp —— **仍不装，但理由变了（2026-09-24 更新）。**
+#     AC-11 已经落地：mcp_servers/ 现在有三个 Server（parse_house_layout /
+#     calc_budget / render_layout_svg），冒烟脚本 scripts/mcp_smoke.py 与
+#     tests/test_mcp_servers.py 都走真实 stdio 协议验证过。
+#     但**这三条都不经过本镜像**：Server 是独立进程，由宿主或脚本拉起
+#     （`python -m mcp_servers.calc_budget`），容器里只跑 FastAPI。
+#     内部流水线也**有意不**走 MCP —— 实测一次调用要 1230ms（起子进程 +
+#     重载 backend 包），而进程内直接调那两个函数是 0.08ms / 5.43ms。
+#     理由与数字记在 `app/agents/base.py::_call_mcp_tool` 的注释里。
+#     ⇒ 本机开发环境装了 mcp（2.2.0），跑测试要用；容器里不需要。
+#     （mcp_servers/ 目录仍会 COPY 进去，见 Dockerfile —— 成本极低。）
 #
-# ▶ langchain-text-splitters —— 不装。knowledge/chunking.py 懒加载，
-#     只在**建库**（scripts/ingest_knowledge.py）时用。运行时检索走
-#     store.query_vectors，用不到切块。库已经建好了（419 条 chunk），
-#     容器只需要读它。
+# ▶ langchain-text-splitters —— **要装（2026-09-26 改）。**
 #
+#     ⚠️ 这里原来写的是「不装」：`knowledge/chunking.py` 懒加载，只在
+#        **建库**（`scripts/ingest_knowledge.py`）时用；运行时检索走
+#        `store.query_vectors`，用不到切块；库已经建好（419 条 chunk），
+#        容器只需要读它。
+#
+#     **那段推理当时是对的，被后来的改动推翻了**：2026-09-26 补了
+#     `POST /knowledge/upload`，它**在请求里就要切块** —— 于是容器
+#     第一次真的需要这个包。
+#
+#     后果不是"功能少一块"，而是一个**很难查的 500**：
+#     `chunking.chunk_text` 里的 `build_splitters()` 是懒加载，
+#     `ModuleNotFoundError` 在**请求处理中途**才抛出来，被全局处理器
+#     兜成 5001「服务内部错误」—— 界面上只说"出错了"，没有一个字提到
+#     缺哪个包。实测就是这么发现的：前端点「入库」，后端日志里
+#     `ModuleNotFoundError: No module named 'langchain_text_splitters'`，
+#     而界面上只有一句"服务内部错误，请携带 trace_id 反馈"。
+#
+#     ⇒ 结论：**功能跑在哪个进程里，它的依赖就要装在哪个镜像里。**
+#       "离线脚本才用得到"这句话会随功能搬家而失效，而失效时没有任何
+#       东西会提醒 —— 所以这一段留着，作为一个会过期的判断的例子。
+langchain-text-splitters==1.1.2
+
 # ▶ sqlalchemy / alembic / psycopg2-binary / python-jose / passlib /
 #   python-multipart / openai —— 不装。见文件开头的说明，代码里零 import。

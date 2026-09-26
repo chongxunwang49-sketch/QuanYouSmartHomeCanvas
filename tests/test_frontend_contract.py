@@ -48,6 +48,30 @@ def _read(p: Path) -> str:
     return p.read_text(encoding="utf-8")
 
 
+#: 「方案生成」模块的全部源码。**扫整个模块，不扫单个文件。**
+#:
+#: ⚠️ 2026-09-24 需求方要求这个模块拆成子目录（生成参数 / 三方案对比 /
+#:    3D 装修漫游），于是 `PAIRS`、材料选项、提交字段从 `GenerateView.vue`
+#:    分散到了三个子页和一个会话 composable 里 —— 三条契约用例当场全红。
+#:
+#:    那是**用例写得太紧**，不是代码坏了：它守的性质（"提交的字段与后端
+#:    schema 一致""清单来自后端"）依然成立，只是不再集中在一个文件里。
+#:    所以这里改成扫整个模块 —— 下次再拆文件时它们不会又红一遍。
+def _generate_module() -> str:
+    files = [
+        REPO / "frontend/src/views/GenerateView.vue",
+        REPO / "frontend/src/views/generate/GenerateSetupView.vue",
+        REPO / "frontend/src/views/generate/GeneratePlansView.vue",
+        REPO / "frontend/src/views/generate/GenerateWalkthroughView.vue",
+        REPO / "frontend/src/composables/useGenerateSession.ts",
+    ]
+    missing = [f.name for f in files if not f.exists()]
+    assert not missing, (
+        f"「方案生成」模块的文件不见了：{missing} —— 契约用例需要跟着改"
+    )
+    return "\n".join(_read(f) for f in files)
+
+
 def test_前端风格label与后端枚举逐字一致():
     """
     `STYLE_LABEL` 既是展示用的中文名表，**又是「生成参数」里风格下拉框的
@@ -88,11 +112,9 @@ def test_默认三套方案全都是后端认可的取值():
     里面任何一个值不被后端认可，那一套就会静默失去风格/档位引导 ——
     这正是 `luxury` 那个 bug 的形态。
     """
-    if not GENERATE_VUE.exists():
-        pytest.skip("GenerateView.vue 不在")
-    src = _read(GENERATE_VUE)
+    src = _generate_module()
     block = re.search(r"const PAIRS = \[(.*?)\] as const", src, re.S)
-    assert block, "GenerateView.vue 里找不到 PAIRS"
+    assert block, "「方案生成」模块里找不到 PAIRS"
 
     styles = re.findall(r"style:\s*'([^']+)'", block.group(1))
     grades = re.findall(r"grade:\s*'([^']+)'", block.group(1))

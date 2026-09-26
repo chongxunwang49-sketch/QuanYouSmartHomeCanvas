@@ -1,0 +1,34 @@
+-- ══════════════════════════════════════════════════════════════════
+-- 002 审计事件补一个 payload 列
+-- ══════════════════════════════════════════════════════════════════
+--
+-- 起因：写 `repository.insert_audit_events()` 时对了一遍现有的调用点，
+-- 发现文档 §5.5 那组列**装不下现有事件的全部字段**。
+--
+-- 现有审计调用点带的字段（`grep -n 'audit(' backend/app`）：
+--
+--     login_failed    username, reason
+--     login           username, user_id
+--     task_created    task_id, kind, user_id
+--     task_finished   task_id, kind, user_id, status, degraded, elapsed_seconds
+--
+-- 表里的列能装下 user_id / kind / task_id / degraded / elapsed_seconds，
+-- **装不下 username 和 status**。
+--
+-- `username` 不是可有可无的：`login_failed` 恰恰是**唯一没有 user_id 的事件**
+-- （账号可能根本不存在，或者被停用），而"有没有人在拿字典撞密码"
+-- 正是审计最该回答的问题之一。丢掉 username，这类事件就只剩下一个时间和
+-- 一句"失败了" —— 记了等于没记。
+--
+-- 为什么不改 001：**001 已经应用过了。** 改一个已执行的迁移，会让
+-- "库里的状态"与"文件里写的状态"对不上 —— 别人照着文件重建一遍得到的是
+-- 另一个 schema，而且没有任何东西会告诉他。这正是迁移机制存在的理由，
+-- 所以这里新开一个文件。
+--
+-- 为什么是一整个 JSONB 而不是再补两个列：
+--   `audit()` 的签名是 `(**fields)`，事件形状会随功能增加（这是好处，
+--   加审计不该被迫改表）。把"已知的"映射到列上（保证可索引、可聚合），
+--   把"其余的"原样收进 payload（保证不丢），两条都不牺牲。
+--   ⚠️ 但**不要用它来逃避建列**：想按某个字段频繁聚合时，就该给它一列。
+
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS payload JSONB;

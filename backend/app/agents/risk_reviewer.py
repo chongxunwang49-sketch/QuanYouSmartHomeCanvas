@@ -24,7 +24,7 @@ A-01~A-05 都在"产出"（解析、诊断、规划、预算、选材），彼�
     estimate_budget ├─→ review_risks (A-06) ─→ aggregate_plans
     select_materials┘
 
-需求文档 3.3 的状态图画的是"4 个 Agent 并行"。那是架构草图，
+需求文档 9.3 的状态图画的是"4 个 Agent 并行"。那是架构草图，
 真实的依赖关系是"审查在产出之后"。这一点与 ADR-08（图像节点移出并行分支）
 是同一类修正：**并行的前提是互不依赖，而不是"看起来可以并行"**。
 
@@ -102,8 +102,9 @@ SYSTEM_PROMPT = """你是一名**站在业主立场**的装修报价审查顾问
 - 某条风险如果属于常识判断、没有对应依据，**source_ids 就留空数组** ——
   留空是允许的；编一个查不到的来源，比没有来源糟糕得多
 
-【审查什么】
-重点看这几类问题：
+【审查什么 —— 按这 8 类**逐类过一遍**】
+下面 8 类就是本系统的风险分类全集（`RiskType`），你的 `risk_type` 只能取其中之一。
+
 1. **增项风险**：后期会以各种名目加钱的地方
 2. **漏项**：该报没报，而实际施工中必然发生的项目
 3. **单价异常**：单价明显偏离市场区间
@@ -112,6 +113,19 @@ SYSTEM_PROMPT = """你是一名**站在业主立场**的装修报价审查顾问
 6. **环保风险**：材料环保等级不足
 7. **合同条款风险**：定金、付款、违约等条款对业主不利
 8. **营销话术**：折扣、限时优惠等制造决策压力的手段
+
+⚠️ **要求的是"逐类过一遍"，不是"一次只报想得起来的几类"。**
+做法：拿着这 8 类，对每一类问一遍"这份材料里有没有这样的问题？"，
+**有的就报、没有就不报**，然后才交卷。
+
+为什么强调这一步：实测（2026-09-24，n=12 个样本）本 Agent 产出的
+风险类型数是 **3~6 类**，而系统的验收线是每套至少 5 类。原因的分布
+不是"漏判了很多"，是**没有系统地扫过每一类** —— 模型按印象报几条就收手了。
+
+⚠️ **但这不等于"凑够 5 类"。** 下面【不要无中生有】那条优先于本条的
+"逐类过一遍"：扫过之后确实没有的那一类，**就是不报**。
+一份干净的报价单报出 2 类，比硬凑 5 类更可信。
+这两条不矛盾：**过程要求遍历，结果要求真实。**
 
 【关于"单价异常"——必须对着参考价比，不要凭感觉】
 系统如果给了【市场参考价】，判断单价异常时**必须拿报价单的单价与它比对**：
@@ -131,6 +145,18 @@ SYSTEM_PROMPT = """你是一名**站在业主立场**的装修报价审查顾问
 【不要算钱】
 报价单上的价格是业主给的输入，你直接引用原文即可，
 不要自己重新计算或估算任何金额。"""
+
+
+def review_queries_for_quote(quote: str) -> list[str]:
+    """
+    审查一份报价单时要检索哪些查询。**抽成公开函数**是因为
+    `retrieve_knowledge` 节点（graph/workflow.py）要用同一套 ——
+    两处各拼一遍的话，"检索什么"就有了两个来源，而分叉的表现是
+    界面上的阶段换了、检索到的依据也变了。
+
+    主题查询 + 从报价单正文里抽的问法（见 `_queries_from_quote`）。
+    """
+    return list(_TOPIC_QUERIES) + _queries_from_quote(quote)
 
 
 class RiskReviewAgent(BaseAgent):
@@ -166,9 +192,26 @@ class RiskReviewAgent(BaseAgent):
     # ══════════════════════════════════════════════════════════
 
     async def _review_quote(self, state: HomeDecoState, quote: str) -> dict[str, Any]:
-        queries = list(_TOPIC_QUERIES) + _queries_from_quote(quote)
-        result = retriever.search_many(queries, top_k_each=3,
-                                       max_total=RETRIEVAL_TOP_K)
+        # ⚠️ **先用上游节点预取好的依据**（`retrieve_knowledge`，
+        #    见 graph/workflow.py 与 `state["review_sources"]`）。
+        #
+        #    预取是 2026-09-26 加的：检索与调模型原来是同一个节点里的两步，
+        #    于是 `/task/status` 只看得到 `queued → reviewing` 两个阶段，
+        #    而 AC-36 要求至少 3 个。拆成两个节点之后，检索那一步会真的
+        #    产生一个 `retrieving` 阶段。
+        #
+        #    **没有预取时自己查**（下面那个分支）—— 这条路径必须留着：
+        #    `scripts/review_sample_quote.py` 直接调 `RiskReviewAgent()
+        #    .execute(state)`，不经过图，那里就没有预取。
+        prefetched = state.get("review_sources")
+        if prefetched:
+            result = retriever.RetrievalResult.from_dict(prefetched)
+        else:
+            queries = review_queries_for_quote(quote)
+            # ⚠️ 用异步入口：同步版会**阻塞事件循环**（实测单次检索 1.5 秒，
+            #    而这条报价单会展开成十几个查询）。见 retriever 的说明。
+            result = await retriever.search_many_async(queries, top_k_each=3,
+                                                       max_total=RETRIEVAL_TOP_K)
 
         review, degraded, reasons = await self._review(
             subject_title="报价单",
@@ -221,8 +264,11 @@ class RiskReviewAgent(BaseAgent):
             subject = self._budget_as_text(bundle)
             queries = [_TOPIC_QUERIES[0], _TOPIC_QUERIES[1], _TOPIC_QUERIES[3]] + \
                       _queries_from_budget(bundle.get("budget") or {})
-            result = retriever.search_many(queries, top_k_each=3,
-                                           max_total=RETRIEVAL_TOP_K)
+            # ⚠️ 必须用异步入口。这里是三路并发（每套方案一路），
+            #    同步版会把事件循环卡住约 28–30 秒 —— 实测那个窗口里
+            #    轮询接口完全没有响应，"方案先交付"也因此晚到 28 秒。
+            result = await retriever.search_many_async(queries, top_k_each=3,
+                                                       max_total=RETRIEVAL_TOP_K)
             review, degraded, reasons = await self._review(
                 subject_title=f"方案 {pid} 的预算",
                 subject_body=subject,

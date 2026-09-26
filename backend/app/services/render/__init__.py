@@ -27,6 +27,9 @@
 `geo_check`   AI 图的几何一致性自检（AC-28）。默认关闭，见该模块说明
 """
 
+import time
+from collections.abc import Mapping
+
 from .projection import (
     DEFAULT_MIN_SIDE_PX,
     DEFAULT_PAD_PX,
@@ -59,7 +62,7 @@ from .geo_check import (
 #:
 #: ⚠️ `GET .../plan.svg` 与 `GET .../hotspots` 是两次**独立**的 HTTP 请求。
 #: 如果两边各自决定留白/画布尺寸，就会得到两套 `Projection` —— 图上一个位置、
-#: 热区另一个位置，而两个接口各自看都完全正常。这正是需求文档 2.2.6 里
+#: 热区另一个位置，而两个接口各自看都完全正常。这正是需求文档 11.2.6 里
 #: "悬停在地板上却提示主卧墙面"的成因。
 #:
 #: 这里靠**确定性**而不是缓存来保证一致：同样的 layout 走同一个函数，
@@ -68,7 +71,9 @@ CANONICAL_MIN_SIDE_PX = DEFAULT_MIN_SIDE_PX
 CANONICAL_PAD_PX = DEFAULT_PAD_PX
 
 
-def render_plan_for(layout: dict) -> tuple[Scene, RenderedPlan]:
+def render_plan_for(layout: dict,
+                    *, floor_fills: Mapping[int, str] | None = None
+                    ) -> tuple[Scene, RenderedPlan]:
     """
     接口层**唯一**的渲染入口：`(layout JSON) → (场景, 渲染结果)`。
 
@@ -78,10 +83,19 @@ def render_plan_for(layout: dict) -> tuple[Scene, RenderedPlan]:
     失败时向上抛：调用方（接口层）负责决定是 404、400 还是降级，
     渲染层不该替它做这个决定，也不该悄悄返回一张空图。
     """
+    from ...core.metrics import record as _record
+
+    # 计时点放在**这一层**而不是各个调用方：三个接口都走这里，
+    # 放在外面就要写三遍，而漏掉一个的表现是"这项指标时有时无"。
+    _t0 = time.perf_counter()
     scene = normalize_layout(layout)
     plan = render_scene_svg(
-        scene, min_side_px=CANONICAL_MIN_SIDE_PX, pad_px=CANONICAL_PAD_PX
+        scene, min_side_px=CANONICAL_MIN_SIDE_PX, pad_px=CANONICAL_PAD_PX,
+        # AC-10 的「局部替换」：房间下标 → 材料代表色。**由调用方查好传进来**，
+        # 渲染层不碰数据库 —— 它是纯函数，见 `render_scene_svg` 的说明。
+        floor_fills=floor_fills,
     )
+    _record("svg_render", (time.perf_counter() - _t0) * 1000)
     return scene, plan
 
 

@@ -1,6 +1,6 @@
 """
 文件路径: backend/app/core/redis_client.py
-模块职责: Redis 封装 —— 承载需求文档 2.2.4 定义的四个角色
+模块职责: Redis 封装 —— 承载需求文档 11.2.4 定义的四个角色
 依赖关系: core/config.py（连接串与额度阈值）、core/logger.py（日志）
 
 对应需求文档:
@@ -14,7 +14,7 @@
 ═══════════════════════════════════════════════════════════════════
 | 角色       | 实现                              | 说明 |
 |-----------|-----------------------------------|------|
-| 会话状态   | langgraph-checkpoint-redis        | **不在本文件**，见 graph/workflow.py |
+| 会话状态   | langgraph-checkpoint-**postgres** | **不在本文件**，见 graph/workflow.py。2026-09-24 由 Redis 改来（Redis 镜像没有 RediSearch，跑不了）|
 | 语义缓存   | STRING + TTL                      | 本文件 SemanticCache |
 | 额度限流   | INCR + EXPIRE（原子）              | 本文件 QuotaLimiter |
 | 任务进度   | HASH + TTL                        | 本文件 TaskProgressStore |
@@ -43,56 +43,19 @@ from typing import Any, Literal
 from loguru import logger
 
 from .config import settings
+from .progress import PHASE_TEXT, Phase, progress_at
 
 __all__ = [
     "RedisClient", "get_redis", "QuotaExceeded", "QuotaResult",
-    "Phase", "PHASE_TEXT", "TaskProgressStore", "SemanticCache",
+    "PHASE_TEXT", "Phase", "TaskProgressStore", "SemanticCache",
 ]
 
 TaskType = Literal["parse", "generate"]
 
-
-# ══════════════════════════════════════════════════════════════════
-# 语义化阶段（4.4 / V2.2）
-# ══════════════════════════════════════════════════════════════════
-
-Phase = Literal[
-    "queued", "prechecking", "analyzing", "detecting_rooms",
-    "extracting_dimensions", "diagnosing", "planning", "reviewing",
-    "finalizing", "done", "degraded",
-]
-
-#: 阶段 -> 中文文案。**前端不必自己维护映射表**，直接展示 phase_text。
-PHASE_TEXT: dict[str, str] = {
-    "queued": "已接收，正在排队…",
-    "prechecking": "正在检查图片质量…",
-    "analyzing": "正在分析图片…",
-    "detecting_rooms": "正在识别房间…",
-    "extracting_dimensions": "正在提取尺寸与朝向…",
-    "diagnosing": "正在生成户型诊断…",
-    "planning": "正在生成装修方案…",
-    # ⚠️ `reviewing` 与 `planning` 是**分开的两个阶段**，不能合并。
-    #
-    # 两者对应的是同一个节点 `review_risks`，但语境不同：
-    #   · 独立跑报价单审查时 —— 用户在看一份合同，该说"正在审查报价单"
-    #   · 方案生成链内部审查时 —— 用户在等方案，说"正在生成装修方案"才对
-    #
-    # 实测踩过：报价单审查全程显示"正在生成装修方案…"。用户看的是一份合同，
-    # 界面却说在生成方案 —— 这恰恰是 2.2.4 最在意的那件事
-    # （「用户看到的是正在做什么」）。
-    "reviewing": "正在审查报价单…",
-    "finalizing": "即将完成…",
-    "done": "完成",
-    "degraded": "已完成（降级模式）",
-}
-
-#: 阶段 -> progress 参考值（前端进度条用）
-PHASE_PROGRESS: dict[str, int] = {
-    "queued": 0, "prechecking": 5, "analyzing": 15, "detecting_rooms": 40,
-    "extracting_dimensions": 65, "diagnosing": 85, "planning": 60,
-    "reviewing": 45,
-    "finalizing": 95, "done": 100, "degraded": 100,
-}
+# 阶段词汇表、文案、进度/剩余时间模型都在 `core/progress.py`。
+# ⚠️ 这里**只导入、不重定义**。曾经 `PHASE_PROGRESS` 就住在本文件，
+# 而它是"一张全局表"，用在方案链路上会让进度条先冲到 85% 再倒回 60% ——
+# 见 progress.py 模块说明。进度现在是 `(kind, phase)` 的函数，不是一张表。
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -136,6 +99,21 @@ class QuotaResult:
     degraded: bool = False  # Redis 不可用时放行，标记为降级
 
     def to_dict(self) -> dict[str, Any]:
+        """
+        ⚠️ **`degraded` 必须在这里面。**
+
+        它原来没被序列化出去，后果是：Redis 挂掉时额度走"放行 + 标降级"，
+        而**降级这个事实传不到任何调用方** —— API 层只看 `allowed`，
+        于是"额度检查没做成"和"额度够用"在响应里长得一模一样。
+
+        实测的连带后果（2026-09-23）：`tests/test_api.py` 的
+        `test_超额响应说清额度与重置时间` 在跑完 8 个用例之后会**偶发失败**，
+        报 `assert 0 == 4006` —— 因为那时 Redis 已经被前面那些用例拖到
+        报错，额度静默放行了。断言看不出是"权限逻辑错了"还是"Redis 累了"。
+
+        这正是本项目「降级必须显式」那条原则（AC-17）要防的情形：
+        降级本身可以接受，**静默降级不行**。
+        """
         return {
             "allowed": self.allowed,
             "used": self.used,
@@ -144,6 +122,7 @@ class QuotaResult:
             "role": self.role,
             "unlimited": self.unlimited,
             "reset_at": self.reset_at,
+            "degraded": self.degraded,
         }
 
 
@@ -180,8 +159,22 @@ class RedisClient:
                 self._url,
                 encoding="utf-8",
                 decode_responses=True,
+                # 连接超时 3s：连不上就是"Redis 不在"，短一点让它早点进降级。
                 socket_connect_timeout=3,
-                socket_timeout=3,
+                # ⚠️ **读超时 10s（原来 3s），这是 2026-09-23 实测调大的。**
+                #
+                # 原来 3s 对**本机** Redis 看着很宽松（实际往返 <1ms），
+                # 但它衡量的是**事件循环的调度延迟**，不是网络。实测：
+                # 测试进程中累积了多个在飞的图任务（`generate` fan-out 九路）
+                # 之后，Redis 往返被挤过 3s —— 报
+                #     redis.exceptions.TimeoutError: Timeout reading from localhost:6379
+                # 而额度检查一旦超时就**放行且不计数**（见下面的降级策略），
+                # 于是"配额上限"在演示中会**静默失效**。
+                #
+                # 10s 仍然远小于 `LLM_TIMEOUT_SECONDS`(120s) 与节点超时，
+                # 不破坏三层超时不变式（内层 < 节点 < 全局）；它只是把
+                # "事件循环忙了一下"和"Redis 真的挂了"区分开。
+                socket_timeout=10,
                 health_check_interval=30,
             )
             await self._client.ping()
@@ -381,10 +374,15 @@ class RedisClient:
         self,
         task_id: str,
         *,
+        kind: str,
         status: Literal["pending", "processing", "completed", "failed"],
         phase: Phase,
-        progress: int | None = None,
+        progress: int,
+        started_at: float | None = None,
+        phase_entered_at: float | None = None,
         degraded: bool = False,
+        user_id: int | None = None,
+        cancelled: bool = False,
         trace_id: str | None = None,
         result: Any | None = None,
         error: str | None = None,
@@ -396,6 +394,14 @@ class RedisClient:
         **`phase` 是必须的**：用户看到「正在识别房间…」比看到「60%」有用得多（2.2.4）。
 
         Args:
+            kind: 任务类型。**必须落库**：进度与剩余时间都是 `(kind, phase)`
+                的函数（见 `core/progress.py`），而 `status()` 可能在一个
+                刚重启的进程里被调用 —— 那时内存里的 TaskRecord 已经没了，
+                kind 只能从 Hash 里读。少了它，重启后的任务会失去剩余时间。
+            progress: 进入该阶段时的百分比。**由调用方算**，不在这里查表 ——
+                只有 runner 知道这个任务是什么类型。
+            started_at / phase_entered_at: epoch 秒。剩余时间要用它们算
+                "已经走了多久、这个阶段走了多久"。不存的话重启后只能从零算。
             ttl: 结果保留秒数。默认 1 小时 —— 支持页面刷新后重新获取（4.4）。
         """
         c = await self.client()
@@ -405,14 +411,24 @@ class RedisClient:
         key = f"{settings.REDIS_TASK_PREFIX}:{task_id}"
         mapping: dict[str, str] = {
             "task_id": task_id,
+            "kind": kind,
             "status": status,
             "phase": phase,
             "phase_text": PHASE_TEXT.get(phase, phase),
-            "progress": str(progress if progress is not None
-                            else PHASE_PROGRESS.get(phase, 0)),
+            "progress": str(progress),
             "degraded": "1" if degraded else "0",
+            # ⚠️ `cancelled` 也要落库：取消之后前端要能说出"已中断"而不是
+            #    "失败"，而轮询接口可能正走 Redis 这条路径。
+            "cancelled": "1" if cancelled else "0",
             "updated_at": date.today().isoformat(),
         }
+        # user_id 落库是为了归属审计：进程重启后 `rec` 没了，
+        # 但"这个任务是谁的"仍然查得到。
+        if user_id is not None:
+            mapping["user_id"] = str(user_id)
+        for name, value in (("started_at", started_at), ("phase_entered_at", phase_entered_at)):
+            if value is not None:
+                mapping[name] = f"{value:.3f}"
         # trace_id 必须落库：异步任务恢复时要靠它重新绑定日志上下文（ADR-13）
         if trace_id:
             mapping["trace_id"] = trace_id
@@ -429,10 +445,14 @@ class RedisClient:
 
     async def get_task_progress(self, task_id: str) -> dict[str, Any] | None:
         """
-        读任务进度。返回的 dict 可直接作为 API 响应的 data 部分。
+        读任务进度。返回的字段足以让 `TaskManager.status()` 拼出完整响应。
 
         未完成任务同样返回 200（用 status/phase 表达），
         不用 HTTP 状态码表示"还没好"——那会让前端拦截器误判为错误（4.4）。
+
+        ⚠️ 这里**只做反序列化，不算进度**。进度/剩余时间是 `(kind, phase, 时间)`
+        的函数，计算统一放在 `TaskManager.status()` —— 两条读取路径
+        （Redis / 内存）都过那里，才不会出现"Redis 在不在决定了界面显示什么"。
         """
         c = await self.client()
         if c is None:
@@ -448,12 +468,26 @@ class RedisClient:
 
         out: dict[str, Any] = {
             "task_id": raw.get("task_id", task_id),
+            "kind": raw.get("kind", ""),
             "status": raw.get("status", "pending"),
             "phase": raw.get("phase", "queued"),
             "phase_text": raw.get("phase_text", PHASE_TEXT["queued"]),
             "progress": int(raw.get("progress", 0)),
             "degraded": raw.get("degraded") == "1",
+            "cancelled": raw.get("cancelled") == "1",
         }
+        if raw.get("user_id"):
+            try:
+                out["user_id"] = int(raw["user_id"])
+            except ValueError:
+                pass
+        for name in ("started_at", "phase_entered_at"):
+            raw_value = raw.get(name)
+            if raw_value:
+                try:
+                    out[name] = float(raw_value)
+                except ValueError:
+                    pass          # 脏数据当作不知道，别让整个响应挂掉
         if raw.get("trace_id"):
             out["trace_id"] = raw["trace_id"]
         if raw.get("result"):
@@ -497,6 +531,65 @@ class TaskProgressStore:
 
     async def read(self, task_id: str) -> dict[str, Any] | None:
         return await self._c.get_task_progress(task_id)
+
+    async def find_unfinished(self) -> list[dict[str, Any]]:
+        """
+        扫出所有**没跑完**的任务记录（`pending` / `processing`）。AC-12 的启动接管用它。
+
+        ⚠️ **为什么必须要它**：AC-31 的"退出前不留悬挂记录"只在**优雅停机**
+        （SIGTERM → 排空 → 记账）时成立。进程被 SIGKILL、断电、容器 OOM 时
+        没有任何代码能有机会执行 —— 那些记录会永远停在 `processing`，
+        而轮询接口会一直告诉前端"正在分析图片…"。**一个谎，而且永远不会自愈。**
+
+        用 `SCAN` 而不是 `KEYS`：`KEYS` 在大 keyspace 上是阻塞的，
+        而它要在**启动路径**上跑（那正是最不该卡住的时候）。
+        """
+        c = await self._c.client()
+        if c is None:
+            return []
+
+        out: list[dict[str, Any]] = []
+        try:
+            async for key in c.scan_iter(
+                match=f"{settings.REDIS_TASK_PREFIX}:*", count=200
+            ):
+                # ⚠️ **每个键单独兜底。** 原来这一句没有 try，于是任何一个
+                #    类型不对的键都会让**整次恢复**返回空 —— 而恢复是"越早越好"
+                #    的功能，静默失效最糟。实测踩过：户型暂存曾与任务共用
+                #    `qy:task:` 前缀（存的是 STRING），扫描一头撞上 WRONGTYPE，
+                #    结果所有悬挂任务都捞不出来，日志里只有一行 warn_once。
+                #    （那一处前缀已在 store.py 里改掉；这里的兜底是第二道防线。）
+                try:
+                    raw = await c.hgetall(key)
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"[task] 跳过无法读取的键 {key}："
+                                 f"{type(e).__name__}: {e}")
+                    continue
+                if not raw:
+                    continue
+                if raw.get("status") not in ("pending", "processing"):
+                    continue
+                data = {
+                    "task_id": raw.get("task_id") or str(key).split(":")[-1],
+                    "kind": raw.get("kind", ""),
+                    "status": raw.get("status"),
+                    "phase": raw.get("phase", "queued"),
+                    "trace_id": raw.get("trace_id", ""),
+                }
+                for name in ("started_at", "phase_entered_at"):
+                    try:
+                        data[name] = float(raw[name]) if raw.get(name) else None
+                    except (TypeError, ValueError):
+                        data[name] = None
+                try:
+                    data["user_id"] = int(raw["user_id"]) if raw.get("user_id") else None
+                except (TypeError, ValueError):
+                    data["user_id"] = None
+                out.append(data)
+        except Exception as e:  # noqa: BLE001 —— 扫不出来不该让启动失败
+            self._c._warn_once("未完成任务扫描", e)
+            return []
+        return out
 
 
 class SemanticCache:

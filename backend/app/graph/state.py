@@ -100,6 +100,23 @@ class HomeDecoState(TypedDict, total=False):
     styles: list[str]
     budget_grades: list[str]
     quanyou_priority: bool
+    # AC-19 材料偏好：excluded_categories / excluded_brands /
+    # preferred_brands / quanyou_priority。
+    # ⚠️ 存**dict** 而不是 `MaterialFilters` 对象 —— state 会随 checkpointer
+    #    序列化落盘，frozen dataclass 过不了序列化。A-05 那边再用
+    #    `MaterialFilters.from_payload()` 还原（见 material_agent.py）。
+    material_filters: dict[str, Any]
+    #: RAG 检索结果，由 `retrieve_knowledge` 节点写入、`review_risks` 消费。
+    #:
+    #: ⚠️ **存 dict 不存 `RetrievalResult` 对象**：state 要随 checkpointer
+    #: 序列化落盘，自定义类过不去（与上面 `material_filters` 同一条理由）。
+    #: 两边各有一个 `to_dict` / `from_dict` 负责转换。
+    #:
+    #: 为什么先检索后审查要拆成两个节点：AC-36 要求一次执行中 `phase`
+    #: 至少 3 个不同取值，而审查链原来只有一个节点（`queued` → `reviewing`）。
+    #: 检索是**真实存在的一步**（十几个查询、约几秒），把它拆出来是
+    #: 描述事实，不是为了让数字好看而编一个阶段。
+    review_sources: dict[str, Any]
 
     # ══ 图片质量预检（AC-27）═══════════════════════════════
     # 由 `precheck_image` 节点写入（解析链路的第一跳）。
@@ -169,6 +186,7 @@ def initial_state(**overrides: Any) -> HomeDecoState:
         "styles": ["modern", "nordic", "chinese"],
         "budget_grades": ["economy", "medium", "high"],
         "quanyou_priority": True,
+        "material_filters": {},
         "precheck": None,
         "layout": None,
         "layout_id": "",

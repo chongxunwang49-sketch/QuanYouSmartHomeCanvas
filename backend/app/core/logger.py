@@ -32,7 +32,8 @@ from typing import Any, Iterator
 from loguru import logger as _logger
 
 __all__ = [
-    "logger", "setup_logging", "new_trace_id", "bind_trace_id",
+    "logger", "setup_logging", "reset_logging", "audit",
+    "new_trace_id", "bind_trace_id",
     "current_trace_id", "with_trace_id", "trace_context",
 ]
 
@@ -183,6 +184,66 @@ def setup_logging(log_dir: Path | str | None = None, level: str = "INFO") -> Non
         )
 
     _configured = True
+
+
+def reset_logging() -> None:
+    """
+    清掉"已配置"标志。**仅供测试**，与 `reset_task_manager` / `reset_redis_client`
+    是同一个模式。
+
+    ⚠️ 为什么测试需要它：`setup_logging` 有幂等保护（进程内只生效一次），
+    而"文件 sink 到底有没有写、写出来长什么样"这件事**只能靠真的配一次、
+    真的读文件**来验证 —— 而那条路径在生产里只在 lifespan 启动时走一次，
+    测试进程里根本碰不到。没有这个复位函数，AC-14 就只有"代码看起来写了"，
+    没有"文件真的产生了"。
+    """
+    global _configured
+    _configured = False
+
+
+def audit(event: str, **fields: Any) -> None:
+    """
+    写一条**结构化**审计事件（AC-14）。
+
+    ⚠️ **字段走 `extra`，不是拼进消息字符串。**
+
+    审计日志的用途是"事后可查询"（AC-14 原文），而查询靠的是字段：
+    想回答"昨天有多少次生成是降级的"就得能按 `degraded=true` 过滤。
+    把同样的信息拼成一句中文再让下游去正则，等于把结构化的工作推给了
+    每一个查询方 —— 而且拼字符串的格式会随人改。
+
+    落到文件里长这样（`serialize=True`，JSON Lines，一天一个文件）：
+        {"text": "AUDIT task_finished ...", "record": {"extra": {
+            "audit": true, "event": "task_finished", "trace_id": "...",
+            "task_id": "...", "kind": "generate", "status": "completed",
+            "degraded": false, "elapsed_seconds": 112, ...}}}
+
+    `event` 取值是**约定**，不是枚举类：`login` / `login_failed` /
+    `task_created` / `task_finished` / `membership_changed` / `user_updated`。
+    加新事件时在调用点写清楚即可，但**不要复用已有名字表达别的意思** ——
+    查询方是按名字聚合的。
+    """
+    _logger.bind(audit=True, event=event, **fields).info(
+        "AUDIT " + " ".join(f"{k}={v}" for k, v in fields.items())
+    )
+
+    # ── 同时投递到数据库（AC-14 的「可查询」）──────────────────
+    #
+    # ⚠️ **文件与数据库两条腿都留着，不是过渡期。**
+    #    文件那条在数据库不通时仍然可查，而且它是"进程外"的 ——
+    #    连不上库、连日志文件都被轮转掉的时候，这里至少还有一份。
+    #    库那条提供文件给不了的东西：按时间范围聚合、按字段过滤。
+    #
+    # ⚠️ 这里是**同步**函数，被异步上下文调用（登录、任务终态）。
+    #    所以只能入队，不能写库 —— 在事件循环上做阻塞 IO 的代价，
+    #    本项目在 A-06 上量过一次（28~30 秒的空洞）。
+    #    队列是同步、非阻塞、绝不抛的，详见 db/audit_sink.py。
+    try:
+        from ..db import audit_sink
+
+        audit_sink.enqueue(event, dict(fields))
+    except Exception as e:  # noqa: BLE001 —— 审计落库不能拖垮它所在的那件事
+        _logger.debug(f"[audit] 投递到数据库失败（已写文件）：{type(e).__name__}: {e}")
 
 
 def log_llm_call(

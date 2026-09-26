@@ -32,7 +32,7 @@ A-03 产出的 `ZonePlan.furniture` 是**自然语言短语**，不是枚举值�
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -60,6 +60,9 @@ class FurnitureSpec:
     height_m: float
     aliases: tuple[str, ...]
     rooms: tuple[str, ...]
+    #: 同类互斥的分组名。同一间房里同一族只摆一件 ——
+    #: 否则客厅会被摆上三张沙发（实测踩过，见 placement.py）。
+    family: str
     need_wall: bool
     prefer: str
     clearance_m: float
@@ -79,9 +82,25 @@ class FurnitureSpec:
 @dataclass(frozen=True)
 class StylePalette:
     label: str
+    #: **界面配色**：给 2D 卡片/图表用的，要求是"跟白底拉得开"。
     palette: dict[str, str]
     wall: str
     floor: str
+    #: **3D 表面色**：要求是"跟地面拉得开" —— 与上一条不是同一件事。
+    #: 实测：`palette` 直接当 3D 表面色时，modern 的 fabric 对地面 1.01:1
+    #: （沙发与地面同色）。缺字段时回落到 `palette` / `floor`，**不报错**
+    #: —— 但那时 3D 会糊成一片，所以目录里三个风格都填了。
+    surface: dict[str, str] = field(default_factory=dict)
+    #: 3D 场景自己的地面色。**比 `floor` 深**：只有中调地面才能让浅色家具
+    #: 向上对比、深色家具向下对比（见 seed_data 里那段说明）。
+    surface_floor: str = ""
+    #: **按家具族**的色号：不同种类不同颜色，同一种类同色。
+    #:
+    #: 与 `surface`（按材质角色分：木/布艺/金属…）不是一回事 ——
+    #: 角色色解决"一件家具的不同部分"，族色解决"一眼认出这是什么东西"。
+    #: 由 `scripts/derive_family_palette.py` 推出，约束是对 3D 地面 ≥2:1
+    #: 且**会同房的族**两两 ΔE ≥6。
+    family_colors: dict[str, str] = field(default_factory=dict)
 
 
 @lru_cache(maxsize=1)
@@ -105,6 +124,10 @@ def specs() -> tuple[FurnitureSpec, ...]:
                 height_m=float(size["h"]),
                 aliases=tuple(raw.get("aliases") or ()),
                 rooms=tuple(raw.get("rooms") or ()),
+                # 缺字段时退回 id 前缀 —— 目录是人手维护的，
+                # 漏一个 family 不该让整份场景崩，但也**不能静默**：
+                # `_load` 会把它记进 warnings（见下）。
+                family=str(raw.get("family") or raw["id"].split("_")[0]),
                 need_wall=bool(raw.get("need_wall", False)),
                 prefer=str(raw.get("prefer") or "any"),
                 clearance_m=float(raw.get("clearance") or 0.0),
@@ -129,6 +152,9 @@ def styles() -> dict[str, StylePalette]:
             palette=dict(raw["palette"]),
             wall=raw["wall"],
             floor=raw["floor"],
+            surface=dict(raw.get("surface") or {}),
+            surface_floor=str(raw.get("surface_floor") or raw["floor"]),
+            family_colors=dict(raw.get("family_colors") or {}),
         )
     return out
 
@@ -141,6 +167,18 @@ def style_palette(style: str) -> StylePalette:
     """
     table = styles()
     return table.get(style) or table["modern"]
+
+
+def family_color(style: str, family: str, fallback: str = "") -> str:
+    """
+    取某个族在这套风格下的 3D 色号。
+
+    查不到就返回 `fallback`（调用方一般给它的材质角色色）—— **不报错**：
+    目录里新加了一族而配色脚本还没跑时，用角色色是"不够区分"，
+    而报错是"3D 直接画不出来"。前者轻得多。
+    """
+    table = style_palette(style).family_colors or {}
+    return table.get(family) or fallback
 
 
 def match(name: str, room_name: str = "") -> tuple[FurnitureSpec | None, str]:

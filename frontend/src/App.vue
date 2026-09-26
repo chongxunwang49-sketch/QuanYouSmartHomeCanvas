@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 
 import AppHeader from '@/components/AppHeader.vue'
 import AppInfoPanel from '@/components/AppInfoPanel.vue'
@@ -13,7 +14,20 @@ import { useHealthStore } from '@/stores/health'
  * 稿子里 `html,body{overflow:hidden}` + `main.flex-1`，是刻意的——
  * 侧栏和顶栏始终在位，滚动条只出现在内容区里，这样"界面框架"和
  * "界面内容"在视觉上是两层，不会一起被推走。
+ *
+ * ══════════════════════════════════════════════════════════════════
+ * `layout: 'bare'` —— 不套外壳的路由（目前只有登录页）
+ * ══════════════════════════════════════════════════════════════════
+ * 登录页必须**在没有会话的情况下**渲染，而外壳里的侧栏与顶栏本身
+ * 就是登录态的产物（用户名、角色菜单、登出）—— 套上去的后果是先渲染
+ * 一个空壳再跳走，用户看到界面闪一下。所以外壳整体让位。
+ *
+ * 判定写在路由 meta 上而不是 `route.name === 'login'`：以后还有别的
+ * 免登录页（如业主只读分享页）时不用再改这里。
  */
+const route = useRoute()
+const bare = computed(() => route.meta.layout === 'bare')
+
 const health = useHealthStore()
 
 onMounted(() => {
@@ -25,7 +39,11 @@ onMounted(() => {
 </script>
 
 <template>
+  <!-- 免登录页：只有内容，没有外壳 -->
+  <RouterView v-if="bare" />
+
   <div
+    v-else
     class="relative flex h-full flex-col selection:bg-botanical/20 selection:text-botanical"
   >
     <!-- 顶部 2px 叶绿装饰线。设计稿里贯穿全站，是品牌识别的一部分 -->

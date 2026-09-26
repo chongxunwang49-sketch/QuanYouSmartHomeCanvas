@@ -205,6 +205,20 @@ class DoorEdge:
     along: Vec2
     #: 墙的单位法向。门扇"全开"时朝这个方向
     normal: Vec2
+    #: 这扇门**通不通**。
+    #:
+    #: ⚠️ 加这个字段的原因是"平面图与 3D 不一致"（2026-09-26）：
+    #: 原先判定失败的门**直接不进 `doors`** —— 于是它不出现在 3D 里，
+    #: 而矢量平面图画的是**全部**门洞。实测演示户型 9 扇门里
+    #: 常有一扇（入户门）被丢掉，用户看到的就是"平面图上有门、
+    #: 3D 里那面墙上没有"。
+    #:
+    #: 所以改成：**门一律画出来，只是不通的那些不连进通行图。**
+    #: 物理上也对 —— 入户门本来就该看得见、但走不出去。
+    #:
+    #: ⚠️ 放在字段表**末尾**是有原因的：dataclass 不允许无默认值的
+    #: 字段跟在有默认值的后面。放中间会让整个类的构造直接 TypeError。
+    passable: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -213,6 +227,7 @@ class DoorEdge:
             "width_m": round(self.width_m, 3),
             "from_room": self.from_room,
             "to_room": self.to_room,
+            "passable": self.passable,
             "hinge": self.hinge.as_list(),
             "along": [round(self.along.x, 4), round(self.along.y, 4)],
             "normal": [round(self.normal.x, 4), round(self.normal.y, 4)],
@@ -226,8 +241,17 @@ class Walkable:
     ok: bool
     spawn: Vec2
     spawn_room: int
-    #: 出生时的朝向（度，场景坐标系，0 = +X 方向）
+    #: 出生时的朝向（度，场景坐标系，0 = +X 方向）。**行走模式用这个。**
     spawn_yaw_deg: float
+
+    #: 自由视角（俯瞰）的朝向：从出生点**朝整个户型的中心**看。
+    #:
+    #: ⚠️ 为什么不能和上面共用一个：那个是"沿房间长轴看"（为了不面壁），
+    #: 而自由视角在 6m 高处俯瞰 —— 它要的是"看到整个户型"。
+    #: 实测踩过（2026-09-26）：出生点落在一份户型的「餐厅」，靠 +X 边缘，
+    #: 而"沿长轴看"恰好让它**朝房子外面看** —— 打开 3D 是一大片没有内容的
+    #: 地面，户型整个在身后。用户的原话是"3D 是空的"。
+    spawn_yaw_fly_deg: float = 0.0
 
     collision: list[CollisionSeg] = field(default_factory=list)
     rooms: list[RoomNode] = field(default_factory=list)
@@ -250,6 +274,7 @@ class Walkable:
                 "y": round(self.spawn.y, 3),
                 "room": self.spawn_room,
                 "yaw_deg": self.spawn_yaw_deg,
+                "yaw_fly_deg": self.spawn_yaw_fly_deg,
             },
             "player_radius_m": self.player_radius_m,
             "eye_height_m": self.eye_height_m,
@@ -257,7 +282,9 @@ class Walkable:
             "collision": [s.to_dict() for s in self.collision],
             "rooms": [r.to_dict() for r in self.rooms],
             "doors": [d.to_dict() for d in self.doors],
-            "graph": [[d.from_room, d.to_room] for d in self.doors],
+            # 通行图只含**真能走**的门。画出来的门可以多于图里的边 ——
+            # 入户门就是"看得见、走不出去"的那一扇。
+            "graph": [[d.from_room, d.to_room] for d in self.doors if d.passable],
             "issues": self.issues,
             "notes": self.notes,
         }
@@ -314,7 +341,10 @@ def build_walkable(
             f"{'…' if len(unstandable) > 3 else ''}）：面积小于玩家所占，进去会卡住"
         )
 
-    narrow = [d for d in doors if d.width_m <= 2 * player_radius_m]
+    # ⚠️ 只看**能走的**门。不可通行的门（入户门）本来就过不去，
+    #    把它算进"过窄"会给用户一条查不出原因的告警。
+    narrow = [d for d in doors
+              if d.passable and d.width_m <= 2 * player_radius_m]
     if narrow:
         issues.append(
             f"{len(narrow)} 扇门过窄（宽 {narrow[0].width_m:.2f}m ≤ "
@@ -327,16 +357,16 @@ def build_walkable(
     coverage = reachable_area / total_area if total_area > 0 else 0.0
 
     if unreachable and coverage < MIN_REACHABLE_AREA_RATIO:
-        names = "、".join(r.name for r in unreachable[:3])
         issues.append(
-            f"从出生点走不到 {len(unreachable)} 间房（{names}），"
+            f"从出生点走不到 {len(unreachable)} 间房"
+            f"（{_name_list(unreachable, 3)}），"
             f"可逛面积只剩 {coverage:.0%} —— 这些房间没有可通行的门"
         )
     elif unreachable:
         # **不阻断**，但必须说出来。逛不到的那几间会在界面上标灰。
-        names = "、".join(r.name for r in unreachable[:4])
         notes.append(
-            f"{len(unreachable)} 间房没有可通行的门，逛不到（{names}）—— "
+            f"{len(unreachable)} 间房没有可通行的门，逛不到"
+            f"（{_name_list(unreachable, 4)}）—— "
             f"仍可漫游其余 {coverage:.0%} 的面积"
         )
 
@@ -362,6 +392,12 @@ def build_walkable(
         spawn=spawn,
         spawn_room=spawn_room,
         spawn_yaw_deg=yaw,
+        # ⚠️ 用 spawn_room 反查，不要指望 `_pick_spawn` 里的局部变量 ——
+        #    它在另一个函数里，这里拿不到（第一版就写了 `best`，直接 NameError）。
+        spawn_yaw_fly_deg=_facing_house_center(
+            rooms,
+            next((r for r in rooms if r.index == spawn_room), None),
+        ),
         collision=collision,
         rooms=rooms,
         doors=doors,
@@ -565,32 +601,57 @@ def _build_doors(
     沿法向把每间房分到门的一侧或另一侧，然后**各取最近的那间**。
     与空间宽窄无关。
     """
-    doors: list[DoorEdge] = []
     issues: list[str] = []
 
+    # ── ① 投影：把每个门洞落到它所属的那面墙上 ──
+    #
+    # ⚠️ 投影之后的点 `p` 才是这扇门**在场景里的位置**。解析给的
+    #    `op.center` 是模型读图读出来的，实测能离墙 0.5～1.1m
+    #    （见下面 `_dedupe_doors` 的实测数字）。
+    anchored: list[tuple[int, Any, Vec2, Vec2, float]] = []
     for i, op in enumerate(scene.openings):
         if op.kind != "door":
             continue
         if not (0 <= op.wall_index < len(scene.walls)):
             issues.append(f"第 {i} 扇门没有关联到任何墙体，不计入通行图")
             continue
-
         placed = wall_point_at(scene.walls[op.wall_index],
                                op.offset_along_wall_m)
         if placed is None:
             issues.append(f"第 {i} 扇门在墙上定位失败，不计入通行图")
             continue
-
         p, u = placed
+        off = math.dist((p.x, p.y), (op.center.x, op.center.y))
+        anchored.append((i, op, p, u, off))
+
+    # ── ② 去重：识别重复报出的同一扇门 ──
+    kept, duplicates = _dedupe_doors(anchored, rooms)
+    for loser, winner in duplicates:
+        issues.append(
+            f"第 {loser} 扇门与第 {winner} 扇门落在同一面墙的同一处、"
+            f"连通同一对房间（相距 {SAME_DOOR_GAP_M}m 以内，小于解析自身的"
+            f"位置误差）—— 判定为同一扇门被识别了两次，"
+            f"只保留位置更贴墙的那一扇"
+        )
+
+    # ── ③ 定房间、建 DoorEdge ──
+    doors: list[DoorEdge] = []
+    for i, op, p, u, _off in kept:
         n = Vec2(-u.y, u.x)          # 法向，不是切向
         a, b = _rooms_beside(rooms, p, n)
 
-        if a < 0 or b < 0:
+        # ⚠️ **判不出两侧房间的门不再被丢掉，而是标 `passable=False` 照画。**
+        #    典型的就是入户门：它开在外墙上，所有房间都在同一侧，
+        #    拓扑上本来就不该连通 —— 但它**在平面图上是一扇门**，
+        #    3D 里也必须有，否则两处对不上。详见 `DoorEdge.passable`。
+        passable = a >= 0 and b >= 0
+        if not passable:
+            # ⚠️ 这句话会**原样显示在界面上**，所以不能带 Markdown 星号
+            #    （本项目有测试扫这个，第一次就抓到了我写的 `**`）。
             issues.append(
                 f"第 {i} 扇门的两侧未能都识别出房间（{a} / {b}），"
-                f"该门不计入通行图"
+                f"这扇门仍然会画出来，但走不过去（不计入通行图）"
             )
-            continue
 
         # 铰链取门洞的一端。哪一端都行（门可以左开也可以右开），
         # 取靠近墙起点的这一端，保证同一份输入每次得到同一扇门 ——
@@ -599,16 +660,111 @@ def _build_doors(
         doors.append(
             DoorEdge(
                 door_index=i,
-                position=op.center,
+                # ⚠️ **用投影点，不用 `op.center`。**
+                #
+                # 这里原本放的是 `op.center`（解析给的原始中心），而
+                # `hinge` / `along` 来自投影 —— 于是同一个"门在哪"有了
+                # 两个互相矛盾的值，实测差 0.48m（第 0 扇门：
+                # center=(3.10, 5.68)，而墙在 y=5.20）。
+                #
+                # 后果是**看得见的**：3D 里的门楣（门洞上方那道墙）
+                # 是按 `position` 摆的，于是它飘在离墙半米的地方；
+                # 而"离哪扇门最近"也是按 `position` 量的，量的位置不是门。
+                # 用户的原话是"门的位置和平面图对不上"。
+                position=p,
                 width_m=op.width_m,
-                from_room=a,
-                to_room=b,
+                from_room=a if passable else -1,
+                to_room=b if passable else -1,
+                passable=passable,
                 hinge=Vec2(p.x - u.x * half, p.y - u.y * half),
                 along=u,
                 normal=n,
             )
         )
     return doors, issues
+
+
+#: 同一面墙、同一对房间的两扇门，投影点相距小于这个值就判定为**同一扇**。
+#:
+#: ══════════════════════════════════════════════════════════════════
+#: 阈值不是我拍的，是**量出来的解析误差的两倍**
+#: ══════════════════════════════════════════════════════════════════
+#: `scripts/inspect_layout.py` 实测（演示户型 2026-09-24）：7 个门洞里
+#: 有 6 个被解析模型放偏，**离墙 0.48 ~ 0.60m**（平均 0.51）。也就是
+#: 这份解析给出的"门在哪"自带约 0.6m 的不确定度。
+#:
+#: 两个投影点相距不足 2×0.6=1.2m 时，**它们之间的距离比测量误差本身还小** ——
+#: 那就没有依据说它们是两扇门。取 1.2m 做阈值是这条推理的直接结果，
+#: 不是"看着差不多"。
+#:
+#: ⚠️ 实测第一版取的是"一个门宽 0.9m"，**它漏掉了真实的重复**：
+#: 第 3 扇与第 5 扇投影到同一面墙（都连通「餐厅↔卫生间」），投影点相距
+#: **1.11m** > 0.9 → 没合并。而它们的原始中心是 (6.56, 2.36) 与
+#: (7.67, 1.25)，y 相差 1.11m、落在**两间不同的房**里 —— 一个门洞被
+#: 读成了两扇门，各偏一边。这正是需求方说的"一个根本不应该存在的门
+#: 立在墙边"，以及"两个门贴得很近时按 F 响应的不是自己想开的那扇"。
+#:
+#: ⚠️ **只看距离会误合并**（同一面墙上相邻两间房的门可以很近），
+#:    所以这里同时要求**连通的是同一对房间**。两个条件都满足才合并。
+SAME_DOOR_GAP_M = 1.2
+
+
+def _dedupe_doors(
+    anchored: list[tuple[int, Any, Vec2, Vec2, float]],
+    rooms: list[RoomNode],
+) -> tuple[list[tuple[int, Any, Vec2, Vec2, float]], list[tuple[int, int]]]:
+    """
+    去掉"同一扇门被测到两次"的重复。
+
+    返回 `(保留的, [(被丢掉的下标, 保留的胜者下标), …])`。
+
+    保留哪一扇：**离墙更近的那一扇** —— 那是同一扇门的两次读数里
+    更可信的一次。不用"先来后到"，是因为那会让结果取决于门洞的排列顺序，
+    而顺序来自模型输出，会抖。
+    """
+    kept: list[list[Any]] = []          # 可变：可能被更贴墙的替换掉
+    dropped: list[tuple[int, int]] = []
+
+    for item in anchored:
+        i, op, p, u, off = item
+        n = Vec2(-u.y, u.x)
+        a, b = _rooms_beside(rooms, p, n)
+        pair = tuple(sorted((a, b)))
+
+        rival = None
+        for k in kept:
+            if k[0] != op.wall_index or k[1] != pair:
+                continue
+            if math.dist((k[2].x, k[2].y), (p.x, p.y)) < SAME_DOOR_GAP_M:
+                rival = k
+                break
+
+        if rival is None:
+            kept.append([op.wall_index, pair, p, u, i, op, off])
+            continue
+
+        if off < rival[6]:
+            # 新的这一扇更贴墙 → 换掉旧的
+            dropped.append((rival[4], i))
+            kept[kept.index(rival)] = [op.wall_index, pair, p, u, i, op, off]
+        else:
+            dropped.append((i, rival[4]))
+
+    return [(k[4], k[5], k[2], k[3], k[6]) for k in kept], dropped
+
+
+def _name_list(rooms: list[RoomNode], limit: int) -> str:
+    """
+    房间名列表，**截断时必须说"等"**。
+
+    ⚠️ 初版是 `"、".join(r.name for r in unreachable[:3])`，没有"等"。
+    于是文案变成「走不到 6 间房（儿童房、餐厅、厨房）」—— 6 间却只列 3 个，
+    读的人只会得出"另外 3 间是哪些"的疑问，或者更糟：以为只有这 3 间。
+    **列表被截断而不说，和编一个数字是同一类问题。**
+    """
+    names = [r.name for r in rooms[:limit]]
+    suffix = "等" if len(rooms) > limit else ""
+    return "、".join(names) + suffix
 
 
 def _rooms_beside(rooms: list[RoomNode], p: Vec2,
@@ -661,10 +817,40 @@ def _room_at(rooms: list[RoomNode], p: Vec2) -> int:
     return -1
 
 
+#: 这些房间**不作出生点**：它们是人"路过"的地方，不是"待在"的地方。
+#:
+#: ⚠️ **实测踩过**（2026-09-26）：规则本来是"门最多的那间房"，
+#: 理由是"门最多的是动线枢纽，从那儿出发能看到最多空间"。而在一份
+#: **星形连通**的真实户型里（每个房间的门都直接开向走廊），走廊的门最多
+#: —— 于是出生点永远是走廊。演示里按 `G` 下到地面，第一眼是一面墙，
+#: 走两步就到头。
+#:
+#: 所以规则收窄一格：**先排除通过性空间，再按门数取**（门数相同取面积大的）。
+#: 原意保住了 —— 客厅/餐厅照旧胜过一个只有单门的卧室，
+#: 只是不再让"走廊"赢。
+_PASSAGE_ROOM_NAMES: tuple[str, ...] = (
+    "走廊", "过道", "玄关", "门厅", "玄关走廊", "入户花园", "走道",
+)
+
+
+def _is_passage(room: RoomNode) -> bool:
+    """
+    是不是"通过性空间"（走廊/过道/玄关）。
+
+    ⚠️ **按子串判，不是按全等。** 实测踩过：模型给这间房起的名字是
+    「**走道/门洞**」—— 带个斜杠后缀，全等匹配直接漏掉，
+    出生点又落回了通过性空间（需求方的截图里就是它）。
+    名字是模型起的，格式不受我们控制，所以判据要宽。
+    """
+    name = (room.name or "").strip()
+    return any(p in name for p in _PASSAGE_ROOM_NAMES)
+
+
 def _pick_spawn(rooms: list[RoomNode], doors: list[DoorEdge]
                 ) -> tuple[int, Vec2, float]:
     """
     出生点：**门最多的那间房**（通常就是客厅），门数相同取面积大的。
+    **走廊/玄关这类通过性空间不参选**（见 `_PASSAGE_ROOM_NAMES`）。
 
     为什么不是"第一间"或"面积最大的"：门最多的是动线枢纽，从那儿出发
     能最快看到最多空间；从一间只有一个门的卧室醒来，第一印象是"怎么出不去"。
@@ -674,12 +860,43 @@ def _pick_spawn(rooms: list[RoomNode], doors: list[DoorEdge]
 
     degree: dict[int, int] = {r.index: 0 for r in rooms}
     for d in doors:
+        if not d.passable:      # 不可通行的门不参与"谁是枢纽"的判断
+            continue
         degree[d.from_room] = degree.get(d.from_room, 0) + 1
         degree[d.to_room] = degree.get(d.to_room, 0) + 1
 
-    best = max(rooms, key=lambda r: (degree.get(r.index, 0), r.area_m2))
+    # 全是通过性空间时（比如只识别出走廊和玄关）退回全集 ——
+    # 总得有个地方站，不能因为"都不合适"就没有出生点。
+    candidates = [r for r in rooms if not _is_passage(r)] or list(rooms)
+
+    best = max(candidates, key=lambda r: (degree.get(r.index, 0), r.area_m2))
     yaw = _facing_into_room(best)
     return best.index, best.center, yaw
+
+
+def _facing_house_center(rooms: list[RoomNode],
+                         from_room: RoomNode | None) -> float:
+    """
+    自由视角的朝向：从出生房间**朝整个户型的中心**看（度，场景坐标系）。
+
+    自由视角的全部意义是"俯瞰格局"，所以它该朝着户型看 ——
+    而行走模式那个"沿房间长轴看"的朝向在边缘房间上会朝屋外
+    （见 `spawn_yaw_fly_deg` 的说明）。
+
+    户型中心取**各房间中心的平均**（面积加权）—— 用 bbox 中心的话，
+    L 形户型会把朝向拉到一个空角落上去。
+    """
+    if from_room is None:
+        return 0.0
+    total = sum(max(r.area_m2, 0.0) for r in rooms)
+    if total <= 0 or not rooms:
+        return _facing_into_room(from_room)
+    cx = sum(r.center.x * max(r.area_m2, 0.0) for r in rooms) / total
+    cy = sum(r.center.y * max(r.area_m2, 0.0) for r in rooms) / total
+    dx, dy = cx - from_room.center.x, cy - from_room.center.y
+    if abs(dx) < 1e-6 and abs(dy) < 1e-6:
+        return _facing_into_room(from_room)      # 出生点正好在中心
+    return math.degrees(math.atan2(dy, dx)) % 360.0
 
 
 def _facing_into_room(room: RoomNode) -> float:
