@@ -57,6 +57,7 @@ chroma/
 node_modules/
 frontend/dist/
 frontend/node_modules/
+frontend/node_modules_旧_空壳备份/
 .vite/
 
 # ── UI 素材（版权 + 体积双重原因，不入库）──────────────────────
