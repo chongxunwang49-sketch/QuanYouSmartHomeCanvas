@@ -168,10 +168,10 @@ class TestUploadWiring:
             _run(routes.knowledge_upload(
                 KnowledgeUploadRequest(title="失败测试", text=DOC), ADMIN))
         assert e.value.code == 5002, (
-            f"依赖不可用应当是 5002（与"参数不合法"分开），收到 {e.value.code}"
+            f"依赖不可用应当是 5002（与「参数不合法」分开），收到 {e.value.code}"
         )
         assert "没有写入任何内容" in str(e.value), (
-            "报错必须明确说"没写进去" —— 否则用户不知道要不要重试"
+            "报错必须明确说「没写进去」—— 否则用户不知道要不要重试"
         )
         assert not wrote, "embedding 失败之后仍然调了写库 —— 会留下没有向量的孤儿 chunk"
 
