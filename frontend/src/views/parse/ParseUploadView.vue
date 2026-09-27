@@ -139,6 +139,42 @@ const resultLinks = computed(() => [
   { to: '/parse/walkthrough', icon: 'cube', label: '3D 漫游', hint: '第一人称走进去' },
   { to: '/parse/diagnosis', icon: 'chart-bar', label: '户型诊断', hint: '五维评分' },
 ])
+
+/**
+ * 识别到的房间。**右栏下半部分靠它撑起来。**
+ *
+ * 起因是界面问题：这一页在 xl 下是左右两栏，左栏（上传 + 选项）本来就高，
+ * 右栏只有一个「识别完成 + 四张指路卡」—— 于是右栏下方是一大片空白，
+ * 整页看着像没做完。补内容不能补废话，能补的**真实内容**恰好有两样：
+ *
+ *   ① 刚识别出来的房间清单（名字 + 面积 + 朝向）—— 用户此刻最想知道的
+ *      就是"它到底认出了什么"。指路卡只说明"还能去哪看"，不回答这个问题。
+ *   ② 解析这条链路本身做了什么（左栏没有结果时右栏也不空）。
+ *
+ * ⚠️ `degraded_basic` 时**只有房间名有效**（需求 2.2.4），面积/朝向都是空的。
+ *    这时候不能把 0 当面积显示出来 —— 那会变成"这间房 0 ㎡"这种假数据。
+ *    所以下面按 `isDegradedBasic` 分两种渲染：降级只列名字并说明原因。
+ */
+const roomRows = computed(() =>
+  (s.layout.value?.rooms ?? []).map((r) => ({
+    name: r.name,
+    area: r.area,
+    orientation: r.orientation,
+    notes: r.notes,
+  })),
+)
+const roomAreaSum = computed(() =>
+  roomRows.value.reduce((acc, r) => acc + (Number(r.area) || 0), 0),
+)
+
+/** 没结果时右栏的「解析链路」—— 说的是真的会跑的步骤，不是营销文案。 */
+const PIPELINE = [
+  { icon: 'shield-check', title: '本地质量预检', hint: '分辨率/模糊/长宽比先在本地判，不合格不花 Token' },
+  { icon: 'blueprint', title: '多模态解析', hint: '房间、墙体、门窗、尺寸、朝向，产结构化 JSON' },
+  { icon: 'chart-bar', title: '五维诊断', hint: '采光 / 通风 / 动线 / 收纳 / 绿色，逐项给依据' },
+  { icon: 'layout', title: '矢量图与热区', hint: '矢量户型图必出，物品热区挂价格与购买链接' },
+] as const
+
 </script>
 
 <template>
@@ -375,24 +411,122 @@ const resultLinks = computed(() => [
         </div>
       </div>
 
-      <!-- 未开始时 -->
-      <div v-else class="card">
-        <div class="flex flex-col items-center justify-center px-6 py-16 text-center">
-          <span
-            class="flex h-14 w-14 items-center justify-center rounded-2xl border border-botanical/20 bg-botanical-light text-botanical"
-          >
-            <AppIcon name="blueprint" :size="26" />
+      <!--
+        ══ 识别到的房间 ══
+        与指路卡**不重复**：上面四个入口说明"还能去哪看"，这里回答
+        "它认出了什么"。降级模式只列名字（见 `roomRows` 的说明）。
+      -->
+      <div v-if="s.result.value && roomRows.length" class="card p-4">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 class="flex items-center gap-2 font-serif text-[15px] font-semibold text-wood-dark">
+            <AppIcon name="house-line" :size="16" class="text-botanical" />
+            <span>识别到的房间</span>
+          </h2>
+          <span v-if="!s.isDegradedBasic.value" class="text-[11px] text-wood-muted">
+            合计 <span class="num font-semibold text-wood-dark">{{ roomAreaSum.toFixed(1) }}</span> ㎡
+            <span class="text-wood-muted/60"> · 含墙体与过道，与套内面积口径不同</span>
           </span>
-          <h3 class="mt-3 font-serif text-[17px] font-semibold text-wood-dark">
-            等待解析结果
-          </h3>
-          <p class="mt-1.5 max-w-md text-[12px] leading-relaxed text-wood-muted">
-            解析完成后，左侧会解锁「识别总览 / 户型矢量图 / 3D 漫游 / 户型诊断」
-            四个子页。它们分别回答：识别出了什么、长什么样、走进去什么感觉、
-            这套户型好不好。
-          </p>
         </div>
+
+        <!-- 降级模式：只有名字有效，先把话说清楚，再列名字 -->
+        <p
+          v-if="s.isDegradedBasic.value"
+          class="mb-2 rounded-xl border border-accent-gold/40 bg-wood-light/50 p-2.5 text-[11px] leading-relaxed text-wood"
+        >
+          这次走的是<strong class="font-semibold">降级解析</strong>：只拿到了房间名，
+          面积/朝向/墙体这些结构字段为空。要用完整数据请换一张更清晰的户型图重试。
+        </p>
+
+        <ul class="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          <li
+            v-for="(r, i) in roomRows"
+            :key="`${r.name}-${i}`"
+            class="flex items-center gap-2.5 rounded-xl border border-warm-border bg-white px-3 py-2"
+          >
+            <span
+              class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-botanical-light text-[10px] font-bold text-botanical"
+            >
+              <AppIcon name="door" :size="13" />
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-[12px] font-semibold text-wood-dark">
+                {{ r.name }}
+              </span>
+              <!--
+                第二行放**解析给的备注**（"图中标注面积 15.1㎡，位于户型左上区域，
+                上方外墙开设窗洞"），不放 `orientation` —— 实测那一栏经常就是
+                字符串 "unknown"，摆在界面上等于占位噪声。
+                备注是真信息，且能解释"它是怎么认出来的"。超长用省略号 +
+                `title` 给全文。
+              -->
+              <span
+                v-if="r.notes"
+                class="block truncate text-[10px] text-wood-muted"
+                :title="r.notes"
+              >
+                {{ r.notes }}
+              </span>
+            </span>
+            <!-- 降级时面积无效：显示 — 而不是 0（0 会被读成"这间房没有面积"） -->
+            <span class="num shrink-0 text-[12px] font-semibold text-wood">
+              {{ s.isDegradedBasic.value ? '—' : `${(Number(r.area) || 0).toFixed(1)} ㎡` }}
+            </span>
+          </li>
+        </ul>
       </div>
+
+      <!-- 未开始时：等待卡 + 解析链路（右栏不留大片空白） -->
+      <template v-else-if="!s.result.value">
+        <div class="card">
+          <div class="flex flex-col items-center justify-center px-6 py-10 text-center">
+            <span
+              class="flex h-14 w-14 items-center justify-center rounded-2xl border border-botanical/20 bg-botanical-light text-botanical"
+            >
+              <AppIcon name="blueprint" :size="26" />
+            </span>
+            <h3 class="mt-3 font-serif text-[17px] font-semibold text-wood-dark">
+              等待解析结果
+            </h3>
+            <p class="mt-1.5 max-w-md text-[12px] leading-relaxed text-wood-muted">
+              解析完成后，右侧会解锁「识别总览 / 户型矢量图 / 3D 漫游 / 户型诊断」
+              四个子页。它们分别回答：识别出了什么、长什么样、走进去什么感觉、
+              这套户型好不好。
+            </p>
+          </div>
+        </div>
+
+        <!--
+          解析链路。**不是占位文案**：这四步是后端真的会跑的（预检零 Token、
+          多模态解析、五维诊断、矢量图与热区），写在这里是为了让用户在等的
+          时候知道自己在等什么。
+        -->
+        <div class="card p-4">
+          <h2 class="mb-3 flex items-center gap-2 font-serif text-[15px] font-semibold text-wood-dark">
+            <AppIcon name="list-checks" :size="16" class="text-botanical" />
+            <span>上传后会发生什么</span>
+          </h2>
+          <ol class="flex flex-col gap-2.5">
+            <li v-for="(p, i) in PIPELINE" :key="p.title" class="flex items-start gap-3">
+              <span
+                class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-botanical/20 bg-botanical-light text-botanical"
+              >
+                <AppIcon :name="p.icon" :size="14" />
+              </span>
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5">
+                  <span class="num text-[10px] font-bold text-wood-muted/70">
+                    {{ String(i + 1).padStart(2, '0') }}
+                  </span>
+                  <span class="text-[12px] font-semibold text-wood-dark">{{ p.title }}</span>
+                </span>
+                <span class="mt-0.5 block text-[11px] leading-relaxed text-wood-muted">
+                  {{ p.hint }}
+                </span>
+              </span>
+            </li>
+          </ol>
+        </div>
+      </template>
 
       <!-- 错误 -->
       <div

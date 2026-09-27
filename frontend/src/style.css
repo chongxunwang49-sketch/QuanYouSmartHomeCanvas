@@ -232,6 +232,48 @@
     }
   }
 
+  /**
+   * 登录页左侧的「实景图墙」—— 两列竖向缓慢滚动，一列上、一列下。
+   *
+   * ⚠️ **这里刻意不用 `.marquee`，因为它带 `mask-image`。**
+   *    那是"滚动时左上角文字闪一下"的根因：带遮罩的元素会生成一个
+   *    合成层，它每帧重绘时会把**压在它上面的兄弟元素一起擦掉一帧** ——
+   *    肉眼看就是文字消失了一下又回来。图墙改用「上下两道渐变压暗」
+   *    达到同样的边缘渐隐，不生成遮罩层。
+   *
+   * ⚠️ 位移 -50% 同样依赖 DOM 里**恰好两份**列表；间距用每项自带的
+   *    `mb-3` 而**不是** `gap` —— 用 gap 的话一半宽度不等于整份，
+   *    循环到接缝会跳（与 `.marquee` 同一个坑，见上面的注释）。
+   *
+   * ⚠️ `will-change: transform` 是给**图墙自己**的，不是给文字的；
+   *    文字那一层靠 `transform: translateZ(0)`（Tailwind 的 `transform-gpu`）
+   *    单独建层，两者互不干扰。
+   */
+  .wall {
+    @apply relative overflow-hidden;
+  }
+  .wall-track {
+    @apply flex flex-col;
+    animation: wall-scroll linear infinite;
+    will-change: transform;
+  }
+  .wall-reverse .wall-track {
+    animation-direction: reverse;
+  }
+  @keyframes wall-scroll {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate3d(0, -50%, 0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wall-track {
+      animation: none;
+    }
+  }
+
   /* ══════════════════════════════════════════════════════════════
      模块背景纹理 —— 把纯色画布换掉，但**不许喧宾夺主**
      ══════════════════════════════════════════════════════════════

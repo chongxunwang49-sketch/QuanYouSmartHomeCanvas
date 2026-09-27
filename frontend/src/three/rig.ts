@@ -90,6 +90,50 @@ const PITCH_LIMIT = (85 * Math.PI) / 180
 
 /** 自由视角起点高出天花板多少（米）。2.0m 能一眼收进整个户型。 */
 const FLY_VANTAGE_ABOVE_CEILING_M = 2.0
+
+/**
+ * 起点高度的**下限**：至少要有这么多，才能把户型收进视野。
+ *
+ * ⚠️ **为什么不能只写"天花板 + 2 米"。** 后端会给"家具摆不下"的户型把
+ *    3D 场景**等比放大**（实测演示户型 k=2.0，房子从 7.6×6.2 m 变成
+ *    15.2×12.4 m，见 `services/furniture/scaling.py`）。而"天花板 + 2 米"
+ *    是个**绝对高度**，不随房子长大 —— 房子大到 15×12 m 之后，7.6 m 高、
+ *    38° 俯角的那条视线在 9.7 m 外就落地了，正好撞在远墙上：
+ *    **打开 3D 看到的就是一面墙**，而不是需求方要的"一眼看格局"。
+ *
+ *    实测就是这个样子（scale=2 的户型，开局与按 R 回起点都是满屏墙面色）。
+ *
+ * 所以取两者的大：`max(天花板 + 2, 户型最长边 × 0.75)`。
+ * 0.75 是让 38° 的视线在户型对角处还能落到地面 —— 系数偏大一点没关系，
+ * 只是站得更高、看得更全，不会看不到东西。
+ */
+const FLY_VANTAGE_MIN_HEIGHT_FACTOR = 0.75
+
+/**
+ * 从 walkable 数据里量"户型最长边"（米），用于上面的下限。
+ *
+ * ⚠️ 量的是 `rooms[].free_rect` 的并集包围盒，**不是** `scene.width_m`：
+ *    这个 rig 拿到的是 `/walkable` 里的 `walkable` 段，而 `scene` 段不在
+ *    它的入参里（`WalkableData` 的类型就没有那个字段）。用房间框算，
+ *    量到的是同一套（已被放大过的）坐标，且不依赖调用方多传东西。
+ *    走廊这类没有房间的地方量不到，但那不影响"站得够高"这件事。
+ */
+function planSpanM(data: WalkableData): number {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const r of data.rooms ?? []) {
+    const f = r.free_rect
+    if (!f) continue
+    minX = Math.min(minX, f[0])
+    minY = Math.min(minY, f[1])
+    maxX = Math.max(maxX, f[2])
+    maxY = Math.max(maxY, f[3])
+  }
+  if (!Number.isFinite(minX)) return 1
+  return Math.max(maxX - minX, maxY - minY, 1)
+}
 /**
  * 自由视角起点的俯角（度，正数 = 往下看）。
  *
@@ -172,7 +216,10 @@ export class CameraRig {
       this.pitch = 0
       return
     }
-    this.flyHeight = this.data.ceiling_height_m + FLY_VANTAGE_ABOVE_CEILING_M
+    this.flyHeight = Math.max(
+      this.data.ceiling_height_m + FLY_VANTAGE_ABOVE_CEILING_M,
+      planSpanM(this.data) * FLY_VANTAGE_MIN_HEIGHT_FACTOR,
+    )
     this.pitch = -(FLY_VANTAGE_PITCH_DEG * Math.PI) / 180
   }
 

@@ -98,30 +98,46 @@ const degradedDeps = computed(() =>
 </script>
 
 <template>
+  <!--
+    ⚠️ **三段式布局，中间那段自己滚。** 这是修一个真实的可用性问题：
+    一级菜单全部展开（户型解析 5 项 + 方案生成 4 项 + …）时，整条侧栏比
+    视口还高 —— 而底部的账号卡/登出按钮**点不到**（它被挤到视口之外，
+    又没有滚动条可以把它滚回来）。
+
+    所以：品牌区 `shrink-0` 固定、导航区 `min-h-0 flex-1 overflow-y-auto`
+    自己滚、底部账号卡 `shrink-0` 固定。
+    `overflow-y-auto` 只在真的装不下时才长滚动条 —— 装得下时不显示，
+    符合"能显示完就不显示滚轮"的要求。
+  -->
   <aside
-    class="z-40 flex h-full w-60 flex-shrink-0 flex-col justify-between border-r border-warm-border bg-warm-sidebar"
+    class="z-40 flex h-full w-60 flex-shrink-0 flex-col border-r border-warm-border bg-warm-sidebar"
   >
-    <div class="flex flex-col">
-      <!-- ── 品牌区 ── -->
-      <div class="flex h-16 items-center gap-3 border-b border-warm-border bg-warm-sidebar px-4">
-        <div
-          class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-botanical/20 bg-botanical-light text-botanical"
-        >
-          <AppIcon name="leaf" :size="22" />
-        </div>
-        <div class="flex min-w-0 flex-col">
-          <span class="truncate text-[15px] font-bold tracking-tight text-wood">全友·智绘家</span>
-          <div class="flex items-center gap-1.5">
-            <span
-              class="rounded bg-botanical-light px-1 text-[10px] font-semibold uppercase tracking-wider text-botanical"
-            >
-              Nature Edition
-            </span>
-            <span class="text-[10px] text-wood-muted">v2.4</span>
-          </div>
+    <!-- ── 品牌区（固定，不参与滚动）── -->
+    <div class="flex h-16 shrink-0 items-center gap-3 border-b border-warm-border bg-warm-sidebar px-4">
+      <div
+        class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-botanical/20 bg-botanical-light text-botanical"
+      >
+        <AppIcon name="leaf" :size="22" />
+      </div>
+      <div class="flex min-w-0 flex-col">
+        <span class="truncate text-[15px] font-bold tracking-tight text-wood">全友·智绘家</span>
+        <div class="flex items-center gap-1.5">
+          <span
+            class="rounded bg-botanical-light px-1 text-[10px] font-semibold uppercase tracking-wider text-botanical"
+          >
+            Nature Edition
+          </span>
+          <span class="text-[10px] text-wood-muted">v2.4</span>
         </div>
       </div>
+    </div>
 
+    <!--
+      ── 导航区（自己滚，装得下时不显示滚动条）──
+      菜单全部展开时会超出视口，这一段 `overflow-y-auto` 让它滚起来，
+      底部的账号卡因此始终在视野里。
+    -->
+    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto scroll-thin">
       <div class="px-4 pb-2 pt-4">
         <span class="text-[11px] font-semibold uppercase tracking-wider text-wood-muted/70">
           核心工作台
@@ -208,7 +224,7 @@ const degradedDeps = computed(() =>
          这里原来是写死的「演示账号 / Demo Session」占位。现在读真实登录用户，
          并且把登出做成一个**独立可见的按钮** —— 藏进信息面板里的登出
          在演示时很难找，而对面试官展示"换个账号登录"正是要看的一件事。 -->
-    <div class="border-t border-warm-border/80 p-3">
+    <div class="shrink-0 border-t border-warm-border/80 p-3">
       <div class="flex items-center gap-2">
         <button
           class="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl border border-warm-border bg-white/70 p-2.5 text-left shadow-xs transition-colors hover:border-botanical/40 hover:bg-white"

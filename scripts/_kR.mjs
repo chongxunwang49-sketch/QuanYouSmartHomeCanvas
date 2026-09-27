@@ -1,0 +1,20 @@
+
+const PORT=9222, APP='http://127.0.0.1/';
+const list=await(await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
+const ws=new WebSocket(list.find(t=>t.type==='page').webSocketDebuggerUrl);
+await new Promise((r,j)=>{ws.addEventListener('open',r,{once:true});ws.addEventListener('error',j,{once:true})});
+let id=0;const pend=new Map();
+ws.addEventListener('message',e=>{const m=JSON.parse(e.data);
+ if(m.id&&pend.has(m.id)){const{res,rej}=pend.get(m.id);pend.delete(m.id);m.error?rej(new Error(JSON.stringify(m.error))):res(m.result)}});
+const send=(m,p={})=>new Promise((res,rej)=>{const n=++id;pend.set(n,{res,rej});ws.send(JSON.stringify({id:n,method:m,params:p}))});
+const ev=async e=>{const r=await send('Runtime.evaluate',{expression:e,awaitPromise:true,returnByValue:true});
+ if(r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description||'JS'); return r.result.value};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+await send('Input.dispatchKeyEvent',{type:'rawKeyDown',windowsVirtualKeyCode:82,code:'KeyR',key:'r'});
+await send('Input.dispatchKeyEvent',{type:'keyUp',windowsVirtualKeyCode:82,code:'KeyR',key:'r'});
+await sleep(1600);
+const s=await send('Page.captureScreenshot',{format:'png'});
+const fs=await import('node:fs');
+fs.writeFileSync('logs/_furniture-top.png',Buffer.from(s.data,'base64'));
+console.log('已按 R 回俯瞰位并截图');
+ws.close();

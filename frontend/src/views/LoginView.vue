@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
@@ -136,37 +136,39 @@ const DEMO_ACCOUNTS = [
   },
 ] as const
 
-// ── 轮播 ────────────────────────────────────────────────
-const slides = computed(() => imagePool.main)
-const current = ref(0)
-let timer: ReturnType<typeof setInterval> | null = null
-/** 鼠标停在图上时暂停 —— 用户在看哪一张图，不该被自动翻走 */
-const paused = ref(false)
-
-const pad2 = (n: number) => String(n + 1).padStart(2, '0')
-
-function stop() {
-  if (timer) {
-    clearInterval(timer)
-    timer = null
+// ── 左侧实景图墙 ────────────────────────────────────────
+/**
+ * 左栏的背景是**滚动着的实景图**：两列竖向反向缓慢滚动。
+ *
+ * ⚠️ **只用 6 张，不是全部。** 图片池现在有 12 张（约 2.3MB），
+ *    全铺进背景会让登录页一进来就拉满整个池子 —— 而左栏是背景，
+ *    用户不会逐张去看。取 6 张（每列 3 张）既能铺满两列，也让首屏
+ *    的图片体积只有全量的一半。这是取舍，不是遗漏。
+ *
+ * ⚠️ **文字不进这个容器**（见模板）：图墙是 `position:absolute` 的
+ *    独立图层，品牌行与标题在外面的内容层里 —— 图怎么滚都推不动、
+ *    也盖不住左上角那行字。
+ */
+const WALL_PER_COLUMN = 3
+const wallColumns = computed(() => {
+  const all = imagePool.main
+  if (!all.length) return [] as string[][]
+  const cols: string[][] = [[], []]
+  for (let i = 0; i < Math.min(all.length, WALL_PER_COLUMN * 2); i++) {
+    cols[i % 2].push(all[i])
   }
-}
+  return cols.filter((c) => c.length)
+})
 
-function start() {
-  stop()
-  if (slides.value.length < 2) return
-  timer = setInterval(() => {
-    if (!paused.value) current.value = (current.value + 1) % slides.value.length
-  }, 5000)
+/**
+ * 每列的滚动时长。**按图片数量算，让两列线速度接近** ——
+ * 两列用同一个秒数的话，图片多的那列会明显更快。
+ * 第二列再错开一点，避免两列看起来像一整块在平移。
+ */
+function wallDuration(col: number, count: number): string {
+  const base = Math.max(4, count) * 16
+  return `${col === 1 ? base + 8 : base}s`
 }
-
-function goto(i: number) {
-  current.value = i
-  start() // 手动切换后重新计时，否则刚点完立刻又被自动翻走
-}
-
-onMounted(start)
-onBeforeUnmount(stop)
 
 /**
  * 品牌主张。**说的是本系统的立场，不是给全友安的话。**
@@ -189,10 +191,83 @@ const BELIEFS = [
          左栏：品牌与实拍
          ══════════════════════════════════════════════════════ -->
     <section
-      class="relative hidden min-w-0 flex-1 flex-col justify-between overflow-hidden px-14 py-12 surface-glow lg:flex xl:px-20"
+      class="relative hidden min-w-0 flex-1 flex-col justify-between overflow-hidden px-14 py-12 lg:flex xl:px-20"
     >
-      <!-- 品牌行 -->
-      <div class="flex items-center gap-3">
+      <!--
+        ══ 背景：滚动的实景图墙（两列，一列上、一列下）══
+
+        ⚠️⚠️ **三个「必须这样写」，都是为了左上角那行字不闪：**
+
+          ① 图墙是 `absolute inset-0` 的**独立图层**，不参与内容布局 ——
+             它怎么滚都不会推动文字，也不会把它挤出视口。
+          ② **不用带 `mask-image` 的 `.marquee`**：遮罩层每帧重绘会把压在
+             它上面的兄弟元素擦掉一帧，肉眼就是"文字消失一下又回来"。
+             边缘渐隐改由「上下两道渐变压暗」实现（见下面的遮罩层）。
+          ③ 内容层带 `transform-gpu`（`translateZ(0)`），自己占一个合成层，
+             与图墙的动画互不干扰。
+
+        ⚠️ `pointer-events-none` + `aria-hidden`：这是**背景**，不是可点区域，
+           屏幕阅读器也不该念一串没有 alt 的图。
+      -->
+      <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div class="flex h-full w-full gap-4">
+          <div
+            v-for="(col, ci) in wallColumns"
+            :key="`col-${ci}`"
+            class="wall flex-1"
+            :class="ci === 1 && 'wall-reverse'"
+          >
+            <div
+              class="wall-track"
+              :style="{ animationDuration: wallDuration(ci, col.length) }"
+            >
+              <!--
+                渲染两份同样的列表，位移 -50% 才能无缝循环。
+                第二份 `aria-hidden`（外层已经 aria-hidden，这里只是标明意图）。
+
+                ⚠️ 间距用每项自带的 `mb-4`，**不是** 轨道的 `gap` ——
+                   见 style.css 里 `.wall` 的注释（用 gap 会在接缝处跳）。
+              -->
+              <template v-for="copy in 2" :key="`c${ci}-${copy}`">
+                <img
+                  v-for="src in col"
+                  :key="`c${ci}-${copy}-${src}`"
+                  :src="src"
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  class="mb-4 aspect-[4/3] w-full rounded-2xl object-cover"
+                />
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!--
+          可读性遮罩。两层：
+            ① 一层均匀的暖底 —— 保证任何一张图（有深色木作也有全白厨房）
+               之上，深色文字都有足够对比度；
+            ② 左上角再压一层 —— 品牌行与标题正好落在这一角，
+               让它们所在的位置最实、最清楚，图的细节留给下半部分。
+          这不只是审美：`wood-dark` 压在没压暗的白厨房照片上会糊掉。
+        -->
+        <div class="absolute inset-0 bg-warm-bg/70" />
+        <div class="absolute inset-0 bg-gradient-to-br from-warm-bg/85 via-warm-bg/40 to-transparent" />
+        <!-- 上下两端渐隐，替代 mask 的"图从边缘淡出"效果 -->
+        <div class="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-warm-bg/85 to-transparent" />
+        <div class="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-warm-bg/85 to-transparent" />
+      </div>
+
+      <!--
+        ══ 内容层 ══
+        `relative z-10 transform-gpu`：压在背景之上，并且**自己一个合成层**
+        （`transform-gpu` 是 `translateZ(0)`），图墙的动画不会让它重绘。
+        这一层内部仍是 `justify-between` 的三段（品牌行 / 标题 / 版权行），
+        位置与本页此前一致 —— 只是不再浮在轮播卡片旁边。
+      -->
+      <div class="relative z-10 flex min-h-0 flex-1 flex-col justify-between transform-gpu">
+        <!-- 品牌行 -->
+        <div class="flex items-center gap-3">
         <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-botanical text-white">
           <AppIcon name="leaf" :size="19" weight="bold" />
         </span>
@@ -238,91 +313,21 @@ const BELIEFS = [
         </ul>
       </div>
 
-      <!-- 实拍轮播 -->
-      <div
-        class="relative"
-        @mouseenter="paused = true"
-        @mouseleave="paused = false"
-        @focusin="paused = true"
-        @focusout="paused = false"
-      >
-        <div
-          v-if="slides.length"
-          class="relative h-[240px] overflow-hidden rounded-2xl border border-warm-border shadow-md xl:h-[280px]"
+        <!--
+          底部：图片来源声明。
+
+          ⚠️ **轮播卡片已经删掉了** —— 那批实景图现在就是左栏的背景。
+             再摆一个轮播就是同一批图出现两次，而且卡片会挡住背景。
+             声明这一行必须留着：换成 Pexels 回落图时，写"全友实景案例"
+             就是把没有出处的东西挂在别人名下（见 `assets/images/pool.ts`）。
+             图池为空（既没有案例图也没有回落照片）时这一行也不显示。
+        -->
+        <p
+          v-if="imagePool.main.length"
+          class="max-w-md text-[11px] leading-relaxed text-wood-muted/80"
         >
-          <!--
-            逐张淡入淡出，**同一时刻只有两张图在 DOM 里**。
-
-            ⚠️ 不要写成 `v-for` + `v-show` 把 14 张全挂上：那会让登录页
-            一进来就拉 4.9MB 的图（`cases/` 实测 14 张共 4.9MB），
-            而这 14 张里用户这次只看得见 1 张。用 `<Transition>` 换 key，
-            Vue 会同时保留"正在离开"的那一张 —— 天然就是交叉淡化，
-            且初始只 fetch 一张，每次切换只多 fetch 一张。
-
-            `absolute inset-0` 是必须的：两张图要在同一位置重叠，
-            否则新图会把容器撑高，形成"往上跳一下"。
-          -->
-          <Transition name="slide-fade">
-            <img
-              :key="current"
-              :src="slides[current]"
-              :alt="`全友家居实景案例 ${current + 1}`"
-              class="absolute inset-0 h-full w-full object-cover"
-            />
-          </Transition>
-
-          <!-- 上下两道压暗。**不是装饰，是让白字在任何一张图上都读得出来** ——
-               案例图里有深色木作也有全白厨房，只压一侧的话总有一种会糊掉。
-               中间留亮，图本身的主体不被削弱。 -->
-          <div
-            class="pointer-events-none absolute inset-x-0 top-0 h-1/3
-                   bg-gradient-to-b from-wood-dark/50 to-transparent"
-          />
-          <div
-            class="pointer-events-none absolute inset-x-0 bottom-0 h-2/3
-                   bg-gradient-to-t from-wood-dark/80 via-wood-dark/35 to-transparent"
-          />
-
-          <!-- 超大描边序号：官网的装饰装置，这里同时充当"第几张"。
-               ⚠️ 必须落在图**内部**（不能写 `-top-*`）—— 容器是
-               `overflow-hidden`，负偏移会被直接裁掉，表现是"这个装饰
-               写了但看不见"。 -->
-          <span
-            class="pointer-events-none absolute left-5 top-2 select-none font-serif
-                   text-[84px] font-bold leading-none text-transparent
-                   [-webkit-text-stroke:2px_rgba(250,248,243,0.6)]"
-          >
-            {{ pad2(current) }}
-          </span>
-
-          <div class="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 p-5">
-            <p class="max-w-[70%] text-[11px] leading-relaxed text-white/85">
-              {{ imageAttribution }}
-            </p>
-            <!-- 圆点：可点，键盘也能用（<button> 而不是 <span>） -->
-            <div class="flex shrink-0 items-center gap-1.5">
-              <button
-                v-for="(src, i) in slides"
-                :key="`dot-${src}`"
-                type="button"
-                class="h-1.5 rounded-full transition-all duration-200"
-                :class="i === current ? 'w-5 bg-white' : 'w-1.5 bg-white/45 hover:bg-white/70'"
-                :aria-label="`查看第 ${i + 1} 张实景图`"
-                :aria-current="i === current"
-                @click="goto(i)"
-              />
-            </div>
-          </div>
-        </div>
-
-        <!-- 图片池为空（既没有案例图也没有回落照片）时不留空洞 -->
-        <div
-          v-else
-          class="flex h-[240px] items-center justify-center rounded-2xl border
-                 border-dashed border-warm-border bg-warm-sidebar/60"
-        >
-          <p class="text-[12px] text-wood-muted">未找到实景图（图片池为空）</p>
-        </div>
+          {{ imageAttribution }}
+        </p>
       </div>
     </section>
 
@@ -467,21 +472,9 @@ const BELIEFS = [
 </template>
 
 <style scoped>
-/* 轮播的淡入淡出。用 opacity 而不是位移 —— 图片尺寸不一，
-   位移会让两张图的接缝露白。 */
-.slide-fade-enter-active,
-.slide-fade-leave-active {
-  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.slide-fade-enter-from,
-.slide-fade-leave-to {
-  opacity: 0;
-}
-/* 离开的那张必须在下面，否则它会盖住正在淡入的一张 */
-.slide-fade-leave-active {
-  z-index: 0;
-}
-.slide-fade-enter-active {
-  z-index: 1;
-}
+/*
+  轮播那套 `.slide-fade-*` 过渡样式已经删掉 —— 轮播换成了左栏的滚动图墙。
+  图墙的动画在全局 `style.css` 里（`.wall` / `.wall-track`），不在这个
+  scoped 块里：那里还写清了「为什么不用带 mask 的 `.marquee`」这个坑。
+*/
 </style>

@@ -19,9 +19,14 @@ import { NetErrorCode, messageOf } from '@/api/client'
  * 这条曲线解决的是「打爆后端」与「更新不流畅」的两难：固定 1 秒轮询在
  * 95 秒的生成任务上要打 95 次，固定 5 秒又会让前期的阶段跳变看起来卡顿。
  *
- * ⚠️ **`estimated_seconds` 不参与节奏计算。** 它是后端给的**估算区间**
- * （实测 33–48s 的中位值），不是承诺值。拿它去动态调速，会在任务比预期
- * 慢的时候把轮询拖到超时——而那恰恰是最需要看到进度的场景。
+ * ⚠️ **`estimated_seconds`（生成任务前给的那个估算）不参与节奏计算。**
+ *    它是后端给的**估算区间**（实测 33–48s 的中位值），不是承诺值。
+ *    拿它去动态调速，会在任务比预期慢的时候把轮询拖到超时 ——
+ *    而那恰恰是最需要看到进度的场景。
+ *
+ * ⚠️ 但**任务状态里实时回来的 `eta_seconds` 会参与**，且只用来**加速**：
+ *    剩余 ≤ 10 秒时切到 1 秒一次（见 `ETA_RUSH_MS` 那一节）。方向是单向的 ——
+ *    只会更频繁，不会更慢，所以上面那条风险不成立。
  *
  * ══════════════════════════════════════════════════════════════════
  * 为什么用循环而不是 setInterval
@@ -62,7 +67,31 @@ export const POLL_TIMEOUT_MS = 120_000
 /** 超出后端估算多少倍就放弃 */
 const POLL_DEADLINE_FACTOR = 2
 
-function intervalFor(elapsedMs: number): number {
+/**
+ * 接近后端给的 ETA 时改用的快节奏。
+ *
+ * ⚠️ **这一条是实测加上的，不是拍脑袋。**
+ *
+ * 需求方反馈："任务跑完到界面能点开 3D 之间还有一段等待。"
+ * 那段等待**不在渲染上** —— 实测从结果页点「3D 漫游」到画面出来只有
+ * 87–113 ms（冷缓存 113 ms、热 87 ms），接口 40 ms、three 分块 23 ms。
+ * 它在**最后一次轮询与任务真正结束之间**：解析实测 33–48 秒、方案生成约 110 秒，
+ * 两者都落在节奏表的第三段（间隔 5 秒），于是后端已经完成、界面平均还要
+ * **2.5 秒**（最坏 5 秒）才知道 —— 那几秒屏幕上写着"解析中…"，
+ * 「识别完成」和四个入口都还没出现。
+ *
+ * 所以：`剩余 ETA ≤ 10 秒` 时切到 1 秒。代价是最后十秒多打几次
+ * `/task/{id}/status`（后端读 Redis 里的一份状态，很轻），
+ * 换来的是"跑完就立刻看到完成"。
+ *
+ * ⚠️ ETA 拿不到时（后端估不出会返回 null）退回原来的节奏表 ——
+ *    不硬猜一个"应该快到了"。
+ */
+const ETA_RUSH_MS = 10_000
+const RUSH_INTERVAL_MS = 1_000
+
+function intervalFor(elapsedMs: number, etaLeftMs: number | null = null): number {
+  if (etaLeftMs !== null && etaLeftMs <= ETA_RUSH_MS) return RUSH_INTERVAL_MS
   for (const stage of POLL_STAGES) {
     if (elapsedMs < stage.untilMs) return stage.intervalMs
   }
@@ -218,6 +247,16 @@ export function useTaskPolling<R = unknown>(sessionKey = 'default'): TaskPolling
 
   const localElapsedMs = () => anchorElapsedMs + (Date.now() - anchorAt)
 
+  /**
+   * 距离后端给的 ETA 还剩多少毫秒；拿不到（估不出 / 已超出预期）返回 null。
+   *
+   * ⚠️ 用**平滑过的** `etaSeconds`（本地时钟每 250ms 推进一次），
+   *    不是直接用某一次响应里的 `eta_seconds` —— 后者两秒才更新一次，
+   *    会让"是否进入冲刺段"的判断在两秒之间抖动。
+   */
+  const etaLeftMs = (): number | null =>
+    etaSeconds.value === null ? null : Math.max(0, etaSeconds.value * 1000)
+
   function reanchor(elapsedFromServer: number | null) {
     if (elapsedFromServer === null) return    // 服务端也不知道，就继续用本地的
     anchorElapsedMs = elapsedFromServer * 1000
@@ -355,7 +394,7 @@ export function useTaskPolling<R = unknown>(sessionKey = 'default'): TaskPolling
           // 单次轮询失败不终止整条链 —— 网络抖一下就放弃，用户得从头再来。
           // 但连续失败会由超时兜底，不会无限重试。
           error.value = messageOf(e)
-          await sleep(intervalFor(localElapsedMs()))
+          await sleep(intervalFor(localElapsedMs(), etaLeftMs()))
           continue
         }
         if (cancelled) return null
@@ -386,7 +425,7 @@ export function useTaskPolling<R = unknown>(sessionKey = 'default'): TaskPolling
 
         if (snap.status === 'completed' || snap.status === 'failed') return snap
 
-        await sleep(intervalFor(localElapsedMs()))
+        await sleep(intervalFor(localElapsedMs(), etaLeftMs()))
         if (cancelled) return null
       }
     } finally {

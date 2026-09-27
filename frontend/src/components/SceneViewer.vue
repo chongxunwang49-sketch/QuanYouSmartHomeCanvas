@@ -176,12 +176,23 @@ async function load() {
   try {
     // 三个请求并行：3D 几何 + 家具 + 2D 户型图（小地图底图）
     //
+    // ⚠️⚠️ **`/walkable` 必须带上同一个 `planId`。** 这是修一个真实的 bug：
+    //    后端会给"家具摆不下"的户型把 3D 场景**等比放大 k 倍**，而 k 是按
+    //    方案里的家具算出来的 —— 于是**带不带 plan_id 会拿到两套不同尺度的坐标系**。
+    //    实测（layout_20260927_4fb0cc）：不带 plan_id 时 k=1.0、房子 7.61×6.21 m；
+    //    带 plan_id 时 k=2.0、房子 15.22×12.41 m。家具是带 plan_id 取的，
+    //    所以它们的坐标是**房子坐标的 2 倍** —— 22 件家具里 21 件落在自己房间之外，
+    //    屏幕上就是"家具全挤在一边、没放进房间格局"。
+    //
+    //    判据不是"看起来对不对"：把家具坐标与 `/walkable` 返回的房间框比对，
+    //    用不带 plan_id 的框是 1/22 命中，用带 plan_id 的框才对得上。
+    //
     // ⚠️ 没有 `planId` 时**根本不发家具请求** —— 不是"发了但不用"。
     //    户型解析的 3D 是空房子，那是一个确定的结论，不是一个缺省。
     //    发出去再丢掉会让后端白算一遍摆放（要遍历房间 × 目录），
     //    也会让日志里出现一个没人用的调用。
     const [payload, furn, svg] = await Promise.all([
-      layoutWalkable(props.layoutId),
+      layoutWalkable(props.layoutId, props.planId || undefined),
       wantsFurniture.value
         // ⚠️ **家具拿不到不挡住 3D。** 空房子也比没有房子好。
         //    但"为什么没有家具"要记下来给用户看，不能静默（AC-17）。
@@ -270,6 +281,26 @@ async function build() {
   //    画面却是一扇门贴在眼前，而且第一下按 G 没有反应。
   rig = new rigMod.CameraRig(payload.walkable, aspect, mode.value)
   rig.setHorizontalFov(hFov.value)
+
+  /**
+   * 调试句柄，给 `frontend/probe/` 与 `scripts/_probe*.mjs` 用。
+   *
+   * ⚠️ 为什么留着它：探针要读的是**真实运行状态**（相机摆在哪儿、
+   *    场景里有多少 mesh、家具组在不在、当前档位），这些没有别的入口。
+   *    没有句柄就只能靠截图猜 —— 而"猜"在这个项目里是不被接受的
+   *    （见「先量再断言」那条纪律）。本仓库的探针一路都用的是这个名字，
+   *    改名会让它们静默失效（读到 undefined 而不是报错）。
+   *
+   * ⚠️ 只读用途；内容是本机场景对象，不含用户数据、不上报。
+   */
+  ;(window as unknown as Record<string, unknown>).__qy3d = {
+    THREE: three,
+    renderer,
+    scene: handles.scene,
+    rig,
+    handles,
+    furniture: furniture.value,
+  }
 
   resize()
   ro = new ResizeObserver(resize)
