@@ -180,7 +180,7 @@ function wallDuration(col: number, count: number): string {
  */
 const BELIEFS = [
   { icon: 'blueprint', title: '先把户型看懂', desc: '房间、墙体、门窗、尺寸先落到结构上，再谈风格' },
-  { icon: 'coins', title: '每一分钱都可追溯', desc: '预算由规则引擎算，不由模型编；材料项逐条可查' },
+  { icon: 'coins', title: '每一分钱都可追溯', desc: '预算逐项按面积与单价算出，不由模型编；材料项逐条可查' },
   { icon: 'shield-check', title: '风险先于报价被指出', desc: '避坑审查的每条结论都必须能引回知识库原文' },
 ] as const
 </script>

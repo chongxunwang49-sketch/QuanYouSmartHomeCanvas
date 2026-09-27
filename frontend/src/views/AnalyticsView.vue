@@ -298,10 +298,10 @@ const checkEntries = computed(() => Object.entries(health.checks))
           <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h3 class="flex items-center gap-1.5 text-[13px] font-semibold text-wood-dark">
               <AppIcon name="robot" :size="15" class="text-botanical" />
-              <span>各 Agent 的模型调用</span>
+              <span>各环节的模型调用</span>
             </h3>
             <p v-if="totalTokens" class="text-[11px] text-wood-muted">
-              近 {{ days }} 天累计 Token 约
+              近 {{ days }} 天累计用量约
               <b class="num text-wood-dark">{{ Math.round(totalTokens).toLocaleString() }}</b>
             </p>
           </div>
@@ -309,11 +309,11 @@ const checkEntries = computed(() => Object.entries(health.checks))
             <table class="w-full border-collapse text-[11px]">
               <thead class="bg-warm-sidebar/70 text-left text-wood-muted">
                 <tr>
-                  <th class="px-3 py-2 font-semibold">Agent</th>
+                  <th class="px-3 py-2 font-semibold">环节</th>
                   <th class="w-16 px-2 py-2 text-right font-semibold">调用</th>
                   <th class="w-20 px-2 py-2 text-right font-semibold">P50</th>
                   <th class="w-20 px-2 py-2 text-right font-semibold">P95</th>
-                  <th class="w-24 px-2 py-2 text-right font-semibold">平均 Token</th>
+                  <th class="w-24 px-2 py-2 text-right font-semibold">平均用量</th>
                 </tr>
               </thead>
               <tbody>
@@ -381,7 +381,7 @@ const checkEntries = computed(() => Object.entries(health.checks))
         v-for="s in [
           { label: '本会话任务', value: stats.total, icon: 'list-checks', tone: 'text-wood-dark' },
           { label: '成功完成', value: stats.completed, icon: 'check-circle', tone: 'text-botanical' },
-          { label: '其中降级', value: stats.degraded, icon: 'warning-circle', tone: 'text-accent-gold' },
+          { label: '其中未完整', value: stats.degraded, icon: 'warning-circle', tone: 'text-accent-gold' },
           { label: '失败 / 进行中', value: `${stats.failed} / ${stats.running}`, icon: 'spinner', tone: 'text-wood' },
         ]"
         :key="s.label"
@@ -456,7 +456,7 @@ const checkEntries = computed(() => Object.entries(health.checks))
               : 'border-accent-gold/30 bg-wood-light text-accent-gold'
           "
         >
-          {{ health.status === 'ok' ? '全部正常' : '降级运行' }}
+          {{ health.status === 'ok' ? '全部正常' : '部分功能受限' }}
         </span>
       </h2>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">

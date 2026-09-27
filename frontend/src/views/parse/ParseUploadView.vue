@@ -106,7 +106,7 @@ async function submit() {
     if (s.poll.timedOut.value) {
       // 期限由后端估算算出（见 useTaskPolling），报实际值而不是写死"120 秒"
       toast.warning(
-        `轮询超时（${s.poll.timeoutSeconds.value} 秒）。任务可能仍在后台执行，可用 trace_id 排查。`,
+        `等待超时（${s.poll.timeoutSeconds.value} 秒）。任务可能仍在处理中，稍后回到本页可以看到结果。`,
       )
       return
     }
@@ -124,7 +124,7 @@ async function submit() {
     if (snap.status === 'failed') {
       toast.error(snap.error || '解析失败')
     } else if (snap.degraded) {
-      toast.warning('解析已完成，但走了降级路径，请查看提示')
+      toast.warning('解析已完成，但结果不够完整，请查看提示')
     } else {
       toast.success('解析完成，去「识别总览」看看')
       // 解析成功的**唯一**一次自动跳转：用户刚交完图，
@@ -392,7 +392,7 @@ async function saveDetailAndRediagnose() {
               <button
                 v-for="opt in [
                   { v: 'full', label: '完整结构', hint: '房间/墙体/门窗/尺寸' },
-                  { v: 'basic', label: '仅房间名', hint: '更快，结构字段留空' },
+                  { v: 'basic', label: '仅房间名', hint: '更快，墙体与门窗信息会留空' },
                 ]"
                 :key="opt.v"
                 class="flex-1 rounded-xl border px-3 py-2 text-left transition-all"
@@ -650,7 +650,7 @@ async function saveDetailAndRediagnose() {
           class="mb-2 rounded-xl border border-accent-gold/40 bg-wood-light/50 p-2.5 text-[11px] leading-relaxed text-wood"
         >
           这次走的是<strong class="font-semibold">降级解析</strong>：只拿到了房间名，
-          面积/朝向/墙体这些结构字段为空。要用完整数据请换一张更清晰的户型图重试。
+          面积、朝向、墙体与门窗这些都没有读出来。要用完整数据请换一张更清晰的户型图重试。
         </p>
 
         <ul class="grid grid-cols-1 gap-1.5 sm:grid-cols-2">

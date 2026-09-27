@@ -139,7 +139,7 @@ const ENTRIES = [
     to: '/generate',
     icon: 'sparkle',
     title: '方案生成',
-    desc: '三路 Agent 并行产出空间规划、预算造价、材料选型，再做汇聚审查',
+    desc: '同时产出空间规划、预算造价与材料选型，再做一次汇总复核',
     meta: '实测约 95 秒',
   },
   {
@@ -170,7 +170,7 @@ const statCards = computed(() => {
   return [
     {
       label: '户型', value: num(s?.layouts),
-      hint: s?.available ? '已解析并落库' : '数据库不可用',
+      hint: s?.available ? '已解析并保存' : '暂时读不到',
       tone: 'text-wood-dark',
     },
     {
@@ -179,7 +179,7 @@ const statCards = computed(() => {
       tone: 'text-wood-dark',
     },
     {
-      label: '审计事件', value: num(s?.audit_events),
+      label: '操作记录', value: num(s?.audit_events),
       hint: s?.available ? `其中登录 ${s.by_action.login ?? 0} 次` : '数据库不可用',
       tone: 'text-botanical',
     },
