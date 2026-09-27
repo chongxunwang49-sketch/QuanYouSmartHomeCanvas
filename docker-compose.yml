@@ -19,7 +19,7 @@
 #    占掉约 6.13 GiB，**只剩约 1.50 GiB**。
 #    本文件四个 mem_limit 合计 1428 MB —— 塞得进去，但**没有文档 §3.2 要求的
 #    那 2 GB 安全垫**（那一节的账把 my-rerank 当成了宿主机进程，而实测它是容器，
-#    吃的是这 7.63 GiB 里的 2.56 GiB，见对话交接.md §4.5.3 的修正）。
+#    吃的是这 7.63 GiB 里的 2.56 GiB，见 docs/项目记录/对话交接.md §4.5.3 的修正）。
 #
 #    mem_limit 是**上限不是预留**，四容器实际占用约 725 MB，
 #    所以真实余量约 800 MB。要拿到舒服的安全垫，最干净的杠杆是
@@ -107,7 +107,7 @@ services:
     # ⚠️ 8000 被本地 uvicorn 占着（dev 模式那套）。
     #    对策是**腾出 8000，不要改端口** —— dev（vite + uvicorn）与
     #    compose 本来就是同一件事的两种跑法，在 8000 上天然互斥。
-    #    这是模式切换，不是要解决的冲突。见对话交接.md §4.7.2 ①。
+    #    这是模式切换，不是要解决的冲突。见 docs/项目记录/对话交接.md §4.7.2 ①。
     ports:
       - "127.0.0.1:8000:8000"
     environment:
@@ -131,7 +131,7 @@ services:
       #    也就是说 **compose 模式下整条降级链是死的**（降级本身又静默成功，
       #    任务显示 completed、degraded=True，但房间数为 0）。
       #    依据 §3.2：「Ollama | 宿主机原生（已在跑）| 不计入 Docker VM」。
-      #    对话交接.md §4.7.2 ④ 只提到了 my-rerank 要用 host.docker.internal，
+      #    docs/项目记录/对话交接.md §4.7.2 ④ 只提到了 my-rerank 要用 host.docker.internal，
       #    漏了 Ollama —— 这里一并补上。
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
 

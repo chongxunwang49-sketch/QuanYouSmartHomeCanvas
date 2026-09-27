@@ -231,9 +231,12 @@ seed_data/     价格表 · 材料目录（28）· 家具目录（51）· 语料
                演示户型详情（3 份，由 演示素材/演示资料/ 同步而来，见 sync_demo_details.py）
 mcp_servers/   parse_house_layout · calc_budget · render_layout_svg
 scripts/       e2e_smoke · review_sample_quote · replay_golden_path · mcp_smoke …
+               probes 性质的（`_probe_*` / `qy-*`）与 palette/（调色板推导的中间产物）
+               —— 都是一次性工具与产物，不是构建链的一环
 frontend/src/  api/  components/（17）  views/（18）  composables/  stores/  three/
 演示素材/       户型图（3 张，不涉版权，脚本可重跑）+ 演示资料（3 份屋主详情，与图一一对应）
-docs/          需求/（项目说明书）· 参考/（开源清单）· 面试/（亮点与追问预案）
+docs/          需求/（项目说明书 · 项目说明文档）· 参考/（开源清单）
+               面试/（亮点与追问预案）· 项目记录/（对话交接 · 恢复说明）
 ```
 
 ---
@@ -248,7 +251,7 @@ docs/          需求/（项目说明书）· 参考/（开源清单）· 面试
 | [演示素材/README.md](演示素材/README.md) | 三张演示户型图与三份屋主详情怎么配对、怎么跑演示、实测诊断对照 |
 | [frontend/README.md](frontend/README.md) | 前端结构、构建纪律与设计令牌 |
 | [docs/面试/面试亮点.md](docs/面试/面试亮点.md) | 可讲事件与追问预案 |
-| [对话交接.md](对话交接.md) · [恢复说明.md](恢复说明.md) | 跨会话交接要点；一次数据丢失事故的定位与逐字节恢复记录 |
+| [docs/项目记录/](docs/项目记录/) | **项目记录**：[对话交接.md](docs/项目记录/对话交接.md)（跨会话交接要点）· [恢复说明.md](docs/项目记录/恢复说明.md)（一次数据丢失事故的定位与逐字节恢复记录） |
 
 ---
 

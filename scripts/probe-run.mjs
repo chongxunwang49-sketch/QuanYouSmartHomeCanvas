@@ -1,3 +1,13 @@
+/**
+ * ⚠️ **这个脚本跑不起来**（2026-09-28 整理时发现，如实标注而不是留着让人踩）：
+ *    它 `import { buildFurniture } from './.probe-furniture.mjs'`，
+ *    而那个文件**在仓库里从来没有过**（`git log --diff-filter=A` 查过，
+ *    一次都没有）。多半是当时只在本地存在、随某次事故一起没了。
+ *
+ * 留着的理由：它记着"怎么把家具构造器单独摘出来跑"这件事本身。
+ * 要用的话，把 `.probe-furniture.mjs` 照 `frontend/src/three/` 里的
+ * 家具构造补出来即可；不需要就直接删。
+ */
 
 import { buildFurniture } from './.probe-furniture.mjs'
 
