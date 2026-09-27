@@ -64,6 +64,33 @@ DEFAULT_WALL_THICKNESS_M = 0.2
 #: 要求严格相等会把本该闭合的墙判成断开。
 WELD_TOLERANCE_M = 0.12
 
+#: 门窗中心离墙多远就"挂不上这面墙"（米）。超过就返回 `wall_index = -1`。
+#:
+#: ══════════════════════════════════════════════════════════════════
+#: 这个数原来是 **1.0**，2026-09-27 改成 1.5 —— 原因是它把入户门丢了
+#: ══════════════════════════════════════════════════════════════════
+#: 需求方原话：「在动态漫游时，我发现你做的房间没有房间到外面的出口…
+#: 平面图是显示的房间朝外的大门的…仅仅是让生成的 3d 小屋有通外的大门。」
+#:
+#: 量出来的账（`scripts/_probe_wall_snap.py`，冻结的黄金解析产物）：
+#:
+#   · 那扇入户门中心离最近的墙 **1.11m**，次近的墙在 2.25m 外；
+#   · 而这里卡的是 1.0m —— 差 0.11m，整扇门被丢掉：
+#     `wall_index = -1` → 3D 里**既不画门扇、墙上也不开洞**，
+#     而上传的平面图上那扇门清清楚楚。
+#   · 同一份产物里其余 13 个洞口都在 0.60m 以内，所以只有这一扇中招 ——
+#     表现就是"别的门都在，唯独进屋的大门没有"。
+#:
+#: ⚠️ **解析给的门中心本来就抖**：`walkable.py` 里记着实测 0.5～1.2m 的
+#:    偏差（门是用开启弧估出来的，窗是双线段，所以门更飘）。也就是说
+#:    "1.0m 以内"这条要求比解析自己的精度还紧 —— 它按噪声判门，而不是按几何。
+#:
+#: ⚠️ 这个数必须与 `walkable.MAX_DOOR_CENTER_OFFSET_M` **一致**。那一条校验的是
+#:    "由 offset 推出来的门位离 center 多远还算可信"，问的是同一个问题。
+#:    两处各写各的（1.0 / 1.5）就是这次丢门的结构性原因。现在只有一份定义，
+#:    `walkable` 从这里 import。
+WALL_SNAP_TOLERANCE_M = 1.5
+
 #: 比例尺由两个来源推导，分歧超过这个比例就告警。
 SCALE_DISAGREEMENT_WARN = 0.12
 
@@ -780,6 +807,10 @@ def _locate_on_wall(center: Vec2, walls: Sequence[WallSeg]) -> tuple[int, float]
 
     这个映射是**热区的几何依据** —— 3D 里要在墙上开洞，2D 里要把热点
     画在门的位置上，两处用的是同一个结果。
+
+    ⚠️ 容差是 `WALL_SNAP_TOLERANCE_M`，**与 `walkable` 那边校验门位的
+       容差是同一个数**。这两处曾经各写各的（这里 1.0、那边 1.5），
+       后果见那个常量的说明。
     """
     best: tuple[int, float, float] = (-1, 0.0, float("inf"))
     for wi, w in enumerate(walls):
@@ -790,8 +821,7 @@ def _locate_on_wall(center: Vec2, walls: Sequence[WallSeg]) -> tuple[int, float]
                 seg_len = math.dist((a.x, a.y), (b.x, b.y))
                 best = (wi, travelled + t * seg_len, dist)
             travelled += math.dist((a.x, a.y), (b.x, b.y))
-    # 离墙太远（超过 1m）就不认这个映射 —— 那多半是识别偏了
-    if best[2] > 1.0:
+    if best[2] > WALL_SNAP_TOLERANCE_M:
         return -1, 0.0
     return best[0], best[1]
 

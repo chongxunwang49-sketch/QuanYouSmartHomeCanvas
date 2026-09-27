@@ -48,6 +48,7 @@ from typing import Any
 
 from .normalize import (
     DEFAULT_WALL_THICKNESS_M,
+    WALL_SNAP_TOLERANCE_M,
     Scene,
     Vec2,
     _point_seg_distance,
@@ -70,9 +71,13 @@ CUT_DISTANCE_TOLERANCE_M = 0.35
 #: 由 `offset_along_wall_m` 推出来的门位，与解析给的 `center` 最多能差多远。
 #:
 #: 超过就认为这个 offset 不可信（例如墙序被动过），**宁可不切也不切错位置**。
-#: 实测解析的 center 离墙 0.5–1.2m，所以这里放到 1.5m —— 它拦的是
-#: "定位到了另一面墙上"这种数量级的错误，不是解析噪声。
-MAX_DOOR_CENTER_OFFSET_M = 1.5
+#: 它拦的是"定位到了另一面墙上"这种数量级的错误，不是解析噪声。
+#:
+#: ⚠️ 2026-09-27 起**与 `normalize.WALL_SNAP_TOLERANCE_M` 是同一个值**。
+#:    这里原来自写一个 1.5，而"门窗挂到哪面墙"那边卡 1.0 —— 两个数问的是
+#:    同一个问题（门离墙多远还算得准），却宽严不一，结果把离墙 1.11m 的
+#:    入户门挡在门外（3D 里既没门扇也没洞）。现在只有一份定义。
+MAX_DOOR_CENTER_OFFSET_M = WALL_SNAP_TOLERANCE_M
 
 #: 切出来的碎段短于这个长度就丢掉（门在墙角时会切出这种）。
 MIN_SEGMENT_M = 0.02
@@ -227,6 +232,17 @@ class DoorEdge:
     #: ⚠️ 放在字段表**末尾**是有原因的：dataclass 不允许无默认值的
     #: 字段跟在有默认值的后面。放中间会让整个类的构造直接 TypeError。
     passable: bool = True
+    #: 这扇门是不是**通往户外的门**（入户门 / 大门）。
+    #:
+    #: 判据是几何的、不是猜的：门的一侧是房间、另一侧**不是任何房间**
+    #: （见 `_is_exterior_door`）。入户门本来就该看得见、走不到别的房间去，
+    #: 所以它同时也是 `passable=False` 的那一类。
+    #:
+    #: ⚠️ 需求方 2026-09-28：「在动态漫游时，我发现你做的房间没有房间到
+    #:    外面的出口…平面图是显示的房间朝外的大门的…仅仅是让生成的 3d
+    #:    小屋有通外的大门，跟平面图对应。」这个字段就是那条要求的落点 ——
+    #:    有没有通外的门，现在是**算出来并且说得出口**的，而不是"看不见就算了"。
+    is_entrance: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -236,6 +252,7 @@ class DoorEdge:
             "from_room": self.from_room,
             "to_room": self.to_room,
             "passable": self.passable,
+            "is_entrance": self.is_entrance,
             "hinge": self.hinge.as_list(),
             "along": [round(self.along.x, 4), round(self.along.y, 4)],
             "normal": [round(self.normal.x, 4), round(self.normal.y, 4)],
@@ -331,6 +348,19 @@ def build_walkable(
 
     spawn_room, spawn, yaw = _pick_spawn(rooms, doors)
     _mark_reachable(rooms, doors, spawn_room)
+
+    # ── 一扇通外的门都没有时，如实说 ──
+    #
+    # ⚠️ 需求方 2026-09-28：3D 里"没有通外的大门"。这条要求有两半，
+    #    这一半是"**有没有**都得说清楚"：有就标出来（门上的 `is_entrance`
+    #    在 `_build_doors` 里已经算好），一扇都没有就明说 —— 一个封死的盒子
+    #    如果什么都不说，用户只会以为是自己没找到门。
+    if doors and not any(d.is_entrance for d in doors):
+        notes.append(
+            "没有识别到通往户外的门（入户门）—— 3D 里这户的围墙是整圈闭合的。"
+            "平面图上若有入户门，换一张门洞更清晰的户型图重试通常能读出来；"
+            "现在也可以继续用自由视角查看整个户型。"
+        )
 
     # ── 门与门洞必须一一对应；进不去的房间要说出来 ──
     issues.extend(_audit_doors_and_access(rooms, doors, collision, scene))
@@ -727,6 +757,10 @@ def _build_doors(
                 f"这扇门仍然会画出来，但走不过去（不计入通行图）"
             )
 
+        # ⚠️ 通不通户外的判据在**构造时**就算好 —— `DoorEdge` 是 frozen
+        #    dataclass，构造之后再赋值会 `FrozenInstanceError`（第一次就撞上了）。
+        is_entrance = _is_exterior_door(rooms, p, n)
+
         # 铰链取门洞的一端。哪一端都行（门可以左开也可以右开），
         # 取靠近墙起点的这一端，保证同一份输入每次得到同一扇门 ——
         # 否则重放时门会左右横跳。
@@ -750,6 +784,7 @@ def _build_doors(
                 from_room=a if passable else -1,
                 to_room=b if passable else -1,
                 passable=passable,
+                is_entrance=is_entrance,
                 hinge=Vec2(p.x - u.x * half, p.y - u.y * half),
                 along=u,
                 normal=n,
@@ -1007,6 +1042,29 @@ def _gap_exists_on_wall(collision: list[CollisionSeg], door: DoorEdge,
         if 1e-6 < t < 1 - 1e-6 and dist <= half * 1.5 + 1e-6:
             return False
     return True
+
+
+#: 判"门外面是不是房间"时，从门往两侧各探多远（米）。
+#: 取 1.0 是因为墙厚最多 0.24m，探针必须跨出墙带之外才问得清"那侧有没有房间"。
+_EXTERIOR_PROBE_M = 1.0
+
+
+def _is_exterior_door(rooms: list[RoomNode], p: Vec2, n: Vec2) -> bool:
+    """
+    门的一侧是房间、另一侧不是 —— 那就是**通到户外的门**（入户门）。
+
+    ⚠️ 用几何判，不用"能不能连通"判：`passable=False` 只能说明"两侧没都识别出
+       房间"，室内门识别不清时也会是 False。而"一侧有房、另一侧空"是**外面**
+       才有的形状 —— 判错的方向只会漏报，不会把室内门说成大门。
+
+    ⚠️ 参数是位置与法向、不是 `DoorEdge`：`DoorEdge` 是 frozen dataclass，
+       而这个值要在**构造它的时候**就算好（构造之后没法再赋值）。
+    """
+    here = _room_at(rooms, Vec2(p.x - n.x * _EXTERIOR_PROBE_M,
+                                p.y - n.y * _EXTERIOR_PROBE_M))
+    there = _room_at(rooms, Vec2(p.x + n.x * _EXTERIOR_PROBE_M,
+                                 p.y + n.y * _EXTERIOR_PROBE_M))
+    return (here >= 0) != (there >= 0)
 
 
 def _audit_doors_and_access(

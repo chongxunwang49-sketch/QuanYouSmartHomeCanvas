@@ -28,13 +28,21 @@
 from __future__ import annotations
 
 import copy
+import json
 import math
 from collections import deque
+import pathlib
 
 import pytest
 
-from backend.app.services.geometry import normalize_layout
-from backend.app.services.geometry.normalize import Vec2, wall_point_at
+from backend.app.services.geometry import normalize_layout, walkable
+from backend.app.services.geometry.normalize import (
+    WALL_SNAP_TOLERANCE_M,
+    Vec2,
+    WallSeg,
+    _locate_on_wall,
+    wall_point_at,
+)
 from backend.app.services.geometry.walkable import (
     DEFAULT_PLAYER_RADIUS_M,
     build_walkable,
@@ -1176,3 +1184,141 @@ def _blocking_segments(w, door) -> list:
         if 1e-6 < t < 1 - 1e-6 and dist <= 0.35:
             out.append(seg)
     return out
+
+
+class TestDoorSnapToleranceMatchesTheParsesOwnNoise:
+    """
+    ⚠️ **离墙 1.11m 的入户门，必须照样挂得上墙。**
+
+    ══════════════════════════════════════════════════════════════════
+    需求方 2026-09-28 的原话
+    ══════════════════════════════════════════════════════════════════
+    > 在动态漫游时，我发现你做的房间没有房间到外面的出口…平面图是显示的
+    > 房间朝外的大门的…仅仅是让生成的 3d 小屋有通外的大门，跟平面图对应。
+
+    量出来的账（`scripts/_probe_wall_snap.py`，跑在冻结的黄金解析产物上）：
+
+      · 那扇入户门的中心离最近的墙 **1.11m**（次近的墙在 2.25m 外）；
+      · 而 `_locate_on_wall` 当时卡的是 **1.0m** —— 差 0.11m，整扇门被丢掉：
+        `wall_index = -1` → 3D 里既不画门扇、墙上也不开洞；
+      · 同一份产物里其余 13 个洞口都在 0.60m 以内，**只有这一扇中招**，
+        表现就是"别的门都在，唯独通外的大门没有"。
+
+    这不是"门槛稍微紧了点"，而是**两处各写各的**：
+    `walkable.MAX_DOOR_CENTER_OFFSET_M` 早就写了 1.5（它的注释里明说
+    "实测解析的 center 离墙 0.5–1.2m，所以放到 1.5"），而挂墙那一步
+    还在用 1.0 —— 同一个问题两个答案，宽的那个在下面、紧的那个在上面，
+    于是紧的那个说了算。
+
+    所以下面第一条测的是"它们必须是同一个数"，后两条测这个数的大小：
+    能收下解析噪声（≥1.2m），又不至于把三里地外的门吸过来。
+    """
+
+    @staticmethod
+    def _one_wall() -> list:
+        """一面从 (0,0) 到 (5,0) 的直墙。"""
+        return [WallSeg(points=[Vec2(0.0, 0.0), Vec2(5.0, 0.0)], kind="unknown")]
+
+    def test_两处容差必须是同一个数(self):
+        """
+        `_locate_on_wall`（挂到哪面墙）与 `walkable`（offset 可不可信）
+        问的是同一个问题：「门离墙多远还算得准」。各写各的就会再次分叉。
+        """
+        assert walkable.MAX_DOOR_CENTER_OFFSET_M == WALL_SNAP_TOLERANCE_M, (
+            "两个容差又分叉了 —— 见这个类与 normalize.WALL_SNAP_TOLERANCE_M 的说明"
+        )
+
+    def test_容差至少覆盖解析实测到的最大偏差(self):
+        """实测解析给的门中心离墙 0.5～1.2m（门是用开启弧估的，比窗飘）。"""
+        assert WALL_SNAP_TOLERANCE_M >= 1.2, (
+            f"容差 {WALL_SNAP_TOLERANCE_M}m 小于解析自身的噪声 1.2m —— "
+            f"那就是在按噪声判门，离得稍远的那扇会被整扇丢掉"
+        )
+
+    @pytest.mark.parametrize("distance", [0.5, 1.0, 1.11, 1.4])
+    def test_离墙这么远的门仍然挂得上(self, distance: float):
+        """1.11 是黄金产物里那扇入户门的实测值，不是编的。"""
+        idx, off = _locate_on_wall(Vec2(2.5, distance), self._one_wall())
+        assert idx == 0, f"离墙 {distance}m 的门挂不上墙（→ 3D 里既没门扇也没洞）"
+        assert off == pytest.approx(2.5, abs=0.01)
+
+    def test_三里地之外的门不能硬吸到墙上(self):
+        """
+        反例。容差不能无限大 —— 那会把飘在房间中间的门也吸到最近的墙上，
+        凭空多出一扇现实里不存在的门。
+        """
+        idx, _off = _locate_on_wall(Vec2(2.5, 3.0), self._one_wall())
+        assert idx == -1, "离墙 3m 的门也被吸上墙了 —— 容差放得太宽"
+
+    def test_黄金产物里每个洞口都挂上了墙(self):
+        """
+        真实数据回归：这份冻结产物里曾有 1 个门挂不上墙（就是上面那扇入户门）。
+        它同时是"3D 里少了扇门"的根因，所以直接钉住整份产物。
+        """
+        fixture = (pathlib.Path(__file__).resolve().parents[1]
+                   / "scripts" / "fixtures" / "golden_layout.json")
+        if not fixture.is_file():
+            pytest.skip("没有固定输入 scripts/fixtures/golden_layout.json")
+        sc = normalize_layout(json.loads(fixture.read_text(encoding="utf-8")))
+        orphans = [i for i, o in enumerate(sc.openings) if o.wall_index < 0]
+        assert not orphans, (
+            f"第 {orphans} 个洞口没挂到任何墙上 —— 它们在 3D 里既没有门窗、"
+            f"墙上也没有洞，而上传的平面图上是画着的"
+        )
+
+
+class TestExteriorDoorIsIdentified:
+    """
+    通到户外的门（入户门）要**认得出来**；一扇都没有时要**说出来**。
+
+    ══════════════════════════════════════════════════════════════════
+    需求方的原话（2026-09-28）
+    ══════════════════════════════════════════════════════════════════
+    > 在动态漫游时，我发现你做的房间没有房间到外面的出口…平面图是显示的房间
+    > 朝外的大门的…仅仅是让生成的 3d 小屋有通外的大门，跟平面图对应。
+
+    ⚠️ 这条要求的**前一半**（"平面图上有门，3D 里也必须有"）落在这里：
+       把"哪扇门通向户外"算出来标在门上，而不是靠人看图。
+       它的**另一半**是"没有就得说" —— 一个封死的盒子如果什么都不说，
+       用户只会以为是自己没找到门（`_probe_entrance_door.py` 量过：
+       三份演示户型各自都恰好有一扇通外的门，而冻结产物里那扇入户门
+       曾因为挂墙容差太紧被整扇丢掉，3D 里既没门扇也没洞）。
+    """
+
+    @staticmethod
+    def _with_entrance() -> dict:
+        """
+        在客厅南侧的外墙（y=545）上加一扇 1.0m 的门 —— 那就是入户门。
+
+        参考场景的像素尺度约 87 px/m，所以 1.0m ≈ 87px，门宽按 1.0 给。
+        """
+        layout = copy.deepcopy(REAL_LAYOUT)
+        layout["doors"].append({"position": [550, 545], "width": 1.0})
+        return layout
+
+    def test_通到户外的门会被认出来(self):
+        w = build_walkable(normalize_layout(self._with_entrance()))
+        ent = [d for d in w.doors if d.is_entrance]
+        assert len(ent) == 1, (
+            f"应当且只应当认出一扇通外的门，实际认出 {len(ent)} 扇 —— "
+            f"3D 里就没有「大门」可言了"
+        )
+        assert ent[0].width_m == pytest.approx(1.0, abs=0.05)
+        assert not any("户外" in n for n in w.notes), "认出来了就不该再说没有"
+
+    def test_室内门不会被误认成入户门(self):
+        """三扇都开在房间之间的门，一扇都不该标成通外。"""
+        w = build_walkable(normalize_layout(REAL_LAYOUT))
+        assert not any(d.is_entrance for d in w.doors), (
+            "把室内门说成入户门，比漏报更糟 —— 用户会以为那是大门"
+        )
+
+    def test_一扇通外的门都没有时必须明说(self):
+        """
+        REAL_LAYOUT 这份真实解析里没有入户门（三扇门都在房间之间）。
+        这时必须有一句话说明"围墙是整圈闭合的"，否则用户只会以为自己没找到门。
+        """
+        w = build_walkable(normalize_layout(REAL_LAYOUT))
+        assert any("没有识别到通往户外的门" in n for n in w.notes), (
+            f"没有通外的门却不吭声。当前 notes：{w.notes}"
+        )
