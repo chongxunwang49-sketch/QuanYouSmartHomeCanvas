@@ -1188,7 +1188,11 @@ def _blocking_segments(w, door) -> list:
 
 class TestDoorSnapToleranceMatchesTheParsesOwnNoise:
     """
-    ⚠️ **离墙 1.11m 的入户门，必须照样挂得上墙。**
+    ⚠️ **离墙 1.11m 的门，必须照样挂得上墙。**
+
+    （⚠️ 2026-09-28 更正：那扇门实测是**客厅↔阳台的推拉门**，不是入户门 ——
+      我最初按需求方"3D 没有通外的大门"那句话想当然地归因成了入户门。
+      "通到户外的门"是另一件事，见 `TestExteriorDoorIsIdentified`。）
 
     ══════════════════════════════════════════════════════════════════
     需求方 2026-09-28 的原话
@@ -1198,7 +1202,7 @@ class TestDoorSnapToleranceMatchesTheParsesOwnNoise:
 
     量出来的账（`scripts/_probe_wall_snap.py`，跑在冻结的黄金解析产物上）：
 
-      · 那扇入户门的中心离最近的墙 **1.11m**（次近的墙在 2.25m 外）；
+      · 那个洞口的中心离最近的墙 **1.11m**（次近的墙在 2.25m 外）；
       · 而 `_locate_on_wall` 当时卡的是 **1.0m** —— 差 0.11m，整扇门被丢掉：
         `wall_index = -1` → 3D 里既不画门扇、墙上也不开洞；
       · 同一份产物里其余 13 个洞口都在 0.60m 以内，**只有这一扇中招**，
@@ -1237,7 +1241,7 @@ class TestDoorSnapToleranceMatchesTheParsesOwnNoise:
 
     @pytest.mark.parametrize("distance", [0.5, 1.0, 1.11, 1.4])
     def test_离墙这么远的门仍然挂得上(self, distance: float):
-        """1.11 是黄金产物里那扇入户门的实测值，不是编的。"""
+        """1.11 是黄金产物里那个洞口的实测值，不是编的。"""
         idx, off = _locate_on_wall(Vec2(2.5, distance), self._one_wall())
         assert idx == 0, f"离墙 {distance}m 的门挂不上墙（→ 3D 里既没门扇也没洞）"
         assert off == pytest.approx(2.5, abs=0.01)
