@@ -1,13 +1,12 @@
 /**
- * 户型解析页（上传页）两种状态的截图：等待中 / 已有识别结果。
- * 顺带量一下左右两栏的高度差 —— 「右侧大片空洞」就是它。
+ * 户型解析页（上传页）两个状态的截图 + 两栏底边是否对齐的实测。
  *
- * 用法: node scripts/_shot_parse.mjs [layoutId] [parseTaskId]
+ * 用法: node scripts/probes/_shot_parse2.mjs [layoutId] [parseTaskId]
  */
 import { writeFileSync } from 'node:fs'
 
 const LAYOUT = process.argv[2] || 'layout_20260927_4fb0cc'
-const TASK = process.argv[3] || 'task_20260927_322241e4'
+const TASK = process.argv[3] || 'task_20260927_743019a3'
 const PORT = 9222
 const APP = 'http://127.0.0.1/'
 
@@ -35,48 +34,46 @@ const send = (method, params = {}) =>
   })
 const ev = async (expr) => {
   const r = await send('Runtime.evaluate', {
-    expression: expr, awaitPromise: true, returnByValue: true,
-  })
-  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || 'JS')
+    expression: expr, awaitPromise: true, returnByValue: true })
+  if (r.exceptionDetails) throw new Error('JS: ' + (r.exceptionDetails.exception?.description || '').slice(0, 160))
   return r.result.value
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const frame = () => send('Page.captureScreenshot', { format: 'jpeg', quality: 30 })
 
 await send('Page.enable')
 await send('Runtime.enable')
 await send('Emulation.setDeviceMetricsOverride',
   { width: 1680, height: 1000, deviceScaleFactor: 1, mobile: false })
-
 await send('Page.navigate', { url: APP + 'login' })
 await sleep(1500)
-const ok = await ev(`(async()=>{
+await ev(`(async()=>{
   const r=await fetch('/api/v1/auth/login',{method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({username:'vip',password:'vip123'})});
   const j=await r.json();
   localStorage.setItem('qy.access_token', j.data.access_token);
-  return j.code===0;})()`)
-console.log('登录:', ok)
+  return true;})()`)
 
+// 两栏底边对齐的实测
 const measure = `(()=>{
   const grid=document.querySelector('main .grid');
-  if(!grid) return '没有找到两栏网格';
-  const cols=[...grid.children];
-  const h=cols.map(c=>Math.round(c.getBoundingClientRect().height));
-  const r=grid.getBoundingClientRect();
-  return JSON.stringify({左栏高:h[0], 右栏高:h[1], 高度差:h[0]-h[1],
-    网格高:Math.round(r.height), 视口:innerHeight});})()`
+  const cols=[...grid.children].map(c=>{const r=c.getBoundingClientRect();
+    return {top:Math.round(r.top), bottom:Math.round(r.bottom), h:Math.round(r.height)};});
+  const cards=[...grid.children].map(c=>c.querySelectorAll(':scope > .card').length);
+  return JSON.stringify({左栏:cols[0], 右栏:cols[1],
+    底边差:Math.abs(cols[0].bottom-cols[1].bottom), 各栏卡片数:cards});})()`
 
 async function shot(label, url) {
   await send('Page.navigate', { url })
-  await sleep(3500)
-  const m = await ev(measure)
-  console.log(`\n【${label}】${m}`)
+  for (let i = 0; i < 60; i++) { await sleep(150); if (i % 5 === 0) await frame() }
+  await sleep(600)
+  console.log(`\n【${label}】`)
+  console.log('  ', await ev(measure))
   const s = await send('Page.captureScreenshot', { format: 'png' })
-  writeFileSync(`logs/_parse-${label}.png`, Buffer.from(s.data, 'base64'))
-  console.log(`  截图 → logs/_parse-${label}.png`)
+  writeFileSync(`logs/_parse2-${label}.png`, Buffer.from(s.data, 'base64'))
+  console.log(`  截图 → logs/_parse2-${label}.png`)
 }
 
-await shot('waiting', APP + 'parse')
-await shot('with-result', `${APP}parse?layout=${LAYOUT}&task=${TASK}`)
+await shot('result', `${APP}parse?layout=${LAYOUT}&task=${TASK}`)
 ws.close()

@@ -5,7 +5,7 @@
  * 声明是靠自动外边距压到底的 —— 窗口一矮，自动外边距先被吃掉，
  * 再矮就轮到声明被裁。左栏本身是 `overflow-hidden`（图墙必须裁），裁掉就真看不见了。
  *
- *     node scripts/_probe_login_short.mjs
+ *     node scripts/probes/_probe_login_short.mjs
  */
 import { writeFileSync } from 'node:fs'
 

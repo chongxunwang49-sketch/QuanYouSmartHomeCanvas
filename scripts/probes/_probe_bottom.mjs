@@ -10,7 +10,7 @@
  *   · 容器内部最后 8px 处是否真的能命中内容（而不是压在别的容器下面）
  *   · 侧栏那种「自己滚的列」是否与主内容区相互独立
  *
- * 用法: node scripts/_probe_bottom.mjs [视口高]
+ * 用法: node scripts/probes/_probe_bottom.mjs [视口高]
  */
 import { writeFileSync } from 'node:fs'
 

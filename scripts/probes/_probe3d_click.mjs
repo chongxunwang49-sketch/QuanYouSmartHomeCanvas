@@ -6,7 +6,7 @@
  *   ② 热启动（同一会话再点一次）
  *   ③ 只把 three 那一段预热之后（模拟"悬停就预取"）
  *
- * 用法: node scripts/_probe3d_click.mjs [layoutId] [parseTaskId]
+ * 用法: node scripts/probes/_probe3d_click.mjs [layoutId] [parseTaskId]
  */
 import { writeFileSync } from 'node:fs'
 

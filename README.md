@@ -230,9 +230,12 @@ backend/app/
 seed_data/     价格表 · 材料目录（28）· 家具目录（51）· 语料白名单 · 样本报价单
                演示户型详情（3 份，由 演示素材/演示资料/ 同步而来，见 sync_demo_details.py）
 mcp_servers/   parse_house_layout · calc_budget · render_layout_svg
-scripts/       e2e_smoke · review_sample_quote · replay_golden_path · mcp_smoke …
-               probes 性质的（`_probe_*` / `qy-*`）与 palette/（调色板推导的中间产物）
-               —— 都是一次性工具与产物，不是构建链的一环
+scripts/       可复用脚本：e2e_smoke · review_sample_quote · replay_golden_path ·
+               mcp_smoke · derive_*_palette · ingest_knowledge · init_db · warmup …
+  fixtures/    固定输入（一次真实解析的存档，重放与多个测试都用它）
+  probes/      一次性探针，57 个：量几何 / 截界面 / 核文案 —— **不是构建链的一环**，
+               跑法都写在各自文件头的 docstring 里
+  palette/     调色板推导的中间产物（三个候选 → 提案 → 定稿）
 frontend/src/  api/  components/（17）  views/（18）  composables/  stores/  three/
 演示素材/       户型图（3 张，不涉版权，脚本可重跑）+ 演示资料（3 份屋主详情，与图一一对应）
 docs/          需求/（项目说明书 · 项目说明文档）· 参考/（开源清单）

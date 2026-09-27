@@ -1,7 +1,7 @@
 """
 变异测试：把 02 那份详情的建筑面积改掉，`tests/test_demo_assets.py` 该不该红。
 
-    python scripts/_mutate_demo_area.py
+    python scripts/probes/_mutate_demo_area.py
 
 改完自动还原（try/finally）。**跑不红就是测试没用** ——
 这正是本项目对"守卫型测试"的一贯要求（见 tests/test_walkable.py 里的同类做法）。

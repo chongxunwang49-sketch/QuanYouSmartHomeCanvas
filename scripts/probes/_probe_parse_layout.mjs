@@ -5,7 +5,7 @@
  * 后来右栏又加了一整个「户型详情（文字资料）」模块，右栏比原来高得多 ——
  * 这条探针就是回归检查：**左右两栏的最后一张卡，底边差多少**。
  *
- *     node scripts/_probe_parse_layout.mjs
+ *     node scripts/probes/_probe_parse_layout.mjs
  */
 import { writeFileSync } from 'node:fs'
 

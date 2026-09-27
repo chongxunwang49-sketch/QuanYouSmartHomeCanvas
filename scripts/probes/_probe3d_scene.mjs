@@ -5,7 +5,7 @@
  *   · 每件家具世界坐标在不在它自己那间房的矩形里（渲染侧，不是接口侧）
  * 最后把相机按到正俯视，截一张能一眼看全的图。
  *
- * 用法: node scripts/_probe3d_scene.mjs [layoutId] [planId] [taskId]
+ * 用法: node scripts/probes/_probe3d_scene.mjs [layoutId] [planId] [taskId]
  */
 import { writeFileSync } from 'node:fs'
 

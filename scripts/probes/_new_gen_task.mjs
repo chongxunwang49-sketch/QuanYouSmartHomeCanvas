@@ -3,7 +3,7 @@
  * 给探针用：后端重启/任务过期之后，需要一个"活"的 generate 任务才能打开
  * 带家具的 3D 漫游。
  *
- * 用法: node scripts/_new_gen_task.mjs [layoutId]
+ * 用法: node scripts/probes/_new_gen_task.mjs [layoutId]
  */
 const BASE = 'http://127.0.0.1/api/v1'
 const LAYOUT = process.argv[2] || 'layout_20260927_4fb0cc'

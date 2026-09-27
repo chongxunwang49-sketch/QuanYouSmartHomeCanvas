@@ -7,7 +7,7 @@
  * 这条路径的意义：需求方问的是"三个平面图各自的屋子详细资料在哪、
  * 是不是一一对应"。文件在磁盘上对上了只是一半，**界面上点得到、挑得对**才是另一半。
  *
- *     node scripts/_probe_demo_flow.mjs [01|02|03]
+ *     node scripts/probes/_probe_demo_flow.mjs [01|02|03]
  *
  * 需要：Edge 开着 --remote-debugging-port=9222，四个容器 healthy。
  */

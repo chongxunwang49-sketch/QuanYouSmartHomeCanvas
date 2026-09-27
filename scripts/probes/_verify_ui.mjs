@@ -3,7 +3,7 @@
  *   ① 登录页图墙滚动时，左上角品牌行**不许闪**（连拍多张，逐张比那一块的像素）
  *   ② 侧栏子菜单全展开时，底部账号按钮**必须还能点到**（命中测试 + 可滚动）
  *
- * 用法：先起 9222 的 Edge，再 node scripts/_verify_ui.mjs
+ * 用法：先起 9222 的 Edge，再 node scripts/probes/_verify_ui.mjs
  */
 import { writeFileSync } from 'node:fs'
 

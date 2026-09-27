@@ -1,7 +1,7 @@
 """
 每个门窗洞口**离最近的墙有多远**，以及当前 1.0m 的容差把谁挡在门外。
 
-    python scripts/_probe_wall_snap.py            # 三份演示图的真实解析产物
+    python scripts/probes/_probe_wall_snap.py            # 三份演示图的真实解析产物
 
 背景：`normalize._locate_on_wall` 超过 **1.0m** 就返回 `(-1, 0)`，
 而解析给的门中心实测能偏到 **0.96～1.20m**（`walkable.py` 的注释里有记录）。

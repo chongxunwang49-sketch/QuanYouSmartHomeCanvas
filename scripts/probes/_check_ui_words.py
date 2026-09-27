@@ -1,7 +1,7 @@
 """
 扫一遍前端模板，看还有没有"工程词"留在界面上。
 
-    python scripts/_check_ui_words.py
+    python scripts/probes/_check_ui_words.py
 
 只扫**会渲染**的部分：模板里的纯文本、`{{ }}` 里的字符串字面量、
 `<script>` 里的字符串字面量（它们经 `{{ }}` 插进模板）。注释一律剥掉

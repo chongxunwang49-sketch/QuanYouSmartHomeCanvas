@@ -1,8 +1,8 @@
 """
 一次性探针：3D 里**入户门有没有洞**。
 
-    python scripts/_probe_entrance_door.py                      # 用冻结的黄金解析产物
-    python scripts/_probe_entrance_door.py --layout <path.json>  # 用别处存下来的 layout
+    python scripts/probes/_probe_entrance_door.py                      # 用冻结的黄金解析产物
+    python scripts/probes/_probe_entrance_door.py --layout <path.json>  # 用别处存下来的 layout
 
 需求方 2026-09-28：
 > 在动态漫游时，我发现你做的房间没有房间到外面的出口…平面图是显示的房间

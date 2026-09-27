@@ -4,7 +4,7 @@
  * 需求方提的三条（去除淡色衬底、把副标题那类文字改纯白、标题往上贴住品牌行）
  * 都要求"别把不该动的字挪走"，所以先量一遍现状，改完再量一遍对照。
  *
- *     node scripts/_probe_login_left.mjs [前后缀]
+ *     node scripts/probes/_probe_login_left.mjs [前后缀]
  */
 import { writeFileSync } from 'node:fs'
 

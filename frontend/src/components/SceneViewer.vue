@@ -285,7 +285,7 @@ async function build() {
   rig.setHorizontalFov(hFov.value)
 
   /**
-   * 调试句柄，给 `frontend/probe/` 与 `scripts/_probe*.mjs` 用。
+   * 调试句柄，给 `frontend/probe/` 与 `scripts/probes/_probe*.mjs` 用。
    *
    * ⚠️ 为什么留着它：探针要读的是**真实运行状态**（相机摆在哪儿、
    *    场景里有多少 mesh、家具组在不在、当前档位），这些没有别的入口。

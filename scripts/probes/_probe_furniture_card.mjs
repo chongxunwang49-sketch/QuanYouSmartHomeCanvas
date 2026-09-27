@@ -9,7 +9,7 @@
  *
  * 判据：鼠标移过去之后，DOM 里出现一张写着**这件家具名字**的卡片。
  *
- * 用法: node scripts/_probe_furniture_card.mjs [layoutId] [planId] [taskId]
+ * 用法: node scripts/probes/_probe_furniture_card.mjs [layoutId] [planId] [taskId]
  */
 import { writeFileSync } from 'node:fs'
 

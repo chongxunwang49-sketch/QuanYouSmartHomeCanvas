@@ -1200,7 +1200,7 @@ class TestDoorSnapToleranceMatchesTheParsesOwnNoise:
     > 在动态漫游时，我发现你做的房间没有房间到外面的出口…平面图是显示的
     > 房间朝外的大门的…仅仅是让生成的 3d 小屋有通外的大门，跟平面图对应。
 
-    量出来的账（`scripts/_probe_wall_snap.py`，跑在冻结的黄金解析产物上）：
+    量出来的账（`scripts/probes/_probe_wall_snap.py`，跑在冻结的黄金解析产物上）：
 
       · 那个洞口的中心离最近的墙 **1.11m**（次近的墙在 2.25m 外）；
       · 而 `_locate_on_wall` 当时卡的是 **1.0m** —— 差 0.11m，整扇门被丢掉：

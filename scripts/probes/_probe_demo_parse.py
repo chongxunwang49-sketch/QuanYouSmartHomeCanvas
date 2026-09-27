@@ -2,8 +2,8 @@
 一次性探针：把 `演示素材/户型图/` 下三张演示图各真跑一遍解析，
 把解析出来的房间/门窗/面积落盘，供写「屋主户型详情」时对齐用。
 
-    python scripts/_probe_demo_parse.py            # 三张全跑
-    python scripts/_probe_demo_parse.py 01 03      # 只跑指定编号
+    python scripts/probes/_probe_demo_parse.py            # 三张全跑
+    python scripts/probes/_probe_demo_parse.py 01 03      # 只跑指定编号
 
 ⚠️ 这不是验收脚本，是**一次性测量工具**（起名 `_probe_` 与本项目其它探针一致）。
    解析要调视觉模型，两张约 1–2 分钟。

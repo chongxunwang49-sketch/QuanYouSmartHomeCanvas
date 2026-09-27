@@ -96,9 +96,9 @@ docker compose build qy-backend && docker compose up -d qy-backend
 重新量一遍（都要连本机跑着的后端，会真的调模型）：
 
 ```bash
-python scripts/_probe_demo_parse.py            # 三张图各解析一次
-python scripts/_probe_demo_diagnosis.py <layout_id> [...]   # 补详情前后的对照
-node   scripts/_probe_demo_flow.mjs 02         # 浏览器里走完整条演示路径
+python scripts/probes/_probe_demo_parse.py            # 三张图各解析一次
+python scripts/probes/_probe_demo_diagnosis.py <layout_id> [...]   # 补详情前后的对照
+node   scripts/probes/_probe_demo_flow.mjs 02         # 浏览器里走完整条演示路径
 ```
 
 最后一条要 Edge 开着 `--remote-debugging-port=9222`，它会截图到 `logs/`，

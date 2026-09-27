@@ -4,7 +4,7 @@
  *
  * 同时检查：视口高很低时，`main` 的实际可滚高度是否与内容一致。
  *
- * 用法: node scripts/_probe_overflow.mjs [宽] [高]
+ * 用法: node scripts/probes/_probe_overflow.mjs [宽] [高]
  */
 import { writeFileSync } from 'node:fs'
 

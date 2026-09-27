@@ -1,8 +1,8 @@
 """
 一次性探针：三张演示图各自「补详情前 / 补详情后」的诊断对照。
 
-    python scripts/_probe_demo_diagnosis.py <layout_id> [<layout_id> ...]
-    python scripts/_probe_demo_diagnosis.py --keep-detail <layout_id> ...
+    python scripts/probes/_probe_demo_diagnosis.py <layout_id> [<layout_id> ...]
+    python scripts/probes/_probe_demo_diagnosis.py --keep-detail <layout_id> ...
 
 对每个 layout_id 做四件事：
   ① GET  /layout/{id}/diagnosis            —— 补详情前那一份（解析时跑的）

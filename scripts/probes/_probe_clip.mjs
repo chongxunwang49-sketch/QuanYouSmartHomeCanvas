@@ -7,7 +7,7 @@
  * 顺带统计：每个页面有多少个这样的容器、被藏了多少像素、最后一个被藏住的
  * 可点元素是什么（给定位用）。
  *
- * 用法: node scripts/_probe_clip.mjs [视口高] [视口宽]
+ * 用法: node scripts/probes/_probe_clip.mjs [视口高] [视口宽]
  */
 import { writeFileSync } from 'node:fs'
 

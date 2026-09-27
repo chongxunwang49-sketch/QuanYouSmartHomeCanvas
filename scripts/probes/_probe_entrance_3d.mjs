@@ -1,7 +1,7 @@
 /**
  * 把 3D 相机搬到**入户门正对面**，照一张：那面外墙上到底有没有一个门洞。
  *
- *     node scripts/_probe_entrance_3d.mjs <parse_task_id> [outName]
+ *     node scripts/probes/_probe_entrance_3d.mjs <parse_task_id> [outName]
  *
  * 起因：需求方说"3D 小屋没有通外的大门，而平面图上有"。几何那边量出来
  * 入户门是有洞的（`_probe_entrance_door.py` ③），所以要眼见为实：
@@ -13,7 +13,7 @@ import { writeFileSync } from 'node:fs'
 
 const TASK = process.argv[2]
 const NAME = process.argv[3] || 'entrance'
-if (!TASK) throw new Error('用法：node scripts/_probe_entrance_3d.mjs <parse_task_id> [outName]')
+if (!TASK) throw new Error('用法：node scripts/probes/_probe_entrance_3d.mjs <parse_task_id> [outName]')
 
 const ROOT = 'C:/Users/DELL/Desktop/全友·智绘家QuanYou Smart HomeCanvas'
 const PORT = 9222

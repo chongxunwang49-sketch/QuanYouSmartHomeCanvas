@@ -7,7 +7,7 @@
  * 就绪判据：canvas 出现 **且** 「正在准备 3D 场景…」那行字消失。
  *
  * 用法（先起带 9222 的 Edge）：
- *   D:/VibeCoding/NodeJS/node.exe scripts/_probe3d_timing.mjs [layoutId] [planId]
+ *   D:/VibeCoding/NodeJS/node.exe scripts/probes/_probe3d_timing.mjs [layoutId] [planId]
  */
 import { writeFileSync } from 'node:fs'
 

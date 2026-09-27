@@ -5,7 +5,7 @@
  * `SceneViewer` 把家具组的每个 mesh 摆在 `planToEngine(x, y, h)` 上，
  * 于是可以直接在页面里遍历 `scene`，统计有多少件落在房间矩形内。
  *
- * 用法: node scripts/_shot_furniture.mjs [layoutId] [planId] [taskId]
+ * 用法: node scripts/probes/_shot_furniture.mjs [layoutId] [planId] [taskId]
  */
 import { writeFileSync } from 'node:fs'
 

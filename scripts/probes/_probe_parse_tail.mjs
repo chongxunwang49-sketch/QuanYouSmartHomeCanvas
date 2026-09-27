@@ -7,7 +7,7 @@
  * 记下后端第一次报 completed 的时刻；同时盯着界面出现「识别完成」的时刻。
  * 两者之差就是那段尾巴 —— 与轮询间隔直接相关。
  *
- * 用法: node scripts/_probe_parse_tail.mjs [图片路径]
+ * 用法: node scripts/probes/_probe_parse_tail.mjs [图片路径]
  */
 import { writeFileSync } from 'node:fs'
 
