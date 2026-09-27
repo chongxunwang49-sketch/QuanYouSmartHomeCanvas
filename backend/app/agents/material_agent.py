@@ -52,7 +52,7 @@ from ..graph.state import HomeDecoState
 from ..schemas.material import MaterialPlan
 from ..services.material import catalog
 from ..services.material.filters import MaterialFilters, applicable_categories
-from .base import BaseAgent
+from .base import GRADE_CN, AgentInputError, BaseAgent, plan_label
 
 #: 模型挑选的独立超时。比节点总超时短 —— 让"兜底"先于"熔断"发生。
 #: 与 A-04 的 NARRATIVE_TIMEOUT 同一个思路。
@@ -108,6 +108,7 @@ class MaterialAgent(BaseAgent):
 
     code = "A-05"
     name = "MaterialAgent"
+    label = "材料选择"
     requires_vision = False
     # ⚠️ 同 A-03：30s 是在 `LLM_MAX_TOKENS=8000` 时代定的，提到 32000
     #    之后不够用（完整分析见 space_planner.py 里那段注释）。
@@ -116,9 +117,11 @@ class MaterialAgent(BaseAgent):
     async def run(self, state: HomeDecoState) -> dict[str, Any]:
         layout = state.get("layout")
         if not layout:
-            raise ValueError(
-                "状态中缺少 layout，A-05 无法执行。"
-                "上游 A-01 可能已失败——请检查 errors 字段"
+            # message 会上屏（errors[].message），写给人看的话；细节进日志。
+            self.log.warning("状态中缺少 layout，上游 A-01 未产出，A-05 无法执行")
+            raise AgentInputError(
+                "这次没能拿到户型数据，选材无法进行 —— "
+                "请重新上传户型图解析一次。"
             )
 
         # ══ 业务连续性守卫 ══════════════════════════════════════
@@ -154,8 +157,12 @@ class MaterialAgent(BaseAgent):
         )
 
         if not any(pool.values()):
-            raise ValueError(
+            self.log.warning(
                 f"材料目录中没有任何适配 {spec['budget_grade']} 档的商品，无法选材"
+            )
+            raise AgentInputError(
+                "这一档可选的材料目前一件都没有，选材无法进行 —— "
+                "可以换一个预算档位再试。"
             )
 
         # ══ 第 2 层：模型挑选（只给理由，不给数字）══════════════
@@ -179,8 +186,10 @@ class MaterialAgent(BaseAgent):
         return {
             "plan_bundles": {spec["plan_id"]: {"materials": payload}},
             "degraded": degraded,
+            # ⚠️ 原来是 `[A-05/plan_modern_economy] {r}` —— Agent 代号与主键
+            #    都会原样列在降级提示条上。换成这套方案的中文身份。
             "degrade_reasons": (
-                [f"[A-05/{spec['plan_id']}] {r}" for r in reasons] if reasons else []
+                [f"{plan_label(spec)}：{r}" for r in reasons] if reasons else []
             ),
             "phase": "planning",
             "_llm_meta": getattr(self, "_last_llm_meta", None),
@@ -217,21 +226,20 @@ class MaterialAgent(BaseAgent):
             )
             assert isinstance(parsed, MaterialPlan)
             return parsed, result.degraded, (
-                [f"选材由本地文本模型完成：{result.degrade_reason}"]
+                [f"本次选材由本地处理完成：{result.degrade_reason}"]
                 if result.degrade_reason else []
             )
 
         except asyncio.TimeoutError:
-            reason = f"选材超时（>{SELECT_TIMEOUT}s），已回退确定性排序（选材结果不受影响）"
-            self.log.warning(reason)
+            # ⚠️ `reason` 会经 `degrade_reasons` 上屏：内层超时秒数（配置值）
+            #    与异常类名都只进日志，界面上只留"发生了什么、结果还可用吗"。
+            reason = "选材说明文字的生成超时，已按档位与需求自动匹配出每一项（选材结果不受影响）"
+            self.log.warning(f"选材超时（>{SELECT_TIMEOUT}s），已回退自动匹配结果")
             return self._fallback_select(pool, spec), True, [reason]
 
         except Exception as e:  # noqa: BLE001 —— 模型失败不该让选材整个消失
-            reason = (
-                f"选材失败（{type(e).__name__}: {e}），"
-                f"已回退确定性排序（选材结果不受影响）"
-            )
-            self.log.warning(reason)
+            reason = "选材说明文字的生成失败，已按档位与需求自动匹配出每一项（选材结果不受影响）"
+            self.log.warning(f"选材失败：{type(e).__name__}: {e}，已回退自动匹配结果")
             return self._fallback_select(pool, spec), True, [reason]
 
     @staticmethod
@@ -259,17 +267,23 @@ class MaterialAgent(BaseAgent):
                 "reason": f"{why}（模型不可用，按匹配度自动选出）",
             })
 
+        grade_cn = GRADE_CN.get(str(spec.get("budget_grade") or ""), "该")
         return MaterialPlan(
             summary=(
-                f"选材模型不可用，以下为按档位与需求**自动匹配**的结果："
-                f"{spec['budget_grade']} 档，共 {len(choices)} 个品类。"
+                # ⚠️ 这句会上屏：`**自动匹配**` 的星号会被字面渲染出来，
+                #    而 `spec['budget_grade']` 是接口枚举（`economy` 之类），
+                #    要换成中文档位名。
+                f"选材说明暂时生成不出来，以下为按档位与需求自动匹配的结果："
+                f"{grade_cn}档，共 {len(choices)} 个品类。"
                 "每项均取该品类下匹配度最高的候选。"
             ),
             choices=choices,
             substitutions=[],
             eco_note="",
             warnings=["选材说明部分缺失，请以商品清单为准。"],
-            data_gaps=["选材由确定性排序生成，未经过模型研判"],
+            # ⚠️ 在界面上是"数据缺口清单"里的一条，所以不写"确定性排序"这种
+            #    内部实现名 —— 用户要知道的是"这份清单怎么来的"。
+            data_gaps=["这份选材清单是按档位与需求自动匹配得出的，没有经过 AI 逐项研判"],
             confidence=0.0,
         )
 

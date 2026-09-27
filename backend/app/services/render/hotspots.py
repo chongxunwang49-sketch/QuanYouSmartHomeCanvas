@@ -45,6 +45,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from loguru import logger
+
 from ..geometry import Scene
 from ..geometry.normalize import DEFAULT_WALL_THICKNESS_M, Opening, RoomShape, Vec2
 from .projection import Projection
@@ -367,9 +369,15 @@ def _price(g: HotspotGeom, *, catalog_path: str | None) -> PricedHotspot:
     try:
         items, unit, search_url = _items_for(g.category, catalog_path)
     except Exception as e:  # noqa: BLE001
+        # ⚠️ 这条 `notes` 跟着热区一起进响应（前端暂未渲染，但形状上属于
+        #    用户可见文案），所以不写异常类名 —— 它只进日志。
+        logger.warning(
+            f"[hotspots] 材料目录不可用：{type(e).__name__}: {e}"
+            f"（品类 {g.category}）"
+        )
         return PricedHotspot(
             geom=g,
-            notes=[f"材料目录不可用（{type(e).__name__}），本热区只显示几何位置"],
+            notes=["材料价格暂时取不到，这个热区只显示位置"],
         )
 
     if not items:

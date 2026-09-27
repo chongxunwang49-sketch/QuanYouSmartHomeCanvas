@@ -311,7 +311,10 @@ class TestMaterialPreferences:
         assert "quanyou_excluded" in codes
         # 拒绝必须可操作：告诉用户允许哪些品牌，以及替代做法
         assert "全友" in body["data"]["allowed_brands"]
-        assert "preferred_brands" in body["msg"]
+        # ⚠️ 2026-09-27 改：这句提示原来按**字段名**指路（`preferred_brands`），
+        #    而它是会弹在界面上的文案 —— 用户看不懂字段名，界面上那一栏
+        #    叫「偏好品牌」。所以断言也跟着改成中文栏位名。
+        assert "偏好品牌" in body["msg"]
 
         after = await _quota_counter(vip.id)
         if before is not None and after is not None:
@@ -332,7 +335,9 @@ class TestMaterialPreferences:
                 "layout_id": "layout_ok", "excluded_brands": ["全友"],
             })).json()
         empty = next(p for p in body["data"]["problems"] if p["code"] == "empty_pool")
-        assert "economy 档" in empty["message"]
+        # ⚠️ 2026-09-27 改：档位从接口枚举值 `economy` 改成中文名（那句话是
+        #    弹在界面上的报错正文）。"必须带上档位"这条性质没变。
+        assert "经济档" in empty["message"]
 
     async def test_未知品类被拒并列出允许值(self):
         await layout_store.save("layout_ok", FULL_LAYOUT)
@@ -577,7 +582,14 @@ class TestBackgroundExecution:
             d = await self._wait_done(c, r.json()["data"]["task_id"])
 
         assert d["status"] == "failed"
-        assert "模拟图执行失败" in (d["error"] or "")
+        # ⚠️ 2026-09-27 改：`error` 会**渲染在任务列表与轮询结果里**（前端拿它
+        #    弹 toast），所以给用户的是"任务执行失败、请稍后重试"这句人话；
+        #    桩图抛的 `模拟图执行失败` 与异常类名改用日志记（`tasks._run` 的
+        #    `logger.exception`，那里有 type(e).__name__ 与原文）。
+        #    这条守的性质没变：**失败必须落到终态**（不是永远 processing）。
+        msg = d["error"] or ""
+        assert "任务执行失败" in msg, msg
+        assert "模拟图执行失败" not in msg, f"异常原文不该上屏：{msg!r}"
 
     async def test_解析完成后户型被暂存(self, stub_graph, stub_knowledge):
         """4.3 只凭 layout_id 取户型，所以解析完必须存下来。"""

@@ -330,7 +330,9 @@ class TestGuard:
 
         assert calls == [], "守卫应在调用 LLM 之前拦下"
         assert out["trace"][0]["ok"] is False
-        assert "estimate_budget" in out["errors"][0]["message"]
+        # ⚠️ 2026-09-27 改：原来断言带内部操作名 `estimate_budget`，
+        #    而这句话会显示在界面上；现在 message 是中文的缺失说明。
+        assert "套内总面积" in out["errors"][0]["message"]
         # 关键：没有产出任何预算数字
         assert out.get("plan_bundles") in (None, {})
 
@@ -380,7 +382,8 @@ class TestGuard:
     def test_无layout直接失败(self):
         out = _run(_FakeLLM(), layout=None)
         assert out["trace"][0]["ok"] is False
-        assert "layout" in out["errors"][0]["message"]
+        # 2026-09-27 改：`layout`（字段名）→ 一句给用户的话。
+        assert "户型数据" in out["errors"][0]["message"]
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -435,7 +438,8 @@ class TestCrossCutting:
     def test_降级标记传上来(self):
         out = _run(_FakeLLM(degraded=True))
         assert out["degraded"] is True
-        assert any("plan_modern_economy" in r for r in out["degrade_reasons"])
+        # 2026-09-27 改：`plan_modern_economy`（主键）→ 方案的中文身份。
+        assert any("现代简约" in r and "经济" in r for r in out["degrade_reasons"])
 
     def test_trace记录模型与耗时(self):
         out = _run(_FakeLLM())

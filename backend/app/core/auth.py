@@ -249,10 +249,27 @@ def users() -> tuple[User, ...]:
     return tuple(_to_user(raw) for raw in _raw_users())
 
 
+#: 角色 / 档位的中文名。**这句报错会弹在界面上**（`routes.update_user`
+#: 把 `ValueError` 的原文转成 4001 的 message），所以不能印 `['admin', …]`
+#: 这种枚举原值。
+_ROLE_CN: dict[str, str] = {
+    ROLE_ADMIN: "管理员",
+    ROLE_DESIGNER: "设计师",
+    ROLE_USER: "普通用户",
+}
+_MEMBERSHIP_CN: dict[str, str] = {
+    MEMBERSHIP_FREE: "免费版",
+    MEMBERSHIP_PAID: "演示会员",
+}
+
+
 def set_user_role(user_id: int, role: str) -> User:
     """改角色。取值非法抛 `ValueError`（API 层转成 4001）。"""
     if role not in ROLES:
-        raise ValueError(f"角色取值不合法：{role}；允许 {list(ROLES)}")
+        raise ValueError(
+            f"角色取值不合法：{role}；可选的是"
+            f"{'、'.join(_ROLE_CN[r] for r in ROLES)}。"
+        )
     return _write_override(user_id, "role", role)
 
 
@@ -264,7 +281,10 @@ def set_user_active(user_id: int, active: bool) -> User:
 def set_user_membership(user_id: int, membership: str) -> User:
     """改会员档位。取值非法抛 `ValueError`。"""
     if membership not in MEMBERSHIPS:
-        raise ValueError(f"档位取值不合法：{membership}；允许 {list(MEMBERSHIPS)}")
+        raise ValueError(
+            f"档位取值不合法：{membership}；可选的是"
+            f"{'、'.join(_MEMBERSHIP_CN[m] for m in MEMBERSHIPS)}。"
+        )
     return _write_override(user_id, "membership", membership)
 
 

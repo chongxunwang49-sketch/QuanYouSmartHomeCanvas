@@ -60,7 +60,7 @@ from loguru import logger
 from ..graph.state import HomeDecoState
 from ..schemas.risk import RiskReview
 from ..services.knowledge import retriever
-from .base import BaseAgent
+from .base import AgentInputError, BaseAgent
 
 #: 审查的独立超时。仍是"比节点总超时短"，让失败早于熔断发生。
 #:
@@ -164,6 +164,7 @@ class RiskReviewAgent(BaseAgent):
 
     code = "A-06"
     name = "RiskReviewAgent"
+    label = "避坑审查"
     requires_vision = False
     # ⚠️ 2026-09-23：55s → 90s。**不是随手放宽，是被内层超时逼上来的。**
     #    这个 Agent 有三层超时，不变量是「内层 < 节点层 < LLM 层(120s)」：
@@ -181,9 +182,13 @@ class RiskReviewAgent(BaseAgent):
 
         plans = state.get("plan_bundles") or {}
         if not plans:
-            raise ValueError(
-                "状态中既没有 quote_text 也没有 plan_bundles，A-06 无内容可审。"
-                "上游 Agent 可能已失败——请检查 errors 字段"
+            # message 会上屏（errors[].message），写给人看的话；细节进日志。
+            self.log.warning(
+                "状态中既没有 quote_text 也没有 plan_bundles，A-06 无内容可审"
+            )
+            raise AgentInputError(
+                "这次没有可审查的内容 —— 报价单和方案都没有拿到，"
+                "请重新提交一次。"
             )
         return await self._review_plans(state, plans)
 
@@ -233,7 +238,7 @@ class RiskReviewAgent(BaseAgent):
             "risk_review": payload,
             "degraded": degraded,
             "degrade_reasons": (
-                [f"[A-06] {r}" for r in reasons] if reasons else []
+                [f"{self.label}：{r}" for r in reasons] if reasons else []
             ),
             "phase": "planning",
             "_llm_meta": getattr(self, "_last_llm_meta", None),
@@ -255,9 +260,12 @@ class RiskReviewAgent(BaseAgent):
             if isinstance(bundle, dict) and bundle.get("budget")
         }
         if not targets:
-            raise ValueError(
-                "所有方案都没有预算产出，A-06 无内容可审。"
-                "A-04 可能已失败——请检查 errors 字段"
+            self.log.warning(
+                "所有方案都没有预算产出，A-06 无内容可审（A-04 可能已失败）"
+            )
+            raise AgentInputError(
+                "这几套方案都没有算出预算，暂时没有可审查的内容 —— "
+                "方案本身不受影响，稍后重试通常能补上。"
             )
 
         async def one(pid: str, bundle: dict):
@@ -289,9 +297,18 @@ class RiskReviewAgent(BaseAgent):
         for outcome in outcomes:
             if isinstance(outcome, BaseException):
                 # 单套审查失败不拖垮其余 —— 与分支内的隔离原则一致
+                #
+                # ⚠️ `message` 会上屏（「有 N 个环节没能完成」那张清单里
+                #    逐条列出来）。异常类名与原文只进日志 —— 别的方案照样
+                #    审完了，用户要知道的是"有一套没审成、其余可用"。
+                logger.warning(
+                    f"[{self.code}] 某套方案的审查失败："
+                    f"{type(outcome).__name__}: {outcome}"
+                )
                 errors.append({
                     "agent": self.code, "type": "error",
-                    "message": f"某套方案的审查失败：{type(outcome).__name__}: {outcome}",
+                    "message": "有一套方案的避坑审查没能完成，"
+                               "其余方案的审查结果不受影响。",
                 })
                 continue
             pid, payload, degraded, reasons = outcome
@@ -300,12 +317,16 @@ class RiskReviewAgent(BaseAgent):
             any_degraded = any_degraded or degraded
 
         if not bundles:
-            # ⚠️ 把逐条原因带出来。只抛一句"全部失败"会让排查变成猜谜 ——
-            # 而这三条子错误恰恰是唯一能说明"为什么失败"的信息。
-            detail = "；".join(
-                f"{e.get('message', '')}" for e in errors
-            ) or "（未捕获到具体异常）"
-            raise ValueError(f"所有方案的避坑审查均失败，无可交付内容 —— {detail}")
+            # ⚠️ 逐条原因只进日志（`errors[].message` 已经是给用户的话，
+            #    对上屏够用了；而"为什么失败"的细节在 warn 日志里）。
+            self.log.warning(
+                "所有方案的避坑审查均失败 —— "
+                + "；".join(str(e.get("message", "")) for e in errors)
+            )
+            raise AgentInputError(
+                "三套方案的避坑审查都没能完成，这次没有可交付的审查结论。"
+                "预算与选材的结果不受影响，稍后重试通常能补上。"
+            )
 
         self.log.info(
             f"分支审查完成：{len(bundles)} 套方案，"
@@ -319,7 +340,9 @@ class RiskReviewAgent(BaseAgent):
             "_llm_meta": getattr(self, "_last_llm_meta", None),
         }
         if all_reasons:
-            out["degrade_reasons"] = [f"[A-06] {r}" for r in dict.fromkeys(all_reasons)]
+            out["degrade_reasons"] = [
+                f"{self.label}：{r}" for r in dict.fromkeys(all_reasons)
+            ]
         if errors:
             out["errors"] = errors
         return out
@@ -343,13 +366,19 @@ class RiskReviewAgent(BaseAgent):
         【知识库依据】那一节为空是因为没有问题，转而凭常识编。
         """
         if not sources.available:
+            # ⚠️ `notes` 是**给模型**的（进提示词），而下面返回的 `reasons`
+            #    会上屏（降级提示条）。两者不能共用一句话：notes 里带着
+            #    检索层的原因，还有"请只做常识范围内的判断…"这种指令 ——
+            #    那半句印在界面上是莫名其妙的。所以给用户的那条单独写。
             notes = [
                 f"知识库不可用（{sources.reason}），本次审查没有可引用的依据。"
                 f"请只做常识范围内的判断，并在 data_gaps 中说明缺依据。"
             ]
+            user_reason = "本次审查没有取到可引用的参考资料，判断主要基于常识，可靠性下降"
             degraded = True
         else:
             notes = []
+            user_reason = ""
             degraded = False
 
         try:
@@ -363,19 +392,22 @@ class RiskReviewAgent(BaseAgent):
                 timeout=REVIEW_TIMEOUT,
             )
             assert isinstance(parsed, RiskReview)
-            reasons = list(notes)
+            reasons = [user_reason] if user_reason else []
             if result.degrade_reason:
-                reasons.append(f"审查由本地文本模型完成：{result.degrade_reason}")
+                reasons.append(f"本次审查由本地处理完成：{result.degrade_reason}")
             return parsed, degraded or result.degraded, reasons
 
         except asyncio.TimeoutError:
-            reason = f"审查超时（>{REVIEW_TIMEOUT}s）"
-            self.log.warning(reason)
+            # ⚠️ 这个 reason 有两个去处，**都会上屏**：`degrade_reasons`
+            #    （降级提示条）与 `_empty_review` 的 `data_gaps`
+            #    （"审查未完成：…"）。所以不写内层超时秒数、不写异常类名。
+            reason = "避坑审查超时，没能在预期时间内完成"
+            self.log.warning(f"审查超时（>{REVIEW_TIMEOUT}s）")
             return _empty_review(reason), True, [reason]
 
         except Exception as e:  # noqa: BLE001
-            reason = f"审查失败（{type(e).__name__}: {e}）"
-            self.log.warning(reason)
+            reason = "避坑审查遇到了意外情况，本次没能给出结论"
+            self.log.warning(f"审查失败：{type(e).__name__}: {e}")
             return _empty_review(reason), True, [reason]
 
     @staticmethod
@@ -471,9 +503,11 @@ class RiskReviewAgent(BaseAgent):
                 f"（{'、'.join(invented[:3])}），已由系统剔除"
             )
         if not sources.available:
+            # ⚠️ 不把 `sources.reason` 拼进去 —— 那是检索层的原因，
+            #    里面可能是 `OperationalError: ...` 这类原文。
+            #    `data_gaps` 会上屏（审查页的缺口清单）。
             gaps.append(
-                f"本次未取得知识库依据（{sources.reason}），"
-                f"风险判断主要基于常识，可靠性下降"
+                "本次未取得知识库依据，风险判断主要基于常识，可靠性下降"
             )
         elif not sources.chunks:
             gaps.append("知识库中没有检索到相关内容，本次审查缺少引用依据")
@@ -565,7 +599,7 @@ class RiskReviewAgent(BaseAgent):
 # ══════════════════════════════════════════════════════════════════
 
 _DISCLAIMER = (
-    "本审查基于公开装修经验语料与系统内置规则，**不是法律意见，也不是施工规范审查**。"
+    "本审查基于公开装修经验语料与系统内置规则，不是法律意见，也不是施工规范审查。"
     "涉及合同条款与结构安全的问题，请以专业人士的现场意见为准。"
 )
 

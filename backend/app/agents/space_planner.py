@@ -41,7 +41,7 @@ from typing import Any
 from ..core.capabilities import OperationNotAllowedError, check_operation
 from ..graph.state import HomeDecoState
 from ..schemas.plan import SpacePlan
-from .base import BaseAgent
+from .base import AgentInputError, BaseAgent, plan_label
 
 # ══════════════════════════════════════════════════════════════════
 # 风格与预算档的做法提示
@@ -148,6 +148,7 @@ class SpacePlannerAgent(BaseAgent):
 
     code = "A-03"
     name = "SpacePlannerAgent"
+    label = "空间规划"
     requires_vision = False
     # ⚠️ 2026-09-23 实测：**30s 会让方案生成整条链失败。**
     #
@@ -192,9 +193,11 @@ class SpacePlannerAgent(BaseAgent):
     async def run(self, state: HomeDecoState) -> dict[str, Any]:
         layout = state.get("layout")
         if not layout:
-            raise ValueError(
-                "状态中缺少 layout，A-03 无法执行。"
-                "上游 A-01 可能已失败——请检查 errors 字段"
+            # message 会上屏（errors[].message），写给人看的话；细节进日志。
+            self.log.warning("状态中缺少 layout，上游 A-01 未产出，A-03 无法执行")
+            raise AgentInputError(
+                "这次没能拿到户型数据，方案生成无法进行 —— "
+                "请重新上传户型图解析一次。"
             )
 
         # ══ 业务连续性守卫 ══════════════════════════════════════
@@ -231,8 +234,11 @@ class SpacePlannerAgent(BaseAgent):
             # 用 MergeDict 归约：三个分支各写自己的键，互不覆盖。
             "plan_bundles": {spec["plan_id"]: {"space_plan": payload}},
             "degraded": llm_result.degraded,
+            # ⚠️ 原来是 `[A-03/plan_modern_economy] …` —— Agent 代号与主键
+            #    都会原样列在降级提示条上，换成这套方案的中文身份。
             "degrade_reasons": (
-                [f"[A-03/{spec['plan_id']}] 方案由本地文本模型完成：{llm_result.degrade_reason}"]
+                [f"{plan_label(spec)}：本次规划由本地处理完成"
+                 f"（{llm_result.degrade_reason}）"]
                 if llm_result.degrade_reason else []
             ),
             "phase": "planning",

@@ -156,18 +156,24 @@ def sweep_audit_files(log_dir: Path | str, *, days: int = 1) -> AuditSweep:
     sweep = AuditSweep(files=[], lines=0, task_seconds={},
                        llm_ms={}, llm_tokens={}, errors=[])
 
+    # ⚠️ `sweep.errors` 会被接口放进 `notes` 一起**上屏**（性能指标页）。
+    #    所以这两句里不写目录路径、不写文件名通配、不写 `LOG_DIR` /
+    #    `lifespan` 这类配置与生命周期名词 —— 目录本身进日志。
     if not root.exists():
+        logger.warning(f"[metrics] 性能数据目录不存在：{root}")
         sweep.errors.append(
-            f"审计目录不存在：{root} —— 没有性能数据可聚合。"
-            f"（审计文件由 lifespan 启动时激活，见 LOG_DIR 配置）"
+            "性能数据目录不存在 —— 这台机器上还没产生过性能记录，"
+            "因此没有可聚合的样本。"
         )
         return sweep
 
     # 文件名是 app_YYYY-MM-DD.log，字典序即时间序，取最后 days 个
     files = sorted(root.glob("app_*.log"))[-max(1, days):]
     if not files:
+        logger.warning(f"[metrics] {root} 下没有 app_*.log 记录文件")
         sweep.errors.append(
-            f"{root} 下没有 app_*.log —— 服务还没跑过，或 LOG_DIR 没配。"
+            "最近这段时间还没有留下性能记录 —— 服务可能是刚启动的，"
+            "或者这段时间没有请求。"
         )
         return sweep
 
@@ -208,9 +214,11 @@ def sweep_audit_files(log_dir: Path | str, *, days: int = 1) -> AuditSweep:
                             llm_tokens.setdefault(agent, deque(maxlen=_MAX_RECORDS)).append(int(tok))
         except OSError as e:
             # 读不了就记下来继续 —— 一个文件坏了不该让整个指标接口失败
-            msg = f"读取 {path.name} 失败：{type(e).__name__}: {e}"
-            logger.warning(f"[metrics] {msg}")
-            sweep.errors.append(msg)
+            #
+            # ⚠️ `sweep.errors` 会被接口放进 `notes` **上屏**，所以给用户的
+            #    那句不含文件名与异常类名；细节（哪个文件、什么错）进日志。
+            logger.warning(f"[metrics] 读取 {path.name} 失败：{type(e).__name__}: {e}")
+            sweep.errors.append("有日志文件没读出来，这批数字可能不完整")
 
     sweep.task_seconds = {k: list(v) for k, v in task_seconds.items()}
     sweep.llm_ms = {k: list(v) for k, v in llm_ms.items()}

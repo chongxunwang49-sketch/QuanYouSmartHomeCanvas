@@ -717,12 +717,14 @@ def _build_doors(
         if op.kind != "door":
             continue
         if not (0 <= op.wall_index < len(scene.walls)):
-            issues.append(f"第 {i} 扇门没有关联到任何墙体，不计入通行图")
+            # ⚠️ 这些 issues 会**显示在 3D 页的问题清单上**，所以不写
+            #    "通行图"这种内部结构名。
+            issues.append(f"第 {i} 扇门没有关联到任何墙体，不参与连通判断")
             continue
         placed = wall_point_at(scene.walls[op.wall_index],
                                op.offset_along_wall_m)
         if placed is None:
-            issues.append(f"第 {i} 扇门在墙上定位失败，不计入通行图")
+            issues.append(f"第 {i} 扇门在墙上定位失败，不参与连通判断")
             continue
         p, u = placed
         off = math.dist((p.x, p.y), (op.center.x, op.center.y))
@@ -753,8 +755,8 @@ def _build_doors(
             # ⚠️ 这句话会**原样显示在界面上**，所以不能带 Markdown 星号
             #    （本项目有测试扫这个，第一次就抓到了我写的 `**`）。
             issues.append(
-                f"第 {i} 扇门的两侧未能都识别出房间（{a} / {b}），"
-                f"这扇门仍然会画出来，但走不过去（不计入通行图）"
+                f"第 {i} 扇门的两侧没能都识别出房间，"
+                f"这扇门仍然会画出来，但走不过去（不参与连通判断）"
             )
 
         # ⚠️ 通不通户外的判据在**构造时**就算好 —— `DoorEdge` 是 frozen
@@ -1100,11 +1102,13 @@ def _audit_doors_and_access(
     blocked = [d.door_index for d in doors
                if not _gap_exists_on_wall(collision, d, half)]
     if blocked:
+        # ⚠️ 这句会显示在 3D 页上：不写 `layout_id`（内部编号），
+        #    也不说"报给开发"——用户能做的动作是"换张图重试 / 告诉我们"。
         issues.append(
             "有 "
             + "、".join(f"第 {i} 扇" for i in blocked)
             + "门所在的墙没有开出对应的门洞（平面图上有门、3D 里是实墙）—— "
-            "这属于几何生成的问题，请连同 layout_id 一起报给开发"
+            "这属于几何生成的问题，麻烦把这套户型反馈给我们排查"
         )
 
     connected: set[int] = set()
@@ -1129,7 +1133,7 @@ def _audit_doors_and_access(
     if stranded:
         names = "、".join(f"「{r.name}」" for r in stranded)
         issues.append(
-            f"{names}自己有门，但从出生点出发的通行图连不到它们（通常是解析"
+            f"{names}自己有门，但从出生点出发走不到它们（通常是解析"
             "漏掉了连接这片区域的那扇门）—— 3D 里同样走不进去，"
             "这几间在界面上会标成不可达"
         )

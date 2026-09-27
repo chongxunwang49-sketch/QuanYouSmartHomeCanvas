@@ -291,8 +291,10 @@ class TestValidateFilters:
         problems = validate_filters(f, grades=_GRADES)
         assert "quanyou_excluded" in _codes(problems)
         # 消息必须给出**替代做法**，不能只说"不允许"
+        # ⚠️ 2026-09-27 改：原来指的是字段名 `preferred_brands`，而这句
+        #    提示会弹在界面上 —— 界面上那一栏叫「偏好品牌」。
         msg = next(p.message for p in problems if p.code == "quanyou_excluded")
-        assert "preferred_brands" in msg
+        assert "偏好品牌" in msg
 
     def test_全部排除后无品类可选(self):
         f = MaterialFilters.from_payload(
@@ -314,7 +316,8 @@ class TestValidateFilters:
         problems = validate_filters(f, grades=["economy"])
         empty = next(p for p in problems if p.code == "empty_pool")
         assert "室内门" in empty.message
-        assert "economy" in empty.message
+        # 2026-09-27 改：档位印的是中文名（"经济档"），不再是枚举值 `economy`。
+        assert "经济档" in empty.message
 
     def test_空池问题按档位分别报告(self):
         """
@@ -331,9 +334,10 @@ class TestValidateFilters:
         problems = validate_filters(f, grades=_GRADES)
         empty = next(p for p in problems if p.code == "empty_pool")
 
-        assert "economy 档：室内门、橱柜衣柜" in empty.message
-        assert "high 档：墙面涂料、卫浴洁具、灯具" in empty.message
-        assert "medium" not in empty.message, "中档每项都还有竞品，不该被列为空"
+        # 2026-09-27 改：档位改印中文名（与"用户可见的名词要用中文"一致）。
+        assert "经济档：室内门、橱柜衣柜" in empty.message
+        assert "高端档：墙面涂料、卫浴洁具、灯具" in empty.message
+        assert "中档" not in empty.message, "中档每项都还有竞品，不该被列为空"
 
     def test_不适用范围为空时只报告真正涉及的品类(self):
         """

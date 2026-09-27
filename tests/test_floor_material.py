@@ -227,7 +227,9 @@ class TestSvgReflects:
         d = _run(routes.floor_materials(LID)).data
         s = d["substitutions"][0]
         assert s["material"] is None
-        assert "不在目录里" in s["note"]
+        # 2026-09-27 改：note 会显示在"当前替换"清单里，所以不再印 product id，
+        # 也不再写"（演示目录改过？）"，改说"已经下架"。
+        assert "下架" in s["note"]
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -236,24 +238,33 @@ class TestSvgReflects:
 
 
 class TestErrors:
-    def test_房间不存在时报错并列出可选项(self, layout):
+    def test_房间不存在时报错并说清是房间的问题(self, layout):
         """
         ⚠️ 校验顺序是**先房间、再材料**。反过来的话，一个不存在的房间
         会拿到"材料不存在"，而排查方向整个偏掉。
+
+        ⚠️ 2026-09-27 改：原来断言报错里列出可选的房间下标（`99` / "可选的是"）。
+        而这句话会弹在界面上，房间下标是内部编号 —— 现在改成说清"这一间
+        不在可替换范围内、请在图上点选"，**顺序仍然可以验证**（它没被
+        当成"材料不存在"）。
         """
         with pytest.raises(ApiError) as e:
             _run(routes.set_floor_material(
                 LID, FloorMaterialRequest(room_index=99, material_id="DS-FL-201")))
         assert e.value.code == 4001
-        assert "99" in str(e.value)
-        assert "可选的是" in str(e.value), "没告诉用户可选的房间号是多少"
+        assert "不在可替换地面的范围内" in str(e.value)
+        assert "材料" not in str(e.value), (
+            "这一支说的是房间不对，不该把用户引向材料"
+        )
 
     def test_内墙砖被拒且说清原因(self, layout):
         with pytest.raises(ApiError) as e:
             _run(routes.set_floor_material(
                 LID, FloorMaterialRequest(room_index=0, material_id="QY-TL-102")))
         assert e.value.code == 4001
-        assert "QY-TL-102" in str(e.value)
+        # 2026-09-27 改：原来断言报错里带 product id `QY-TL-102`
+        # （那是内部编号）。现在说的是"这份材料不能用作地面、请从下拉里挑"。
+        assert "不能用作地面" in str(e.value)
 
     def test_户型不存在时404(self):
         layout_store.clear()

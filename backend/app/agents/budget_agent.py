@@ -47,7 +47,9 @@ from ..core.capabilities import (
 from ..graph.state import HomeDecoState
 from ..schemas.budget import BudgetBreakdown, BudgetNarrative
 from ..services.budget import engine
-from .base import BaseAgent
+from .base import GRADE_CN as _GRADE_CN
+from .base import STYLE_CN as _STYLE_CN
+from .base import AgentInputError, BaseAgent, plan_label as _plan_label
 
 #: 文字包装的独立超时。比节点总超时短 —— 让"写字"先于"算数"被放弃。
 #:
@@ -91,6 +93,7 @@ class BudgetAgent(BaseAgent):
 
     code = "A-04"
     name = "BudgetAgent"
+    label = "预算估算"
     requires_vision = False
     # ⚠️ 同 A-03：30s 是在 `LLM_MAX_TOKENS=8000` 时代定的。
     #    提到 32000 之后调用变慢，30s 会让方案生成整条链超时
@@ -101,9 +104,11 @@ class BudgetAgent(BaseAgent):
     async def run(self, state: HomeDecoState) -> dict[str, Any]:
         layout = state.get("layout")
         if not layout:
-            raise ValueError(
-                "状态中缺少 layout，A-04 无法执行。"
-                "上游 A-01 可能已失败——请检查 errors 字段"
+            # message 会上屏（errors[].message），写给人看的话；细节进日志。
+            self.log.warning("状态中缺少 layout，上游 A-01 未产出，A-04 无法执行")
+            raise AgentInputError(
+                "这次没能拿到户型数据，预算估算无法进行 —— "
+                "请重新上传户型图解析一次。"
             )
 
         # ══ 业务连续性守卫 ══════════════════════════════════════
@@ -142,8 +147,12 @@ class BudgetAgent(BaseAgent):
             # MergeDict 必须深合并一层，否则两边会互相顶掉（见 state.py）。
             "plan_bundles": {spec["plan_id"]: {"budget": payload}},
             "degraded": degraded,
+            # ⚠️ 这里原来写的是 `[A-04/plan_modern_economy] {r}` —— 两处都是
+            #    内部标识：`A-04` 是 Agent 代号，`plan_modern_economy` 是主键。
+            #    `degrade_reasons` 会**原样列在降级提示条上**，所以换成这套方案
+            #    的中文身份（风格 + 档位），用户才认得出是哪一套出了问题。
             "degrade_reasons": (
-                [f"[A-04/{spec['plan_id']}] {r}" for r in reasons] if reasons else []
+                [f"{_plan_label(spec)}：{r}" for r in reasons] if reasons else []
             ),
             "phase": "planning",
             "_llm_meta": getattr(self, "_last_llm_meta", None),
@@ -192,21 +201,21 @@ class BudgetAgent(BaseAgent):
             )
             assert isinstance(parsed, BudgetNarrative)
             return parsed, result.degraded, (
-                [f"预算解说由本地文本模型完成：{result.degrade_reason}"]
+                [f"这份预算的说明文字由本地处理完成：{result.degrade_reason}"]
                 if result.degrade_reason else []
             )
 
         except asyncio.TimeoutError:
-            reason = f"解说生成超时（>{NARRATIVE_TIMEOUT}s），已回退模板文案（数字不受影响）"
-            self.log.warning(reason)
+            # ⚠️ `reason` 会经 `degrade_reasons` 上屏，所以既不能写内层的
+            #    超时秒数（`>{NARRATIVE_TIMEOUT}s` 是配置值），也不能写异常类名。
+            #    秒数与异常原文进日志。
+            reason = "预算说明文字的生成超时，已回退模板文案（预算数字不受影响）"
+            self.log.warning(f"解说生成超时（>{NARRATIVE_TIMEOUT}s）")
             return self._fallback_narrative(breakdown), True, [reason]
 
         except Exception as e:  # noqa: BLE001 —— 写字失败不该拖垮算数
-            reason = (
-                f"解说生成失败（{type(e).__name__}: {e}），"
-                f"已回退模板文案（数字不受影响）"
-            )
-            self.log.warning(reason)
+            reason = "预算说明文字的生成失败，已回退模板文案（预算数字不受影响）"
+            self.log.warning(f"解说生成失败：{type(e).__name__}: {e}")
             return self._fallback_narrative(breakdown), True, [reason]
 
     @staticmethod
@@ -227,8 +236,8 @@ class BudgetAgent(BaseAgent):
                 f"另按施工费比例计取管理费与设计费。"
             ),
             grade_rationale=(
-                "预算文字解读未能生成（模型不可用），此处仅提供由规则引擎"
-                "直接给出的数字结果。"
+                "预算说明文字未能生成，此处只给出按套内面积与预算档"
+                "算出的数字结果 —— 数字本身是完整、可直接使用的。"
             ),
             cost_drivers=[],
             negotiation_tips=[],
@@ -286,21 +295,13 @@ class BudgetAgent(BaseAgent):
 若上面的数据不足以支撑某条建议，就不要写那一条。"""
 
 
-_GRADE_CN: dict[str, str] = {
-    "economy": "经济",
-    "medium": "中档",
-    "high": "高端",
-}
+#: 风格 / 预算档中文名，与 `base.STYLE_CN` / `base.GRADE_CN` 同一份
+#: （三个分支 Agent 共用，见那里的说明）。这里保留短别名，
+#: 是因为提示词构造里到处在用。
+#
+# ⚠️ 不要在本文件里另写一份 —— 那时 A-03/A-04/A-05 的降级文案
+#    会对同一个档位给出不同的中文名。
 
-#: 风格中文名。与 A-03 的 _STYLE_HINTS 同源，这里只取短名供提示词使用。
-_STYLE_CN: dict[str, str] = {
-    "modern": "现代简约",
-    "nordic": "北欧/奶油风",
-    "chinese": "现代中式/侘寂",
-    "cream": "奶油风",
-    "japandi": "日式侘寂+北欧",
-    "industrial": "工业风",
-}
 
 
 __all__ = ["BudgetAgent", "NARRATIVE_TIMEOUT"]

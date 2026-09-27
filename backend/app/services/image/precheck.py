@@ -46,6 +46,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from loguru import logger
+
 # ── 阈值 ────────────────────────────────────────────────────────────
 
 #: 短边下限（像素）。
@@ -116,12 +118,16 @@ def decode_input(ref: str) -> bytes:
     if ref.startswith("data:"):
         m = re.match(r"data:[^;]+;base64,(?P<data>.+)", ref, re.S)
         if not m:
-            raise ValueError("不是合法的 data URI")
+            raise ValueError("图片数据格式不正确")
         ref = m.group("data")
     try:
         return base64.b64decode(ref, validate=True)
     except (binascii.Error, ValueError) as e:
-        raise ValueError(f"base64 解码失败：{e}") from e
+        # ⚠️ 这句话会**上屏**（`precheck_ref` 把它塞进 rejections，
+        #    再拼进 advice 给用户看），所以不写底层解码器的原文。
+        #    原文进日志 —— 排查时要的是它。
+        logger.warning(f"[precheck] base64 解码失败：{type(e).__name__}: {e}")
+        raise ValueError("图片数据格式不正确") from e
 
 
 # ── 主流程 ──────────────────────────────────────────────────────────
@@ -142,9 +148,12 @@ def precheck_image(data: bytes) -> PrecheckResult:
         import numpy as np
         from PIL import Image
     except ImportError as e:  # pragma: no cover
+        # ⚠️ `warnings` 会上屏。原来的写法把 ImportError 的原文
+        #    （模块名 + 路径）拼了进去 —— 那是给排查用的，只进日志。
+        logger.warning(f"[precheck] 图像库不可用，已跳过预检：{type(e).__name__}: {e}")
         return PrecheckResult(
             ok=True,
-            warnings=[f"图像库不可用，已跳过预检（{e}）"],
+            warnings=["图片质量预检组件未就绪，本次已跳过预检"],
             advice="未做图片质量预检。",
         )
 
@@ -153,9 +162,10 @@ def precheck_image(data: bytes) -> PrecheckResult:
         img = Image.open(io.BytesIO(data))
         img.load()
     except Exception as e:  # noqa: BLE001 —— PIL 抛的异常类型很杂
+        logger.warning(f"[precheck] 图片无法解码：{type(e).__name__}: {e}")
         return PrecheckResult(
             ok=False,
-            rejections=[f"无法解码为图片：{type(e).__name__}"],
+            rejections=["无法解码为图片"],
             advice="这个文件不是有效的图片，或者格式不受支持。请上传 PNG / JPG / WebP。",
         )
 
@@ -221,16 +231,20 @@ def precheck_image(data: bytes) -> PrecheckResult:
                     f"清晰度偏低（Laplacian 方差 {blur_score:.1f} < {BLUR_WARN_THRESHOLD}）。"
                     f"该阈值尚未用真实户型图标定，仅供参考"
                 )
-        except ImportError:  # pragma: no cover
-            warnings.append("未安装 OpenCV，跳过清晰度检测")
+        except ImportError as e:  # pragma: no cover
+            # ⚠️ 原来这里写的是「未安装 OpenCV」—— 库名不该出现在给用户
+            #    的提醒里（`warnings` 会上屏）。原文进日志。
+            logger.warning(f"[precheck] 清晰度检测组件不可用：{e}")
+            warnings.append("清晰度检测组件未就绪，已跳过该项检查")
 
     except Exception as e:  # noqa: BLE001 —— 见上：预检自身出错必须放行
+        logger.warning(f"[precheck] 内容分析出错：{type(e).__name__}: {e}")
         return PrecheckResult(
             ok=True,
             width=width,
             height=height,
             warnings=[
-                f"内容分析未能完成（{type(e).__name__}: {e}），已跳过该项检查",
+                "图片内容分析没能完成，已跳过该项检查",
                 *warnings,
             ],
             advice="图片尺寸合规；内容分析被跳过，解析仍会继续。",

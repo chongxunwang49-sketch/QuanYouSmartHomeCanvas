@@ -171,7 +171,12 @@ class TestSearchNeverRaises:
         )
         r = retriever.search("任意查询")
         assert r.available is False
-        assert "库炸了" in r.reason
+        # ⚠️ 2026-09-27 改：`r.reason` 会一路走到界面上（对话页的
+        #    「（知识库不可用：…）」、审查页的数据缺口清单），所以它是
+        #    一句人话；异常原文进日志。上面那条 embedding 用例不变 ——
+        #    它注入的 `KnowledgeUnavailableError` 本身就是面向用户的文案。
+        assert "知识库暂时查不出结果" in r.reason
+        assert "库炸了" not in r.reason
 
     def test_空查询安全返回(self):
         r = retriever.search("")

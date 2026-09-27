@@ -104,25 +104,40 @@ def embed_texts(texts: Sequence[str], *, timeout: float = EMBED_TIMEOUT) -> list
                 })
                 resp.raise_for_status()
             except Exception as e:  # noqa: BLE001
+                # ⚠️ `KnowledgeUnavailableError` 的 message 会一路走到
+                #    界面上（对话页的"知识库不可用：…"、审查页的数据缺口、
+                #    知识库管理页的状态说明），所以这里写的是给用户的话。
+                #    服务地址、模型名、异常类名都是排查用的，只进日志 ——
+                #    下面这行日志是它们唯一的落点。
+                logger.warning(
+                    f"[knowledge] embedding 调用失败：{type(e).__name__}: {e}；"
+                    f"url={url} model={settings.OLLAMA_EMBEDDING_MODEL}"
+                )
                 raise KnowledgeUnavailableError(
-                    f"embedding 调用失败（{type(e).__name__}: {e}）—— "
-                    f"Ollama 是否在 {settings.OLLAMA_BASE_URL} 运行？"
-                    f"模型 {settings.OLLAMA_EMBEDDING_MODEL} 是否已拉取？"
+                    "文本向量化服务连不上，暂时无法检索或写入知识库。"
+                    "请确认本机的向量化服务已启动，或稍后重试。"
                 ) from e
 
             vecs = resp.json().get("embeddings") or []
             if len(vecs) != len(batch):
+                logger.warning(
+                    f"[knowledge] embedding 返回条数不符："
+                    f"请求 {len(batch)}，返回 {len(vecs)}"
+                )
                 raise KnowledgeUnavailableError(
-                    f"embedding 返回条数不符：请求 {len(batch)}，返回 {len(vecs)}"
+                    "文本向量化服务返回的数据不完整，本次没有写入或检索任何内容"
                 )
             out.extend(vecs)
 
     # 维度校验放在最后统一做 —— 中途发现维度不对，说明模型换了，
     # 那整个库都得重建，早退反而看不到全貌
     if out and len(out[0]) != settings.OLLAMA_EMBEDDING_DIM:
+        logger.warning(
+            f"[knowledge] 向量维度不符：实际 {len(out[0])}，"
+            f"配置 {settings.OLLAMA_EMBEDDING_DIM}"
+        )
         raise KnowledgeUnavailableError(
-            f"向量维度 {len(out[0])} 与配置 {settings.OLLAMA_EMBEDDING_DIM} 不符。"
-            f"模型换了就必须重建整个 collection —— 维度不匹配的库查不出东西"
+            "知识库里的向量与当前使用的向量化模型不匹配，需要重建知识库后才能检索"
         )
     return out
 
@@ -176,10 +191,13 @@ def collection_info() -> CollectionInfo:
         return CollectionInfo(name=name, count=col.count(),
                               path=str(settings.CHROMA_PATH))
     except Exception as e:  # noqa: BLE001
+        # ⚠️ `reason` 会上屏（知识库管理页 / 健康检查的说明文字），
+        #    所以给用户一句短话；异常类名与原文只进日志。
+        logger.warning(f"[knowledge] 探不到知识库 {name}：{type(e).__name__}: {e}")
         return CollectionInfo(
             name=name, count=0, path=str(settings.CHROMA_PATH),
             available=False,
-            reason=f"{type(e).__name__}: {e}",
+            reason="知识库暂时连不上",
         )
 
 
@@ -274,7 +292,9 @@ def list_documents() -> tuple[list[dict[str, Any]], str]:
             return [], "知识库集合不存在（还没入过库）"
         got = col.get(include=["metadatas"])
     except Exception as e:  # noqa: BLE001
-        return [], f"{type(e).__name__}: {e}"
+        # 同上：返回值里那句会直接显示在知识库管理页上。
+        logger.warning(f"[knowledge] 读取文档清单失败：{type(e).__name__}: {e}")
+        return [], "知识库暂时连不上，读不到文档清单"
 
     metas = list(got.get("metadatas") or [])
     buckets: dict[str, dict[str, Any]] = {}

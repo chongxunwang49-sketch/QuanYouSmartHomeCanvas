@@ -308,14 +308,38 @@ class TestKnowledgeUnavailable:
         assert any("没有检索到相关内容" in g for g in out["risk_review"]["data_gaps"])
 
     def test_检索异常不向上抛(self, monkeypatch):
-        """retriever.search_many 抛异常时，A-06 不该跟着崩。"""
+        """
+        retriever.search_many 抛异常时，A-06 不该跟着崩。
+
+        ⚠️ 2026-09-27 改：这条原来断言 `errors[0]["message"]` **含异常原文**
+        （"向量库炸了"）。而 `errors[].message` 是直接渲染在界面上的，
+        异常原文属于"工程类提示文字"——本轮改成：界面上是一句人话，
+        原文进日志。所以断言拆成两条：
+          · 上屏的那句不含异常原文（不泄漏）；
+          · 日志里**必须**有它（信息不凭空消失）。
+        """
+        import loguru
+
         def _boom(*a, **kw):
             raise RuntimeError("向量库炸了")
         monkeypatch.setattr(retriever, "search_many", _boom)
 
-        out = _quote_out(_FakeLLM())
+        seen: list[str] = []
+        sink_id = loguru.logger.add(lambda m: seen.append(m.record["message"]),
+                                    level="WARNING")
+        try:
+            out = _quote_out(_FakeLLM())
+        finally:
+            loguru.logger.remove(sink_id)
+
         assert out["trace"][0]["ok"] is False
-        assert "向量库炸了" in out["errors"][0]["message"]
+        msg = out["errors"][0]["message"]
+        assert "向量库炸了" not in msg, f"异常原文不该上屏：{msg!r}"
+        assert "RuntimeError" not in msg, f"异常类名不该上屏：{msg!r}"
+        assert "避坑审查" in msg, f"上屏的应当是一句给用户的话：{msg!r}"
+        assert any("向量库炸了" in m for m in seen), (
+            f"异常原文没有进日志，信息凭空消失了；日志里只有：{seen}"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -346,7 +370,8 @@ class TestLLMFailure:
         _FakeRetrieval(3).install(monkeypatch)
         out = _quote_out(_FakeLLM(degraded=True))
         assert out["degraded"] is True
-        assert any("本地文本模型" in r for r in out["degrade_reasons"])
+        # 2026-09-27 改：`[A-06]` 前缀去掉、"本地文本模型"改说"本地处理"。
+        assert any("本地处理" in r for r in out["degrade_reasons"])
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -412,13 +437,15 @@ class TestModes:
     def test_两者都无时报错(self):
         out = asyncio.run(RiskReviewAgent(llm=_FakeLLM()).execute(_state()))
         assert out["trace"][0]["ok"] is False
-        assert "无内容可审" in out["errors"][0]["message"]
+        # 2026-09-27 改：原来是 `状态中既没有 quote_text 也没有 plan_bundles…`
+        # （字段名 + "请检查 errors 字段"）。现在 message 是一句给用户的话。
+        assert "没有可审查的内容" in out["errors"][0]["message"]
 
     def test_有方案但都无预算时报错(self):
         state = _state(plan_bundles={"p1": {"space_plan": {}}})
         out = asyncio.run(RiskReviewAgent(llm=_FakeLLM()).execute(state))
         assert out["trace"][0]["ok"] is False
-        assert "没有预算" in out["errors"][0]["message"]
+        assert "没有算出预算" in out["errors"][0]["message"]
 
 
 # ══════════════════════════════════════════════════════════════════

@@ -71,6 +71,26 @@ _LEVEL_TO_RISK: dict[str, RiskLevel] = {
 #: 风险档的序，用于"通风差上调一档"。
 _ORDER: tuple[RiskLevel, ...] = ("low", "medium", "high")
 
+#: 品类 key → 中文名。
+#:
+#: ⚠️ **本模块的 `basis` 会显示在方案抽屉里**（`PlanDrawer` 逐条渲染），
+#: 所以里面出现的是「地板」「室内门」这些名字，不是 `floor` / `door`
+#: 这种接口 key。名字与材料目录里的 `label` 是同一套（见
+#: `seed_data/material_catalog.json`），但这里只留判据用得到的那几个 ——
+#: 本模块是**纯函数、无 IO**，为了四个词去读目录不划算，那个性质更值钱。
+_CATEGORY_CN: dict[str, str] = {
+    "floor": "地板",
+    "door": "室内门",
+    "cabinet": "橱柜衣柜",
+    "paint": "墙面涂料",
+}
+
+
+def _cn_category(key: str) -> str:
+    """品类 key → 中文名；查不到就原样返回（宁可粗糙，也不丢"是哪个品类"）。"""
+    return _CATEGORY_CN.get(key, key)
+
+
 
 def _worse(a: RiskLevel, b: RiskLevel) -> RiskLevel:
     """取更差的一档；unknown 不参与比较（不知道不等于好，也不等于坏）。"""
@@ -110,7 +130,8 @@ def _assess_one(
             "insufficient_data": True,
             "basis": [
                 f"这套方案没有涉及{label}相关品类"
-                f"（{'、'.join(categories)}），无法据此评估"
+                f"（{'、'.join(_cn_category(c) for c in categories)}），"
+                f"无法据此评估"
             ],
             "note": "没有可判定的材料项，因此不给风险档 —— 不拿'没数据'当'没问题'。",
         }
@@ -193,8 +214,8 @@ def _ventilation_of(layout: dict[str, Any]) -> tuple[bool, str]:
 #: 它划清了"我们推的是什么"和"我们没测什么"，缺了它，
 #: 上面那些风险档就会被当成检测结论。
 DISCLAIMER = (
-    "以上是按**材料环保等级与户型通风条件**推出的风险等级，"
-    "**不是浓度检测值**。国标限量（如 GB 18580 对人造板的释放限量）"
+    "以上是按材料环保等级与户型通风条件推出的风险等级，"
+    "不是浓度检测值。国标限量（如 GB 18580 对人造板的释放限量）"
     "须由具备资质的检测机构在装修完工后现场采样出具报告核定。"
 )
 

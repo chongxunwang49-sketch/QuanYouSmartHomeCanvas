@@ -355,9 +355,11 @@ class TestLLMFailureKeepsSelection:
         m = _mat(out)
 
         assert out["degraded"] is True
-        assert any("回退确定性排序" in r for r in out["degrade_reasons"])
+        # ⚠️ 2026-09-27 改：原来说"已回退确定性排序"——"确定性排序"是内部实现名，
+        #    而这两句都会上屏。现在说的是用户能懂的那件事：按档位与需求自动匹配。
+        assert any("自动匹配出每一项" in r for r in out["degrade_reasons"])
         assert m["confidence"] == 0.0
-        assert any("确定性排序" in g for g in m["data_gaps"])
+        assert any("自动匹配" in g for g in m["data_gaps"])
         assert m["warnings"], "应如实告知说明部分缺失"
 
     def test_兜底理由仍有依据(self):
@@ -412,7 +414,8 @@ class TestGuard:
 
         assert calls == [], "守卫应在调用 LLM 之前拦下"
         assert out["trace"][0]["ok"] is False
-        assert "select_materials" in out["errors"][0]["message"]
+        # 2026-09-27 改：`select_materials`（内部操作名）→ 中文的缺失说明。
+        assert "房间面积" in out["errors"][0]["message"]
 
     def test_不需要墙体信息(self):
         """
@@ -446,7 +449,8 @@ class TestGuard:
     def test_无layout直接失败(self):
         out = _run(_FakeLLM(), layout=None)
         assert out["trace"][0]["ok"] is False
-        assert "layout" in out["errors"][0]["message"]
+        # 2026-09-27 改：`layout`（字段名）→ 一句给用户的话。
+        assert "户型数据" in out["errors"][0]["message"]
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -507,7 +511,8 @@ class TestCrossCutting:
     def test_降级标记传上来(self):
         out = _run(_FakeLLM(degraded=True))
         assert out["degraded"] is True
-        assert any("plan_modern_economy" in r for r in out["degrade_reasons"])
+        # 2026-09-27 改：`plan_modern_economy`（主键）→ 方案的中文身份。
+        assert any("现代简约" in r and "经济" in r for r in out["degrade_reasons"])
 
     def test_trace记录模型与耗时(self):
         t = _run(_FakeLLM())["trace"][0]

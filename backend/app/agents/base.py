@@ -19,14 +19,35 @@ from typing import Any, Sequence
 from loguru import logger
 from pydantic import BaseModel
 
+from ..core.capabilities import OperationNotAllowedError
 from ..core.config import settings
 from ..core.llm_client import ImagePart, LLMClient, LLMError, LLMResult, get_llm_client
 from ..core.logger import log_llm_call, logger
 from ..graph.state import HomeDecoState
+from ..schemas.plan import BUDGET_GRADE_CN as GRADE_CN
+from ..schemas.plan import PLAN_STYLE_CN, plan_label
+
+#: 风格 / 预算档的中文名，以及"一套方案的中文身份"。
+#:
+#: ⚠️ **定义在 `schemas/plan.py`**（枚举的所在地），这里只是转发一下 ——
+#: 三个分支 Agent（A-03/A-04/A-05）与接口层、材料筛选层都要用同一份，
+#: 各写一份迟早会漂开（同一个档位在不同页面显示成不同的中文名）。
+STYLE_CN = PLAN_STYLE_CN
 
 
 class AgentTimeoutError(TimeoutError):
     """Agent 执行超时。"""
+
+
+class AgentInputError(RuntimeError):
+    """
+    Agent 的输入不齐（上游没产出，这一步无从下手）。
+
+    ⚠️ **它的 message 必须已经是面向用户的一句话。** `execute()` 会把它
+    原样交给 `errors[].message`（前端直接渲染），不再套
+    `异常类名: 原文` 那一层 —— 因为那种形状正是本轮要清掉的"工程类提示文字"。
+    缺了哪个字段这类细节写进日志，不写在 message 里。
+    """
 
 
 class BaseAgent(abc.ABC):
@@ -41,6 +62,12 @@ class BaseAgent(abc.ABC):
     code: str = "A-XX"
     #: Agent 名称，如 "LayoutParserAgent"
     name: str = "BaseAgent"
+    #: 面向用户的中文名，如 "户型解析"。
+    #:
+    #: ⚠️ **上屏的文案用它，不用 code / name。** `A-01` 与
+    #: `LayoutParserAgent` 是给日志与排查用的内部标识，混进界面上就是
+    #: 「工程类提示文字」——界面按纯文本渲染，用户读到的是一串代号。
+    label: str = "本步骤"
     #: 单次执行超时（秒）。可从配置覆盖。
     timeout: float = settings.AGENT_TIMEOUT_SECONDS
     #: 本 Agent 是否依赖多模态能力
@@ -83,20 +110,47 @@ class BaseAgent(abc.ABC):
 
         except asyncio.TimeoutError:
             elapsed = self._elapsed_ms(started)
-            reason = f"执行超时（>{self.timeout}s），已跳过"
-            self.log.error(reason)
+            # ⚠️ 这里的 `reason` 会**上屏**（degrade_reasons 与 errors[].message，
+            #    前端原样显示）。所以它是一句给用户的话，不是给排查的人看的：
+            #    超时的秒数、异常类名、原始报文一律只进日志（下面那行）。
+            # ⚠️ 必须留着「超时」两个字：`_finalize` 靠它把 `errors[].type`
+            #    判成 `timeout`（那是控制流通道，前端据此区别对待）。
+            reason = f"{self.label}超时，本次已跳过，其余步骤继续"
+            self.log.error(f"执行超时（>{self.timeout}s），已跳过")
+            return self._finalize({}, elapsed, ok=False, reason=reason)
+
+        except AgentInputError as e:
+            elapsed = self._elapsed_ms(started)
+            # 这句话本身就是给用户写的（见 AgentInputError 的说明）。
+            self.log.warning(f"输入不齐，无法执行：{e}")
+            return self._finalize({}, elapsed, ok=False, reason=str(e))
+
+        except OperationNotAllowedError as e:
+            elapsed = self._elapsed_ms(started)
+            # 守卫的 reason 本来就是给用户看的（如"缺少墙体信息，无法执行该操作"）。
+            # 操作名（`generate_plan` 这类内部标识）只进日志。
+            reason = str(e)
+            self.log.warning(f"业务守卫拦下 {e.operation}：{reason}")
             return self._finalize({}, elapsed, ok=False, reason=reason)
 
         except LLMError as e:
             elapsed = self._elapsed_ms(started)
-            reason = f"LLM 调用失败: {e}"
-            self.log.error(reason)
+            # ⚠️ `LLMError` 是**本项目自己的**异常类，它抛出来的每一句话都由
+            #    我们自己写（`core/llm_client.py` 与各 Agent），并且都已经
+            #    写成面向用户的短句 —— 上游状态码、模型原文、密钥名那些细节
+            #    在**抛出点**就已经改成日志了。所以这里原样透传，不再包一层
+            #    异常类名（`f"{type(e).__name__}: {e}"` 才是要消掉的那种形状）。
+            reason = str(e)
+            self.log.error(f"LLM 调用失败: {reason}")
             return self._finalize({}, elapsed, ok=False, reason=reason)
 
         except Exception as e:  # noqa: BLE001 —— 熔断器必须兜住一切
             elapsed = self._elapsed_ms(started)
-            reason = f"{type(e).__name__}: {e}"
-            self.log.exception(f"执行异常，已隔离: {reason}")
+            reason = f"{self.label}遇到了意外情况，本次已跳过，其余步骤继续"
+            # 异常类名与原文写进日志 —— 界面上看不到，但排查时查得到。
+            self.log.exception(
+                f"执行异常，已隔离: {type(e).__name__}: {e}"
+            )
             return self._finalize({}, elapsed, ok=False, reason=reason)
 
     def _finalize(
@@ -112,7 +166,10 @@ class BaseAgent(abc.ABC):
         out.setdefault("degraded", not ok)
         if not ok and reason:
             out.setdefault("degrade_reasons", [])
-            out["degrade_reasons"] = list(out["degrade_reasons"]) + [f"[{self.code}] {reason}"]
+            # ⚠️ **不带 `[A-0x]` 前缀。** 这两处都会上屏（降级提示条里逐条列，
+            #    前端原样显示），而 `[A-01]` 是内部代号。哪个环节出的问题，
+            #    文案本身已经说了（`self.label`），排查用的代号在 trace 与日志里。
+            out["degrade_reasons"] = list(out["degrade_reasons"]) + [reason]
             out["errors"] = list(out.get("errors", [])) + [{
                 "agent": self.code,
                 "type": "timeout" if "超时" in reason else "error",
@@ -265,4 +322,7 @@ class BaseAgent(abc.ABC):
         return f"<{self.name} code={self.code} timeout={self.timeout}s>"
 
 
-__all__ = ["BaseAgent", "AgentTimeoutError"]
+__all__ = [
+    "BaseAgent", "AgentTimeoutError", "AgentInputError",
+    "STYLE_CN", "GRADE_CN", "plan_label",
+]

@@ -675,16 +675,18 @@ def assemble_plans(state: HomeDecoState) -> dict[str, Any]:
 
     notes: list[str] = []
     if got < expected:
+        # ⚠️ `notes` 会**上屏**（对比表顶部那段说明），所以这里不列
+        #    `plan_modern_economy` 这类主键 —— 只说套数。
         notes.append(
             f"请求生成 {expected} 套方案，实际产出 {got} 套"
-            + (f"（完全无产出：{'、'.join(empty_branches)}）" if empty_branches else "")
+            + (f"（有 {len(empty_branches)} 套完全没有产出）" if empty_branches else "")
             + "，可能是个别分支失败或超时"
         )
     missing = [p["plan_id"] for p in plans if p["missing_artifacts"]]
     if missing:
         notes.append(
-            f"有 {len(missing)} 套方案只产出了部分内容"
-            f"（{'、'.join(missing)}），缺失项见各行 missing_artifacts"
+            f"有 {len(missing)} 套方案只产出了部分内容，"
+            f"缺哪几项已在对应方案的卡片上逐条标明"
         )
 
     comparison: dict[str, Any] = {
@@ -739,11 +741,14 @@ def aggregate_plans(state: HomeDecoState) -> dict[str, Any]:
 
         if got == 0:
             result["degraded"] = True
-            result["degrade_reasons"] = ["[fan-in] 三套方案分支均未产出可用方案"]
+            # ⚠️ 这几条都会上屏（降级提示条 + 「有 N 个环节没能完成」清单）。
+            #    `[fan-in]` 是内部节点名，`str(e)` / 异常类名也只进日志。
+            result["degrade_reasons"] = ["三套方案都没有产出可用的结果"]
             result["errors"] = [{
                 "agent": "fan-in",
                 "type": "error",
-                "message": "所有方案分支失败，fan-in 无内容可汇总",
+                "message": "三套方案都没有产出结果，没有可汇总的内容。"
+                           "稍后重试通常能补上。",
             }]
         return result
 
@@ -754,12 +759,13 @@ def aggregate_plans(state: HomeDecoState) -> dict[str, Any]:
             "comparison": {
                 "available": False,
                 "plan_count": 0,
-                "unavailable_reason": f"汇总过程出错：{type(e).__name__}",
+                "unavailable_reason": "方案汇总没能完成，请稍后重试",
             },
             "phase": "finalizing",
             "degraded": True,
-            "degrade_reasons": [f"[fan-in] 汇总异常：{type(e).__name__}: {e}"],
-            "errors": [{"agent": "fan-in", "type": "error", "message": str(e)}],
+            "degrade_reasons": ["方案汇总没能完成，请稍后重试"],
+            "errors": [{"agent": "fan-in", "type": "error",
+                        "message": "方案汇总没能完成，请稍后重试"}],
         }
 
 

@@ -130,7 +130,12 @@ class TestSweepAuditFiles:
 
     def test_目录里没有审计文件时也说清(self, tmp_path: Path):
         sweep = metrics.sweep_audit_files(tmp_path)
-        assert sweep.errors and "app_*.log" in sweep.errors[0]
+        # ⚠️ 2026-09-27 改：`sweep.errors` 会被接口放进 `notes` **上屏**，
+        #    原来那句里带着文件名通配 `app_*.log` 与目录路径 —— 工程细节。
+        #    现在只说"这段时间还没有记录"，文件名与目录进日志。
+        assert sweep.errors
+        assert "还没有留下性能记录" in sweep.errors[0]
+        assert "app_*.log" not in sweep.errors[0]
 
     def test_抽出任务耗时与LLM耗时(self, tmp_path: Path):
         self._write(tmp_path, [
@@ -322,3 +327,31 @@ class TestHotPathWiring:
         assert snap and snap["svg_render"]["n"] == 3
         # 实测这份最小户型是毫秒级；给一个宽松上限，防的是"计时单位写错"
         assert snap["svg_render"]["p95"] < 3000
+
+
+def test_代号与中文名的对应表没有漂移():
+    """
+    `routes._AGENT_CN`（性能页把 `A-01` 显示成「户型解析」用的表）
+    必须与每个 Agent 类自己的 `code` / `label` 对得上。
+
+    ⚠️ 为什么要有这条：那张表是**抄**了一份类属性。加了新环节却忘了补表，
+       性能页上就会露出一个 `A-07`；改了某个环节的中文名而没同步，
+       两个页面会把同一个环节叫成两个名字。两种都不会报错，只会显示得不对劲。
+    """
+    from backend.app.agents.budget_agent import BudgetAgent
+    from backend.app.agents.layout_diagnoser import LayoutDiagnoserAgent
+    from backend.app.agents.layout_parser import LayoutParserAgent
+    from backend.app.agents.material_agent import MaterialAgent
+    from backend.app.agents.risk_reviewer import RiskReviewAgent
+    from backend.app.agents.space_planner import SpacePlannerAgent
+    from backend.app.api.routes import _AGENT_CN
+
+    classes = [LayoutParserAgent, LayoutDiagnoserAgent, SpacePlannerAgent,
+               BudgetAgent, MaterialAgent, RiskReviewAgent]
+    for cls in classes:
+        assert cls.code in _AGENT_CN, f"{cls.__name__}（{cls.code}）不在对应表里"
+        assert _AGENT_CN[cls.code] == cls.label, (
+            f"{cls.code} 的中文名对不上：表里是「{_AGENT_CN[cls.code]}」，"
+            f"类属性是「{cls.label}」"
+        )
+    assert _AGENT_CN["fan-in"] == "方案汇总", "汇总那一步的中文名被改掉了"

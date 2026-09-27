@@ -362,9 +362,19 @@ def _parse_openai_usage(data: dict) -> tuple[int, int, int, dict]:
 
 
 class _Provider:
-    """提供方基类。"""
+    """
+    提供方基类。
+
+    ⚠️ `name`（`deepseek` / `ollama`）是**内部标识**：日志、trace 的
+    `provider` 字段用它。而它抛出的异常消息会被 Agent 塞进 `errors[]`
+    与 `degrade_reasons`，**最终显示在界面上** —— 所以那些句子里
+    一律用 `label`（「云端模型服务」这类中文名），不用 `name`、不用
+    模型串号、不用 HTTP 状态码。
+    """
 
     name: str = "base"
+    #: 面向用户的中文名。只用于上屏的文案。
+    label: str = "模型服务"
 
     def __init__(self, base_url: str, model: str, api_key: str = ""):
         self.base_url = base_url.rstrip("/")
@@ -411,7 +421,11 @@ class _Provider:
             ) as resp:
                 if resp.status_code >= 400:
                     body = (await resp.aread()).decode("utf-8", "replace")
-                    raise LLMError(f"[{self.name}] HTTP {resp.status_code}: {body[:300]}")
+                    # 状态码与上游响应体只进日志（见 _Provider 的说明）
+                    logger.warning(
+                        f"[{self.name}] HTTP {resp.status_code}: {body[:300]}"
+                    )
+                    raise LLMError(f"{self.label}没有响应，请稍后重试")
                 async for line in resp.aiter_lines():
                     if not line or not line.startswith("data:"):
                         continue
@@ -451,9 +465,13 @@ class _Provider:
                 json=payload,
             )
             if resp.status_code >= 400:
-                raise LLMError(
+                # 上游状态码 + 响应体前 300 字：**只进日志**。这两样都会
+                # 一路走到界面上（Agent 把异常塞进 errors[] 再渲染），
+                # 所以异常消息本身写成一句给用户的话。
+                logger.warning(
                     f"[{self.name}] HTTP {resp.status_code}: {resp.text[:300]}"
                 )
+                raise LLMError(f"{self.label}没有响应，请稍后重试")
             data = resp.json()
 
         choice = (data.get("choices") or [{}])[0]
@@ -462,11 +480,18 @@ class _Provider:
 
         if not text.strip():
             if r > 0:
-                raise LLMTruncatedError(
+                logger.warning(
                     f"[{self.name}] 返回空内容，但消耗了 {r} 个 reasoning token —— "
                     f"max_tokens={max_tokens} 被思考过程耗尽。请调大 LLM_MAX_TOKENS。"
                 )
-            raise LLMError(f"[{self.name}] 返回空内容，finish_reason={choice.get('finish_reason')}")
+                raise LLMTruncatedError(
+                    f"{self.label}这次还没写完就到达长度上限了，请稍后重试"
+                )
+            logger.warning(
+                f"[{self.name}] 返回空内容，"
+                f"finish_reason={choice.get('finish_reason')}"
+            )
+            raise LLMError(f"{self.label}返回了空内容，请稍后重试")
         return text, p, c, r, u
 
 
@@ -474,6 +499,7 @@ class DeepSeekProvider(_Provider):
     """DeepSeek（多模态主模型）。实测 /v1 支持 image_url 内联 base64 图片。"""
 
     name = "deepseek"
+    label = "云端模型服务"
 
     @property
     def available(self) -> bool:
@@ -484,6 +510,7 @@ class OllamaProvider(_Provider):
     """Ollama（本地兜底）。走 OpenAI 兼容端点，无网络依赖。"""
 
     name = "ollama"
+    label = "本地模型服务"
 
     def __init__(self, base_url: str, model: str):
         super().__init__(base_url=f"{base_url.rstrip('/')}/v1", model=model, api_key="")
@@ -591,7 +618,11 @@ class LLMClient:
         )
 
         if not chain:
-            raise LLMError("没有可用的 LLM 提供方（未配置 DEEPSEEK_API_KEY 且降级被禁用）")
+            # ⚠️ 这条会经 errors[] 上屏，所以不写配置项名。
+            logger.warning(
+                "没有可用的 LLM 提供方（未配置 DEEPSEEK_API_KEY 且降级被禁用）"
+            )
+            raise LLMError("当前没有可用的模型服务，暂时无法生成内容")
 
         errors: list[str] = []
         started = time.perf_counter()
@@ -631,12 +662,19 @@ class LLMClient:
                     )
                 return result
             except Exception as e:  # noqa: BLE001 —— 降级链必须吞掉所有异常继续尝试
-                msg = f"{provider.name}/{provider.model}: {type(e).__name__}: {e}"
-                errors.append(msg)
-                logger.warning(f"[{agent}] 提供方 {provider.name} 调用失败: {e}")
+                # ⚠️ `errors` 会被拼成 `LLMResult.degrade_reason`，而它最终
+                #    出现在**降级提示条**上。所以交给用户的是
+                #    「本地模型服务没能返回结果」这类短句；提供方标识、
+                #    模型串号、异常类名与原文都只进日志。
+                errors.append(f"{provider.label}没能返回结果")
+                logger.warning(
+                    f"[{agent}] 提供方 {provider.name}/{provider.model} 调用失败: "
+                    f"{type(e).__name__}: {e}"
+                )
                 continue
 
-        raise LLMError(f"[{agent}] 所有提供方均失败:\n  " + "\n  ".join(errors))
+        logger.warning(f"[{agent}] 所有提供方均失败: " + "；".join(errors))
+        raise LLMError("所有可用的模型服务都没能返回结果，请稍后重试")
 
     # ── 流式（只给对话界面用）──────────────────────────────
 
@@ -685,15 +723,19 @@ class LLMClient:
                 if started:
                     return
                 # 一个 chunk 都没来 = 这次提供方没成功，继续下一个
-                errors.append(f"{provider.name}: 空响应")
+                errors.append(f"{provider.label}没有返回内容")
             except Exception as e:  # noqa: BLE001
-                errors.append(f"{provider.name}: {type(e).__name__}: {e}")
-                logger.warning(f"[{agent}] 流式调用 {provider.name} 失败: {e}")
+                errors.append(f"{provider.label}没能返回结果")
+                logger.warning(
+                    f"[{agent}] 流式调用 {provider.name}/{provider.model} 失败: "
+                    f"{type(e).__name__}: {e}"
+                )
                 if started:
                     # 已经吐过字了，不能再换一个提供方接着吐（会拼出两段话）
                     raise
                 continue
-        raise LLMError(f"[{agent}] 流式：所有提供方均失败:\n  " + "\n  ".join(errors))
+        logger.warning(f"[{agent}] 流式：所有提供方均失败: " + "；".join(errors))
+        raise LLMError("所有可用的模型服务都没能返回结果，请稍后重试")
 
     # ── 结构化输出 ────────────────────────────────────────
 
@@ -749,10 +791,14 @@ class LLMClient:
                     f"错误信息：{str(e)[:500]}\n"
                 )
 
-        raise LLMError(
-            f"[{agent}] 结构化输出在 {settings.LLM_MAX_RETRIES + 1} 次尝试后仍失败: {last_error}\n"
-            f"最后一次原文前 500 字: {(last_result.text[:500] if last_result else '')}"
+        # ⚠️ 校验错误与模型原文前 500 字**只进日志**：异常原文里既有
+        #    pydantic 的字段路径，也有模型半成品的 JSON。
+        logger.error(
+            f"[{agent}] 结构化输出在 {settings.LLM_MAX_RETRIES + 1} 次尝试后仍失败: "
+            f"{last_error}\n最后一次原文前 500 字: "
+            f"{(last_result.text[:500] if last_result else '')}"
         )
+        raise LLMError("模型没能按要求的格式给出结果，请稍后重试")
 
     # ── Embedding ─────────────────────────────────────────
 
@@ -771,7 +817,8 @@ class LLMClient:
                 data = resp.json()
                 embs = data.get("embeddings") or []
                 if not embs:
-                    raise LLMError(f"Ollama embedding 返回空: {str(data)[:200]}")
+                    logger.warning(f"[embed] 返回空: {str(data)[:200]}")
+                    raise LLMError("文本向量化服务没有返回结果")
                 out.append(embs[0])
         return out
 

@@ -103,7 +103,10 @@ class TestContext:
         monkeypatch.setattr(A.retriever, "search_many", boom)
         ctx = A.build_context("问点什么", layout=LAYOUT, plan=None)
         assert ctx.knowledge_available is False
-        assert "chroma 挂了" in ctx.knowledge_reason
+        # ⚠️ 2026-09-27 改：`knowledge_reason` 会**原样显示在对话页上**
+        #    （「（知识库不可用：…）」），所以界面拿到的是人话；异常原文进日志。
+        assert "知识库暂时不可用" in ctx.knowledge_reason
+        assert "chroma 挂了" not in ctx.knowledge_reason
 
 
 # ══════════════════════════════════════════════════════════════════

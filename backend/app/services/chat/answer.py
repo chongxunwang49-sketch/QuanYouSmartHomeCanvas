@@ -181,8 +181,11 @@ def build_context(
         ctx.knowledge = [c.to_dict() for c in (res.chunks or [])]
     except Exception as e:  # noqa: BLE001
         ctx.knowledge_available = False
-        ctx.knowledge_reason = f"{type(e).__name__}: {e}"
-        logger.warning(f"[chat] 知识库检索异常：{e}")
+        # ⚠️ `knowledge_reason` 会**原样显示在对话页上**
+        #    （「（知识库不可用：…）」），所以是给用户的一句短话；
+        #    异常类名与原文只进日志。
+        ctx.knowledge_reason = "知识库暂时不可用，本次回答没有参考资料"
+        logger.warning(f"[chat] 知识库检索异常：{type(e).__name__}: {e}")
 
     # ② 户型 / ③ 屋主详情 / ④ 方案
     if layout:

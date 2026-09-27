@@ -54,6 +54,23 @@ from .schemas import ApiError
 UPGRADE_HINT = "在「个人中心 → 我的套餐」里开通演示会员即可解锁（演示环境，不会真实扣费）。"
 
 
+#: 额度桶的中文名。
+#:
+#: ⚠️ `task_type` 是 `parse` / `generate` / `review` 这三个接口枚举值
+#: （配额键、前端按它取数），但**不能用它拼上屏的话** —— 额度用尽的
+#: 报错会弹在界面上。这里与前端 `ProfileView` 的 `TASK_LABEL` 是同一套名字。
+TASK_TYPE_CN: dict[str, str] = {
+    "parse": "户型解析",
+    "generate": "方案生成",
+    "review": "报价单审查",
+}
+
+
+def _task_cn(task_type: str) -> str:
+    """额度桶的枚举值 → 中文名；查不到原样返回（宁可粗糙，也不丢信息）。"""
+    return TASK_TYPE_CN.get(task_type, task_type)
+
+
 def _bearer(authorization: str | None) -> str:
     """从 `Authorization: Bearer xxx` 里取令牌。取不到返回空串。"""
     raw = (authorization or "").strip()
@@ -145,9 +162,11 @@ async def consume_quota(user: User, task_type: TaskType) -> None:
                 f"user={user.username} task={task_type}"
             )
         return
+    # ⚠️ 这句话会**弹在界面上**，所以用中文的桶名（`task_type` 是接口枚举，
+    #    结构化字段里照旧给原值，见下面的 `data`）。
     raise ApiError(
         4006,
-        f"今日「{task_type}」额度已用完（{role_limit.limit} 次/日）。"
+        f"今日「{_task_cn(task_type)}」额度已用完（{role_limit.limit} 次/日）。"
         f"{role_limit.reset_at} 后重置。",
         data={
             "task_type": task_type,
@@ -162,6 +181,7 @@ async def consume_quota(user: User, task_type: TaskType) -> None:
 
 __all__ = [
     "UPGRADE_HINT",
+    "TASK_TYPE_CN",
     "consume_quota",
     "current_user",
     "optional_user",

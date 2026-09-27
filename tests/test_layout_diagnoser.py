@@ -181,7 +181,10 @@ class TestCapabilityGate:
     def test_missing_layout_rejected(self):
         out = asyncio.run(LayoutDiagnoserAgent(llm=_FakeLLM()).execute(_state(None)))
         assert out["trace"][0]["ok"] is False
-        assert "layout" in out["errors"][0]["message"]
+        # ⚠️ 2026-09-27 改：原来这句是 `状态中缺少 layout…请检查 errors 字段`——
+        #    字段名与"errors 字段"都会显示在界面上。现在 message 是一句人话
+        #    （AgentInputError），缺哪个字段进日志。
+        assert "户型数据" in out["errors"][0]["message"]
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -433,7 +436,10 @@ class TestDegradation:
         out = asyncio.run(LayoutDiagnoserAgent(llm=_FakeLLM(degraded=True))
                           .execute(_state(FULL_LAYOUT)))
         assert out["degraded"] is True
-        assert "A-02" in out["degrade_reasons"][0]
+        # ⚠️ 2026-09-27 改：这里原来断言 `[A-02]` 前缀 —— 那是内部 Agent 代号，
+        #    而 `degrade_reasons` 会逐条列在界面的降级提示条上。现在上屏的是
+        #    Agent 的中文名（`BaseAgent.label`），代号仍在 trace 的 `agent` 里。
+        assert "户型诊断" in out["degrade_reasons"][0]
 
     def test_llm_failure_isolated(self):
         out = asyncio.run(LayoutDiagnoserAgent(llm=_FakeLLM(raises=LLMError("全部失败")))

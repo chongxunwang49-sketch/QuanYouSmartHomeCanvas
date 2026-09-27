@@ -590,7 +590,9 @@ class TestBranchIsolation:
         assert out["comparison"]["available"] is False
         assert out["comparison"]["plan_count"] == 0
         assert out["degraded"] is True
-        assert any("fan-in" in r for r in out["degrade_reasons"])
+        # ⚠️ 2026-09-27 改：原来断言降级原因里带 `fan-in` 这个内部节点名。
+        #    那几行会原样列在界面的降级提示条上，所以换成一句人话。
+        assert any("都没有产出可用的结果" in r for r in out["degrade_reasons"])
         assert out["errors"], "无产出必须记错误，不能静默返回空"
 
     def test_全部失败时图不崩(self, monkeypatch):

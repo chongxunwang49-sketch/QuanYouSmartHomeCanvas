@@ -335,7 +335,9 @@ class TestAssumptionsAreRecorded:
         )
 
     def test_房间轮廓是矩形近似且被记录(self, scene):
-        assert any("bbox" in a for a in scene.assumptions)
+        # ⚠️ 2026-09-27 改：这几条 assumptions 会进 SVG 的 `<desc>`（跟着导出的
+        #    图走、屏幕阅读器会念），所以不再写 `bbox` 这个内部缩写。
+        assert any("矩形范围近似" in a for a in scene.assumptions)
 
     def test_比例尺是近似且被记录(self, scene):
         assert any("近似" in n for n in scene.scale_notes)

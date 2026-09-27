@@ -210,7 +210,9 @@ class TestPlaceRoom:
             doors=[], openings=[], player_radius_m=0.25,
         )
         assert len(placed) == 1
-        assert any("同类已有一件" in r["reason"] for r in rejected)
+        # 2026-09-27 改：这条 reason 会显示在 3D 页的"未摆放"清单里，
+        # 所以不再写 `family=sofa`（内部字段名 + 英文取值）。
+        assert any("已经有同类家具" in r["reason"] for r in rejected)
 
     def test_占地额度按房间面积算而不是按件数(self):
         """

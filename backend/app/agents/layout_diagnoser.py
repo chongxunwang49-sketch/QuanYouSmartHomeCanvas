@@ -42,7 +42,7 @@ from typing import Any
 from ..core.capabilities import OperationNotAllowedError, check_operation
 from ..graph.state import HomeDecoState
 from ..schemas.layout import LayoutDiagnosis
-from .base import BaseAgent
+from .base import AgentInputError, BaseAgent
 
 #: 详情文档进提示词时的截断长度。一份详细说明通常 1–3 KB；
 #: 留 6000 字符足够覆盖，又不至于把上下文挤满（诊断本身还要放户型数据）。
@@ -131,6 +131,7 @@ class LayoutDiagnoserAgent(BaseAgent):
     """A-02：户型结构化数据 → 五维诊断。"""
     code = "A-02"
     name = "LayoutDiagnoserAgent"
+    label = "户型诊断"
     requires_vision = False          # 纯文本推理，比 A-01 快得多
     # 诊断是纯文本调用，比多模态解析快；但实测也撞过一次 30s。
     # 放宽到 60s —— 宁可多等一会儿，也不要让用户白跑一遍 40 秒的解析。
@@ -139,9 +140,12 @@ class LayoutDiagnoserAgent(BaseAgent):
     async def run(self, state: HomeDecoState) -> dict[str, Any]:
         layout = state.get("layout")
         if not layout:
-            raise ValueError(
-                "状态中缺少 layout，A-02 无法执行。"
-                "上游 A-01 可能已失败——请检查 errors 字段"
+            # ⚠️ message 会**上屏**（errors[].message），所以是一句给用户的话；
+            #    "上游 A-01 没产出 layout" 这类细节进日志（见 base.AgentInputError）。
+            self.log.warning("状态中缺少 layout，上游 A-01 未产出，A-02 无法执行")
+            raise AgentInputError(
+                "这次没能拿到户型数据，诊断无法进行 —— "
+                "请重新上传户型图解析一次。"
             )
 
         # ══ 业务连续性守卫 ══════════════════════════════════════
@@ -171,7 +175,7 @@ class LayoutDiagnoserAgent(BaseAgent):
             "diagnosis": payload,
             "degraded": llm_result.degraded,
             "degrade_reasons": (
-                [f"[A-02] 诊断由本地文本模型完成：{llm_result.degrade_reason}"]
+                [f"本次{self.label}由本地处理完成：{llm_result.degrade_reason}"]
                 if llm_result.degrade_reason else []
             ),
             "phase": "diagnosing",
@@ -345,21 +349,25 @@ class LayoutDiagnoserAgent(BaseAgent):
         rooms = layout.get("rooms") or []
         #: 代码判定出来的**基础数据缺口**。与模型自己写的那堆"知情说明"分开计数 ——
         #: 见第 3 步：压低置信度只该由**我们的数据缺失**触发，不该由模型的谨慎措辞触发。
+        #:
+        #: ⚠️ 这里存的是**中文名**，不是 `windows` / `areas` 那种内部键 ——
+        #:    这些字直接进 `data_gaps` 上屏（下面第 3 步那句"因缺少 N 项基础数据"），
+        #:    内部键会让界面上出现一串英文枚举。
         hard_gaps: list[str] = []
 
         if not (layout.get("windows") or []) and not has_detail:
             gaps.append("数据中未识别到窗户，采光与通风评分缺乏直接依据")
-            hard_gaps.append("windows")
+            hard_gaps.append("窗户")
         if not any((r.get("area") or 0) > 0 for r in rooms):
             gaps.append("房间面积数据缺失，空间利用率评分不可靠")
-            hard_gaps.append("areas")
+            hard_gaps.append("面积")
         # 朝向：详情文档里写了朝向，就不算缺口（指北针只是"从图上判断朝向"的手段之一）
         if not layout.get("has_north_arrow") and not has_detail:
             gaps.append("图中无指北针，朝向判断可能不准确")
-            hard_gaps.append("north_arrow")
+            hard_gaps.append("朝向标注")
         if not (layout.get("walls") or []):
             gaps.append("未识别到墙体，承重墙判断无从进行")
-            hard_gaps.append("walls")
+            hard_gaps.append("墙体")
 
         # 去重保序
         payload["data_gaps"] = list(dict.fromkeys(gaps))

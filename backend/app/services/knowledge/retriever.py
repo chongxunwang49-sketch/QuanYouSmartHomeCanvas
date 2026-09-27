@@ -254,9 +254,11 @@ def search(
         logger.warning(f"[knowledge] embedding 不可用：{e}")
         return RetrievalResult(query=query, available=False, reason=str(e))
     except Exception as e:  # noqa: BLE001
+        # ⚠️ `reason` 会**上屏**（对话页的"知识库不可用：…"、审查页的
+        #    数据缺口清单），所以给用户一句短话，异常类名与原文只进日志。
         logger.warning(f"[knowledge] embedding 异常：{type(e).__name__}: {e}")
         return RetrievalResult(query=query, available=False,
-                               reason=f"{type(e).__name__}: {e}")
+                               reason="知识库暂时连不上，本次没有取到参考资料")
 
     # ── ② 向量检索 ──────────────────────────────────────
     want_rerank = settings.rerank_enabled
@@ -268,7 +270,7 @@ def search(
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[knowledge] 向量检索失败：{type(e).__name__}: {e}")
         return RetrievalResult(query=query, available=False,
-                               reason=f"向量检索失败：{type(e).__name__}: {e}")
+                               reason="知识库暂时查不出结果，本次没有取到参考资料")
 
     # ── ③ 组装 + 过滤 ───────────────────────────────────
     chunks = [
@@ -287,8 +289,11 @@ def search(
     if not kept:
         return RetrievalResult(
             query=query, chunks=[], available=True,
+            # ⚠️ 这句会上屏（对话页 / 审查页的数据缺口清单）。
+            #    所以不写内部的相似度阈值 —— 用户要知道的是
+            #    "查到了东西但没有一条够相关"，而不是阈值是多少。
             reason=(
-                f"检索到 {len(chunks)} 条但相似度均低于 {min_similarity}"
+                f"检索到 {len(chunks)} 条，但相关程度均低于可用下限"
                 if chunks else "知识库中没有相关内容"
             ),
         )

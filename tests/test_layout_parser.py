@@ -214,7 +214,11 @@ class TestLayoutParserAgent:
         agent = LayoutParserAgent(llm=_FakeLLM(raises=LLMError("所有提供方均失败")))
         out = asyncio.run(agent.execute(_state()))
         assert out["degraded"] is True
-        assert "LLM 调用失败" in out["errors"][0]["message"]
+        # ⚠️ 2026-09-27 改：`LLMError` 的消息本身就是面向用户的一句话
+        #    （由 core/llm_client.py 保证），base.execute **原样透传**，
+        #    不再套一层 `LLM 调用失败: …`。原来那条断言守的是"底座会加前缀"，
+        #    而那个前缀正是本轮要清掉的形状（异常原文不该出现在界面上）。
+        assert "所有提供方均失败" in out["errors"][0]["message"]
         # 关键：图还能继续走
         assert out["trace"][0]["ok"] is False
 
@@ -290,7 +294,10 @@ class TestLayoutParserAgent:
         fake = _FakeLLM([{"rooms": [], "confidence": 0.2}])
         out = asyncio.run(LayoutParserAgent(llm=fake).execute(_state(prefer_local=True)))
         assert out["trace"][0]["ok"] is False
-        assert "质量闸门" in out["errors"][0]["message"]
+        # ⚠️ 2026-09-27 改：这句话原来写的是"降级解析未通过质量闸门"，还会把
+        #    主模型的异常原文拼进去 —— 两样都会显示在界面上。现在给用户的是
+        #    一句人话（"没能从图上认出足够的房间"），闸门判据与异常原文进日志。
+        assert "没能从图上认出足够的房间" in out["errors"][0]["message"]
 
     def test_quality_gate_rejects_too_few_rooms(self):
         """闸门：只读出 1 个房间，信息量不足，同样拒绝。"""

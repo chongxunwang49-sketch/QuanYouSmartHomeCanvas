@@ -347,7 +347,7 @@ def derive_scale(layout: dict[str, Any]) -> ScaleEstimate:
     total_area = float(layout.get("total_area") or 0)
 
     if not boxes:
-        notes.append("没有房间 bbox，无法由面积推导比例尺，退化为 1 px = 1 cm")
+        notes.append("没有房间的矩形范围，无法由面积推导比例尺，退化为 1 px = 1 cm")
         return ScaleEstimate(px_per_m=100.0, source="fallback_default", notes=notes)
 
     sum_px = 0.0
@@ -355,7 +355,7 @@ def derive_scale(layout: dict[str, Any]) -> ScaleEstimate:
         sum_px += abs(x2 - x1) * abs(y2 - y1)
 
     if sum_px <= 0:
-        notes.append("房间 bbox 面积为 0，退化为 1 px = 1 cm")
+        notes.append("房间的矩形范围面积为 0，退化为 1 px = 1 cm")
         return ScaleEstimate(px_per_m=100.0, source="fallback_default", notes=notes)
 
     if total_area <= 0:
@@ -369,12 +369,12 @@ def derive_scale(layout: dict[str, Any]) -> ScaleEstimate:
             )
             px_per_m = span_px / max(dims)
             notes.append(
-                f"缺少 total_area，改用尺寸标注中的最大值 {max(dims)}m 推导 —— "
+                f"缺少套内总面积，改用尺寸标注中的最大值 {max(dims)}m 推导 —— "
                 f"该标注未必对应户型最长边，误差可能很大"
             )
             return ScaleEstimate(px_per_m=px_per_m, source="from_dimension", notes=notes)
 
-        notes.append("既无 total_area 也无尺寸标注，退化为 1 px = 1 cm")
+        notes.append("既没有套内总面积、也没有尺寸标注，退化为 1 px = 1 cm")
         return ScaleEstimate(px_per_m=100.0, source="fallback_default", notes=notes)
 
     px_per_m = math.sqrt(sum_px / total_area)
@@ -396,7 +396,7 @@ def derive_scale(layout: dict[str, Any]) -> ScaleEstimate:
         )
         if gap > SCALE_DISAGREEMENT_WARN:
             notes.append(
-                "⚠️ 两个来源分歧偏大，说明原图不严格按比例绘制、或 bbox 有偏差。"
+                "⚠️ 两个来源分歧偏大，说明原图不严格按比例绘制、或房间轮廓有偏差。"
                 "3D 漫游里的尺寸与实际会有出入"
             )
 
@@ -406,8 +406,8 @@ def derive_scale(layout: dict[str, Any]) -> ScaleEstimate:
     #    一次是后端的 ApiError 文案里（2026-09-24 在 3D 页面的家具报错条上
     #    看到的）。所以现在有一条测试扫后端所有用户可见文案。
     notes.append(
-        "该比例尺由 bbox 面积推导，是近似值：bbox 是轴对齐矩形，"
-        "L 形房间会被高估、相邻房间的 bbox 会重叠"
+        "该比例尺由房间的矩形范围面积推导，是近似值：矩形是正放（不对齐户型"
+        "走向）的，L 形房间会被高估、相邻房间的矩形会重叠"
     )
     return ScaleEstimate(px_per_m=px_per_m, source=source, notes=notes)
 
@@ -493,8 +493,8 @@ def normalize_layout(
         )
         if declared and poly_area and abs(declared - poly_area) / max(poly_area, 1e-6) > 0.35:
             issues.append(
-                f"房间「{r.get('name')}」：模型给的面积 {declared:.1f}㎡ 与 "
-                f"bbox 算出的 {poly_area:.1f}㎡ 相差过大，已以几何为准"
+                f"房间「{r.get('name')}」：解析给出的面积 {declared:.1f}㎡ 与 "
+                f"按房间轮廓算出的 {poly_area:.1f}㎡ 相差过大，已以轮廓为准"
             )
 
     # ── 墙 ──
@@ -539,13 +539,13 @@ def normalize_layout(
         # 会以为自己可以按真实墙体建模。
         if not walls:
             issues.append(
-                "未识别出任何墙体。3D 只能按房间 bbox 建盒体，"
-                "渲染器请走简化模式"
+                "未识别出任何墙体。3D 只能按房间的矩形范围搭方盒，"
+                "因此已降级为简化模式"
             )
         else:
             issues.append(
-                "外墙未闭合：端点之间存在缺口。3D 漫游若按真实墙体建模会漏光、"
-                "可以走出去，应降级为房间盒体模式"
+                "外墙未闭合：墙与墙之间有缺口。3D 漫游若按真实墙体建模会漏光、"
+                "可以走出去，因此已降级为房间盒体模式"
             )
 
     # ── 门窗 ──
@@ -585,16 +585,19 @@ def normalize_layout(
     unmatched = _unmatched_wall_ratio(walls, rooms)
 
     # ── 组装 ──
+    # ⚠️ 这几句会进 SVG 的 `<desc>`（跟着导出的图走、屏幕阅读器会念），
+    #    所以不带 `**` 星号（前端与 SVG 都按纯文本渲染），也不写 `bbox`
+    #    这种内部缩写 —— 说"房间的矩形范围"。
     assumptions: list[str] = []
     if not boxes:
-        assumptions.append("没有房间 bbox，尺寸完全来自墙体坐标，精度较低")
+        assumptions.append("没有房间的矩形范围，尺寸完全来自墙体坐标，精度较低")
     assumptions.append(
-        f"层高 {ceiling_height_m}m 是**假设值** —— 户型图是二维的，"
+        f"层高 {ceiling_height_m}m 是假设值 —— 户型图是二维的，"
         f"不含层高信息"
     )
     if any(o.width_is_assumed for o in openings):
         assumptions.append(f"部分门窗宽度按标准值兜底（门 {DEFAULT_DOOR_WIDTH_M}m）")
-    assumptions.append("房间轮廓目前用 bbox 矩形近似，不是真实墙面轮廓")
+    assumptions.append("房间轮廓目前用矩形范围近似，不是真实墙面轮廓")
 
     scene = Scene(
         px_per_m=scale.px_per_m,

@@ -51,6 +51,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from ...schemas.plan import BUDGET_GRADE_CN
 from . import catalog
 
 __all__ = [
@@ -278,11 +279,14 @@ def validate_filters(
 
     # ── 与平台保底冲突 ────────────────────────────────────
     if QUANYOU_BRAND in filters.excluded_brands:
+        # ⚠️ `problems[].message` 会**上屏**（接口 4001 的报错正文），
+        #    所以不写 `AC-18` 这种内部编号，也不写 `preferred_brands`
+        #    这种字段名 —— 那句话要给业主看，不是给接口调用者看。
         problems.append(FilterProblem(
             "quanyou_excluded",
-            f"不能排除「{QUANYOU_BRAND}」：AC-18 要求方案中全友产品覆盖率不低于 "
-            f"{catalog.MIN_QUANYOU_COVERAGE:.0%}，这是平台级要求，不是可选项。"
-            f"如果你希望少推全友，请改用 preferred_brands 指定其它偏好品牌。",
+            f"不能排除「{QUANYOU_BRAND}」：方案中的全友产品占比有平台下限"
+            f"（不低于 {catalog.MIN_QUANYOU_COVERAGE:.0%}），这一项不可关闭。"
+            f"如果希望少推全友，请改用在「偏好品牌」里指定其它品牌。",
         ))
 
     # ── 排除到无品类可选 ──────────────────────────────────
@@ -311,8 +315,11 @@ def validate_filters(
             empty_by_grade[str(grade)] = empty
 
     if empty_by_grade:
+        # ⚠️ `g` 是 `economy` / `medium` / `high` 这些接口枚举值，
+        #    直接拼进报错就会在界面上显示英文档位名。
         detail = "；".join(
-            f"{g} 档：{'、'.join(cats)}" for g, cats in empty_by_grade.items()
+            f"{BUDGET_GRADE_CN.get(g, g)}档：{'、'.join(cats)}"
+            for g, cats in empty_by_grade.items()
         )
         problems.append(FilterProblem(
             "empty_pool",

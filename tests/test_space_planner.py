@@ -380,7 +380,12 @@ class TestGuard:
         out = _run(_Spy(), layout=layout)
         assert calls == [], "守卫应在调用 LLM 之前拦下"
         assert out["trace"][0]["ok"] is False
-        assert "generate_plan" in out["errors"][0]["message"]
+        # ⚠️ 2026-09-27 改：原来断言消息里带 `generate_plan`（内部操作名），
+        #    而那句话会显示在界面上。现在 message 就是 `capability.reason`
+        #    （"缺少房间面积、墙体信息，无法执行该操作"），操作名在
+        #    `OperationNotAllowedError.to_payload()["operation"]` 里。
+        assert "无法执行" in out["errors"][0]["message"]
+        assert "缺少" in out["errors"][0]["message"]
 
     def test_无墙体被拒(self):
         """
@@ -396,7 +401,9 @@ class TestGuard:
     def test_无layout直接失败(self):
         out = _run(_FakeLLM(), layout=None)
         assert out["trace"][0]["ok"] is False
-        assert "layout" in out["errors"][0]["message"]
+        # 2026-09-27 改：原来断言消息里带 `layout`（字段名）——
+        # 现在 message 是一句给用户的话。
+        assert "户型数据" in out["errors"][0]["message"]
 
     def test_守卫异常带missing与suggestion(self):
         """拒绝必须说清缺什么、怎么办，不能只说"不允许"。"""
@@ -446,7 +453,10 @@ class TestDegradeAndTrace:
     def test_降级可见且带分支标识(self):
         out = _run(_FakeLLM(degraded=True))
         assert out["degraded"] is True
-        assert any("plan_modern_economy" in r for r in out["degrade_reasons"])
+        # ⚠️ 2026-09-27 改：原来断言降级原因里带分支标识 `plan_modern_economy`
+        #    （主键），而那几行会直接列在界面上。现在带的是这套方案的**中文
+        #    身份**（风格 + 档位），"是哪一套出了问题"这个信息没有丢。
+        assert any("现代简约" in r and "经济" in r for r in out["degrade_reasons"])
 
     def test_trace记录模型与耗时(self):
         out = _run(_FakeLLM())

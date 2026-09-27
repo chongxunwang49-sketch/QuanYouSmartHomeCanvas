@@ -37,6 +37,51 @@ BudgetGrade = Literal["economy", "medium", "high"]
 #: 收纳实现方式。经济档应偏向成品柜，高端档才用全屋定制。
 StorageKind = Literal["custom_cabinet", "ready_made", "built_in", "none"]
 
+# ── 中文名 ───────────────────────────────────────────────────────────
+#
+# ⚠️ 这两个表**只给上屏的文案用**。
+#
+# `modern` / `economy` 这些取值是接口契约里的枚举（前端下拉框的 key、
+# 请求体里的字段值），**不该出现在界面上** —— 用户看到的是
+# 「现代简约」「经济档」。降级提示、参数校验报错、数据缺口清单都会用到
+# 这套名字，所以放在定义枚举的同一个模块里，谁都不必再抄一份。
+#
+# 反面例子（都真实出现过）：降级原因里印着 `plan_modern_economy`、
+# 校验报错里印着 `不认识的预算档位 ['economy']`。
+
+#: 风格 → 中文名。
+PLAN_STYLE_CN: dict[str, str] = {
+    "modern": "现代简约",
+    "nordic": "北欧/奶油风",
+    "chinese": "现代中式/侘寂",
+    "cream": "奶油风",
+    "japandi": "日式侘寂+北欧",
+    "industrial": "工业风",
+}
+
+#: 预算档 → 中文名。
+BUDGET_GRADE_CN: dict[str, str] = {
+    "economy": "经济",
+    "medium": "中档",
+    "high": "高端",
+}
+
+
+def plan_label(spec: dict | None) -> str:
+    """
+    一套方案的**中文身份**，如「现代简约 · 经济档方案」。
+
+    给降级原因之类的上屏文案用：那些句子会直接列在界面的降级提示条上，
+    而 `plan_modern_economy` 是主键、`A-04` 是 Agent 代号，都不是给人看的。
+    取不到中文名时退回原始取值 —— 宁可读着粗糙，也不隐藏"是哪一套"。
+    """
+    spec = spec or {}
+    style = str(spec.get("style") or "")
+    grade = str(spec.get("budget_grade") or "")
+    style_cn = PLAN_STYLE_CN.get(style, style) or "本方案"
+    grade_cn = BUDGET_GRADE_CN.get(grade, grade)
+    return f"{style_cn} · {grade_cn}档方案" if grade_cn else f"{style_cn}方案"
+
 
 class ZonePlan(BaseModel):
     """一个房间的功能安排。"""
@@ -135,4 +180,5 @@ class SpacePlan(BaseModel):
 __all__ = [
     "ZonePlan", "StoragePlan", "CirculationFix", "SpacePlan",
     "PlanStyle", "BudgetGrade", "StorageKind",
+    "PLAN_STYLE_CN", "BUDGET_GRADE_CN", "plan_label",
 ]

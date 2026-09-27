@@ -84,7 +84,10 @@ TaskStatus = Literal["pending", "processing", "completed", "failed"]
 CANCEL_REASON_USER = "任务已被用户中断"
 
 #: 停机时到点仍未跑完的，用这句话记账（AC-31 的"超期处理"）。
-CANCEL_REASON_SHUTDOWN = "服务停机，任务未在上限内完成"
+#:
+#: ⚠️ 这句话会经 `rec.error` **上屏**（前端拿它弹 toast），所以不写"上限"
+#: 这类指代内部配置的词 —— 用户要读的是"为什么停了、要不要重来"。
+CANCEL_REASON_SHUTDOWN = "服务停机，这个任务没能跑完，请重新提交"
 
 #: 停机排空上限（秒）。见 `TaskManager.shutdown` 里那段推导。
 SHUTDOWN_DRAIN_SECONDS = 150.0
@@ -312,8 +315,12 @@ class TaskManager:
             exc = handle.exception()
             if exc is None:
                 return
-            reason = f"{type(exc).__name__}: {exc}"
-            logger.exception(f"[task] {rec.task_id} 未捕获异常: {exc}")
+            # ⚠️ `reason` 会经 `rec.error` **上屏**（前端拿它弹 toast），
+            #    所以是给用户的一句话；异常类名与原文只进日志。
+            reason = "任务执行过程中出现了意外情况，本次没能完成，请稍后重试"
+            logger.exception(
+                f"[task] {rec.task_id} 未捕获异常: {type(exc).__name__}: {exc}"
+            )
 
         rec.status = "failed"
         rec.error = reason
@@ -443,9 +450,15 @@ class TaskManager:
 
             stages = self._STAGES_FOR.get(kind)
             if stages is None:
+                # ⚠️ 这个 reason 会经 `error` **上屏**（前端拿它弹 toast），
+                #    所以不写任务类型枚举（`kind!r`）这类内部取值 ——
+                #    它也进下面那行日志。
+                logger.warning(
+                    f"[task] {task_id} 无法续跑：本地记录的任务类型 {kind!r} 认不出来"
+                )
                 await self._finalize_orphan(
                     task_id, progress,
-                    reason=f"服务异常退出，且任务类型 {kind!r} 无法确定该用哪张图续跑",
+                    reason="服务上次异常退出，这条任务的记录不完整，无法继续，请重新提交",
                 )
                 taken += 1
                 continue
@@ -461,9 +474,13 @@ class TaskManager:
                 logger.warning(f"[task] {task_id} 读检查点失败：{type(e).__name__}: {e}")
 
             if not has_checkpoint:
+                # ⚠️ 原来这句写着「没有可恢复的检查点（检查点未启用时会发生）」——
+                #    "检查点"是实现机制，正是本轮要清掉的那类词。给用户的是
+                #    "上次没跑完、这次也接不上"，机制说明进日志。
+                logger.warning(f"[task] {task_id} 无法续跑：没有可恢复的检查点")
                 await self._finalize_orphan(
                     task_id, progress,
-                    reason="服务异常退出，且没有可恢复的检查点（检查点未启用时会发生）",
+                    reason="服务上次异常退出，这条任务没能接着跑完，请重新提交",
                 )
                 taken += 1
                 continue
@@ -812,8 +829,14 @@ class TaskManager:
 
             except Exception as e:  # noqa: BLE001 —— 任务级兜底，转成可轮询的失败态
                 rec.status = "failed"
-                rec.error = f"{type(e).__name__}: {e}"
-                logger.exception(f"[task] {rec.task_id} 执行失败: {e}")
+                # ⚠️ `rec.error` 会**渲染在任务列表与轮询结果里**（前端拿它弹
+                #    toast）。所以这里给用户一句能懂的话；异常类名与原文只进
+                #    下面那行日志 —— 走到这一支说明是代码级故障，用户能做的
+                #    只有"稍后重试"。
+                rec.error = "任务执行失败，本次没能完成，请稍后重试"
+                logger.exception(
+                    f"[task] {rec.task_id} 执行失败: {type(e).__name__}: {e}"
+                )
                 # ⚠️ 失败时**保留当前阶段**，不再把它落成 `done`。
                 #
                 # 落成 `done` 有两个连带后果：`PHASE_TEXT['done']` 是"完成"

@@ -135,12 +135,20 @@ class CapabilityReport:
 
 
 class OperationNotAllowedError(RuntimeError):
-    """操作所需数据缺失。API 层应转为 HTTP 400 并原样透出 reason。"""
+    """
+    操作所需数据缺失。API 层应转为 HTTP 400 并原样透出 reason。
+
+    ⚠️ **exception 的 message 就是 `capability.reason`**（中文、面向用户），
+    不再拼 `操作 {operation} 不可执行` —— 那句话会经 Agent 的
+    `errors[].message` 显示在界面上，而 `generate_plan` / `estimate_budget`
+    这些是内部操作名。操作名仍然在结构化字段里（`to_payload()["operation"]`），
+    排查与日志都拿得到。
+    """
 
     def __init__(self, operation: str, capability: Capability) -> None:
         self.operation = operation
         self.capability = capability
-        super().__init__(f"操作 {operation} 不可执行：{capability.reason}")
+        super().__init__(capability.reason or "当前的数据还不支持这项操作")
 
     def to_payload(self) -> dict[str, Any]:
         return {

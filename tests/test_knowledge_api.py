@@ -92,8 +92,11 @@ class TestUploadValidation:
             #    因为报错里没有"上限"两个字。测试数据算错比断言写错更难看出来。
             (KnowledgeUploadRequest(
                 title="t", text="x" * (chunking.MAX_UPLOAD_CHARS + 1)), "上限"),
-            (KnowledgeUploadRequest(title="t", text=DOC, doc_type="乱写"), "doc_type"),
-            (KnowledgeUploadRequest(title="t", text="太短"), "chunk"),
+            # ⚠️ 2026-09-27 改：这两条的关键词原来分别是 `doc_type`（字段名）与
+            #    `chunk`（内部术语）—— 报错正文会显示在知识库管理页上，
+            #    所以正文改成了中文说法，断言跟着改。
+            (KnowledgeUploadRequest(title="t", text=DOC, doc_type="乱写"), "内容类型"),
+            (KnowledgeUploadRequest(title="t", text="太短"), "可入库"),
         ],
     )
     def test_参数不合法一律4001并说清哪里不对(self, req, keyword):

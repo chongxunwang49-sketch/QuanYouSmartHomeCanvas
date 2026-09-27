@@ -111,7 +111,7 @@ from ..core.progress import total_seconds
 from ..core.redis_client import get_quota_limiter
 from ..graph.state import initial_state
 from ..graph.workflow import get_compiled_graph
-from ..schemas.plan import BudgetGrade, PlanStyle
+from ..schemas.plan import BUDGET_GRADE_CN, PLAN_STYLE_CN, BudgetGrade, PlanStyle
 from ..agents.layout_diagnoser import HOUSE_DETAIL_MAX_CHARS
 from ..services.chat import build_context, build_history, stream_answer
 from ..services.furniture import scaling
@@ -144,6 +144,27 @@ router = APIRouter(prefix="/api/v1")
 def _trace_id(request: Request) -> str:
     """取中间件写进 request.state 的 trace_id。"""
     return getattr(request.state, "trace_id", "") or ""
+
+
+def _cn_list(values: list[str], labels: dict[str, str]) -> str:
+    """
+    把一串**接口枚举值**翻成中文再拼给人看。
+
+    ⚠️ 存在的理由：`ApiError` 的 message 会**原样弹在界面上**，而
+    `f"不认识的风格 {bad_styles}"` 印出来就是 `['luxury']` —— 用户
+    读到的是一串英文枚举。查不到中文名时退回原值（宁可粗糙，
+    也不能把"是哪个值不对"这句信息弄丢）。
+    """
+    return "、".join(labels.get(v, v) for v in values)
+
+
+#: 知识库的内容类型 → 中文名。与 `chunking.DOC_TYPES` 一一对应
+#: （取值本身是接口契约，上屏的一律用这张表里的名字）。
+DOC_TYPE_CN: dict[str, str] = {
+    "avoid_pit": "避坑经验",
+    "regulation": "规范与工艺标准",
+    "quanyou_official": "品牌官方资料",
+}
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -231,7 +252,9 @@ async def my_devices(user: User = Depends(current_user)) -> ApiResponse:
     """
     return ApiResponse.ok({
         "devices": auth.login_records(user.id),
-        "note": "依据登录请求的 User-Agent 与来源 IP 推断，可被伪造；仅用于自查，不构成访问控制。",
+        # ⚠️ 不提 `User-Agent` 这类协议头名字 —— 那句话是说给用户听的：
+        #    "这里看到的是推断出来的，不是绑定，不构成访问控制"。
+        "note": "依据登录时的设备与网络信息推断，可被伪造；仅用于自查，不构成访问控制。",
     })
 
 
@@ -298,9 +321,11 @@ async def set_my_membership(
             data={"role": user.role, "unlimited": True},
         )
     if req.membership not in auth.MEMBERSHIPS:
+        # ⚠️ 报错正文会**弹在界面上**，所以不印 `['free', 'paid']`
+        #    这种枚举原值 —— 它们只是请求体里的取值。
         raise ApiError(
             4001,
-            f"档位取值不合法：{req.membership}；允许 {list(auth.MEMBERSHIPS)}",
+            f"档位取值不合法：{req.membership}；可选的是「免费版」或「演示会员」。",
             data={"allowed": list(auth.MEMBERSHIPS)},
         )
     updated = auth.set_user_membership(user.id, req.membership)
@@ -366,19 +391,23 @@ async def update_user(
             data={"self": True},
         )
     if req.role is None and req.membership is None and req.is_active is None:
-        raise ApiError(4001, "role / membership / is_active 至少要传一个")
+        raise ApiError(4001, "请至少指定一项要修改的内容：角色、档位或启用状态。")
     if req.role == auth.ROLE_ADMIN:
+        # ⚠️ 这句原来跟了一句「要加管理员请直接改 seed_data/users.json 并重启」——
+        #    那正是需求方点名的反面例子（把文件路径与"这个项目怎么搭的"
+        #    暴露给了用户）。**拒绝的理由不变，怎么说变了**：
+        #    只讲清"为什么本页不提供"，不再给出一条工程路径。
         raise ApiError(
             4002,
             "本页不提供管理员权限的分配。把账号提升为管理员会造出一个权限对等的账号，"
-            "而这条路径不该出现在演示界面上（要加管理员请直接改 "
-            "seed_data/users.json 并重启）。",
+            "而这条路径不该出现在演示界面上 —— 演示里请用现有的管理员、"
+            "设计师与普通账号来体验角色差异。",
             data={"forbidden_role": auth.ROLE_ADMIN, "allowed_roles": [auth.ROLE_DESIGNER, auth.ROLE_USER]},
         )
 
     target = auth.find_by_id(user_id)
     if target is None:
-        raise ApiError(4004, f"用户不存在：id={user_id}")
+        raise ApiError(4004, "找不到这个账号，可能已经被删掉了。")
 
     # ②/③ 的另一半：不许动管理员账号。**要在改之前判断**，
     # 否则"把管理员先降级再封禁"会被拆成两步绕过去。
@@ -432,7 +461,7 @@ async def parse_layout(
     解析是**免费功能**（不受会员档位限制），但受每日配额约束（AC-13）。
     """
     if not req.image.strip():
-        raise ApiError(4001, "image 不能为空")
+        raise ApiError(4001, "请先选择一张户型图再提交。")
 
     # ⚠️ 顺序是有意的：**先校验入参、再扣额度**。
     #    反过来的话，一个拼错的请求也会白扣用户一次配额。
@@ -499,8 +528,7 @@ async def design_generate(
     if layout is None:
         raise ApiError(
             4004,
-            f"找不到 layout_id={req.layout_id} 的户型。"
-            f"可能已过期（暂存 1 小时），请重新解析。",
+            "这套户型的解析结果已经找不到了（保留 1 小时），请重新上传户型图解析一次。",
         )
 
     # 能力守卫：数据不支撑方案生成时**在入口就拦下**，不放进图里
@@ -513,7 +541,7 @@ async def design_generate(
                        data={"missing": cap.missing, "suggestion": cap.suggestion})
 
     if not req.styles or not req.budget_grades:
-        raise ApiError(4001, "styles 与 budget_grades 都不能为空")
+        raise ApiError(4001, "请至少选择一种设计风格和一种预算档位。")
 
     # ⚠️ **必须校验取值，不能只校验非空。**
     #
@@ -530,15 +558,22 @@ async def design_generate(
     bad_styles = [s for s in req.styles if s not in allowed_styles]
     bad_grades = [g for g in req.budget_grades if g not in allowed_grades]
     if bad_styles or bad_grades:
+        # ⚠️ 报错正文会上屏，所以**说中文名，不说枚举原值**：
+        #    原来这里印的是 `不认识的风格 ['luxury']` —— 用户在界面上
+        #    看到的就是这串英文。同时把"允许哪些"一并说清（与能力守卫同一个立场）。
         detail = "".join(
             [
-                f"不认识的风格 {bad_styles}；" if bad_styles else "",
-                f"不认识的预算档位 {bad_grades}；" if bad_grades else "",
+                f"不认识的风格：{_cn_list(bad_styles, PLAN_STYLE_CN)}；"
+                if bad_styles else "",
+                f"不认识的预算档位：{_cn_list(bad_grades, BUDGET_GRADE_CN)}；"
+                if bad_grades else "",
             ]
         )
         raise ApiError(
             4001,
-            f"风格或预算档位取值不合法：{detail}",
+            f"风格或预算档位取值不合法：{detail}"
+            f"可选的设计风格有 {'、'.join(PLAN_STYLE_CN[s] for s in sorted(allowed_styles))}；"
+            f"预算档位有 {'、'.join(BUDGET_GRADE_CN[g] + '档' for g in sorted(allowed_grades))}。",
             data={
                 "allowed_styles": sorted(allowed_styles),
                 "allowed_budget_grades": sorted(allowed_grades),
@@ -643,7 +678,7 @@ async def avoid_pit_review(
     这不是遗漏：审查成本约 19 秒、一次 LLM 调用，与生成不是一个量级。
     """
     if not req.quote_text.strip():
-        raise ApiError(4001, "quote_text 不能为空")
+        raise ApiError(4001, "请先粘贴要审查的报价单或合同内容。")
 
     require_paid(user, "报价单避坑审查")
 
@@ -690,7 +725,9 @@ async def task_status(task_id: str, request: Request) -> ApiResponse:
 
     data = await get_task_manager().status(task_id)
     if data is None:
-        raise ApiError(4004, f"任务不存在或已过期（结果保留 1 小时）：{task_id}")
+        # ⚠️ 不把 task_id 拼进去 —— 那是内部编号，界面上没有任何地方
+        #    需要用户读到它（前端拿到的一直是结构化字段）。
+        raise ApiError(4004, "这个任务不存在或已过期（结果保留 1 小时）。")
 
     resp = JSONResponse(content=ApiResponse.ok(data).model_dump())
     resp.headers["Cache-Control"] = "no-store"
@@ -723,7 +760,9 @@ async def cancel_task(
     try:
         data = await get_task_manager().cancel(task_id, user_id=user.id)
     except TaskNotFound:
-        raise ApiError(4004, f"任务不存在或已过期（结果保留 1 小时）：{task_id}")
+        # ⚠️ 不把 task_id 拼进去 —— 那是内部编号，界面上没有任何地方
+        #    需要用户读到它（前端拿到的一直是结构化字段）。
+        raise ApiError(4004, "这个任务不存在或已过期（结果保留 1 小时）。")
     except TaskNotOwned:
         # ⚠️ 措辞刻意模糊：既不确认"这个 id 存在"，也不透露它属于谁。
         raise ApiError(4005, "只能中断自己发起的任务")
@@ -753,7 +792,13 @@ async def material_price(
     """
     cats = {c["key"]: c for c in catalog.categories()}
     if category and category not in cats:
-        raise ApiError(4001, f"未知品类 {category}；可用：{sorted(cats)}")
+        # ⚠️ 原来这里是 `未知品类 …；可用：['cabinet', 'door', …]` ——
+        #    一屏英文品类 key。改成把中文品类名列出来。
+        raise ApiError(
+            4001,
+            f"没有这个品类：{category}；"
+            f"可选的品类有 {'、'.join(c['label'] for c in cats.values())}。",
+        )
 
     products = [
         p for p in catalog.all_products()
@@ -847,7 +892,7 @@ async def layout_plan_svg(layout_id: str) -> Response:
     """
     layout = await layout_store.load(layout_id)
     if not layout:
-        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+        raise ApiError(4004, "这套户型的解析结果不存在或已过期（保留 1 小时）。")
 
     # AC-10 的「局部替换」：用户换过的地面材料要体现在这张图上。
     # **颜色在服务端定**（材料目录里的 `swatch`），前端不参与配色 ——
@@ -858,7 +903,8 @@ async def layout_plan_svg(layout_id: str) -> Response:
         _, plan = render_plan_for(layout, floor_fills=floor_fills)
     except Exception as e:  # noqa: BLE001 —— 渲染不该失败，失败要留下原因
         logger.exception(f"[render] 矢量图渲染失败 layout_id={layout_id}")
-        raise ApiError(5003, f"矢量图渲染失败：{type(e).__name__}") from e
+        # 异常类名只进上面那行日志；给用户的是"发生了什么、要不要再试"
+        raise ApiError(5003, "这张户型图暂时画不出来，请稍后重试。") from e
 
     return Response(
         content=plan.svg,
@@ -975,8 +1021,10 @@ def _substitution_view(
             out.append({
                 "room_index": int(room_index), "room_name": name, "area_m2": area,
                 "material": None, "cost": None,
-                "note": f"材料 {product_id} 已不在目录里（演示目录改过？），"
-                        f"图上按默认配色渲染",
+                # ⚠️ `note` 会逐行显示在"当前替换"清单里，所以不印
+                #    product id（那是内部编号），也不提"演示目录改过？"
+                #    这种只有开发者看得懂的话。
+                "note": "这份材料已经下架，图上按默认配色渲染。",
             })
             continue
         lo, hi = p.price_range
@@ -1042,11 +1090,13 @@ def _floor_payload(layout_id: str,
         ],
         "substitutions": _substitution_view(subs, floor_hotspots),
         "eligible": _floor_material_options(),
+        # ⚠️ 这三条会显示在"地面材质"面板里，所以①去掉 `**`（界面按纯文本
+        #    渲染，星号会原样显示）②不提"落库"这种存储细节。
         "notes": [
-            "图上填的是材料的**代表色**，不是效果图 —— 真实纹理要看实物或官网。",
-            "造价 = 这间房的地面面积 × 单价区间。面积由房间几何算出，"
-            "**未扣除固定家具占位**（与热区同一口径）。",
-            "替换记录与户型同样保留 1 小时，并落库；解析产物本身不受影响。",
+            "图上填的是材料的代表色，不是效果图 —— 真实纹理请看实物或官网。",
+            "造价 = 这间房的地面面积 × 单价区间。面积按房间几何算出，"
+            "未扣除固定家具占用的位置。",
+            "替换记录与户型同样保留 1 小时，解析结果本身不受影响。",
         ],
     }
 
@@ -1062,7 +1112,7 @@ async def floor_materials(layout_id: str) -> ApiResponse:
     """
     layout = await layout_store.load(layout_id)
     if not layout:
-        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+        raise ApiError(4004, "这套户型的解析结果不存在或已过期（保留 1 小时）。")
 
     hotspots = await _floor_hotspot_index(layout_id, layout)
     subs = await layout_store.load_floor_materials(layout_id)
@@ -1085,15 +1135,14 @@ async def set_floor_material(
     """
     layout = await layout_store.load(layout_id)
     if not layout:
-        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+        raise ApiError(4004, "这套户型的解析结果不存在或已过期（保留 1 小时）。")
 
     hotspots = await _floor_hotspot_index(layout_id, layout)
     room_index = int(req.room_index)
     if room_index not in hotspots:
         raise ApiError(
             4001,
-            f"房间下标 {room_index} 不是这台户型里可替换地面的房间。"
-            f"可选的是：{sorted(hotspots)}（来自地面热区）。",
+            "这一间不在可替换地面的范围内 —— 请直接在图上点选要换地面的房间。",
         )
 
     subs = await layout_store.load_floor_materials(layout_id)
@@ -1108,11 +1157,12 @@ async def set_floor_material(
 
     options = {o["id"]: o for o in _floor_material_options()}
     if material_id not in options:
+        # ⚠️ 原来这句把可选 product id 全列了出来，还写着"品类限
+        #    ('floor','tile')、`surface` 必须是 floor 或 both" ——
+        #    全是内部字段名与枚举值。改成"从下拉里挑"。
         raise ApiError(
             4001,
-            f"材料 {material_id!r} 不能用作地面 —— 下拉里的可选值是 "
-            f"{sorted(options)}（品类限 {list(FLOOR_CATEGORIES)}，"
-            f"且 `surface` 必须是 floor 或 both）。",
+            "这份材料不能用作地面 —— 请从「地面材料」下拉列表里可选的材料中挑选。",
         )
 
     subs[room_index] = material_id
@@ -1179,7 +1229,7 @@ async def patch_chat_conversation(
     """
     row = await repository.get_conversation(conversation_id)
     if not row:
-        raise ApiError(4004, f"会话 {conversation_id} 不存在")
+        raise ApiError(4004, "这个会话不存在，可能已经被删掉了。")
     if int(row.get("user_id") or -1) != user.id:
         raise ApiError(4002, "这个会话不属于当前账号，不能修改")
     ok = await repository.update_conversation(
@@ -1198,7 +1248,7 @@ async def delete_chat_conversation(
     """删除会话（消息随外键级联删除）。归属校验同 PATCH。"""
     row = await repository.get_conversation(conversation_id)
     if not row:
-        raise ApiError(4004, f"会话 {conversation_id} 不存在")
+        raise ApiError(4004, "这个会话不存在，可能已经被删掉了。")
     if int(row.get("user_id") or -1) != user.id:
         raise ApiError(4002, "这个会话不属于当前账号，不能删除")
     if not await repository.delete_conversation(conversation_id):
@@ -1216,7 +1266,7 @@ async def list_chat_messages(
     """一条会话的全部消息（含每条回答当时的引用来源）。"""
     row = await repository.get_conversation(conversation_id)
     if not row:
-        raise ApiError(4004, f"会话 {conversation_id} 不存在")
+        raise ApiError(4004, "这个会话不存在，可能已经被删掉了。")
     if int(row.get("user_id") or -1) != user.id:
         raise ApiError(4002, "这个会话不属于当前账号")
     rows = await repository.list_messages(conversation_id)
@@ -1253,7 +1303,7 @@ async def chat_ask(
     if conversation_id:
         row = await repository.get_conversation(conversation_id)
         if not row:
-            raise ApiError(4004, f"会话 {conversation_id} 不存在")
+            raise ApiError(4004, "这个会话不存在，可能已经被删掉了。")
         if int(row.get("user_id") or -1) != user.id:
             raise ApiError(4002, "这个会话不属于当前账号")
     else:
@@ -1314,10 +1364,14 @@ async def chat_ask(
                 yield sse({"type": "delta", "text": piece})
         except LLMError as e:
             logger.warning(f"[chat] 回答失败：{e}")
-            yield sse({"type": "error", "message": f"模型调用失败：{str(e)[:200]}"})
+            # `str(e)` 由 `core/llm_client.py` 保证是面向用户的一句话
+            # （提供方、状态码、模型原文都留在那边日志里了）。
+            yield sse({"type": "error", "message": f"这次回答没能生成出来：{str(e)[:200]}"})
         except Exception as e:  # noqa: BLE001
             logger.exception("[chat] 回答异常")
-            yield sse({"type": "error", "message": f"{type(e).__name__}: {str(e)[:200]}"})
+            # 异常类名与原文进日志（上面那行 logger.exception 已记）——
+            # SSE 的 message 是**直接显示在对话气泡里**的。
+            yield sse({"type": "error", "message": "这次回答没能生成出来，请稍后重试。"})
 
         answer = "".join(parts).strip()
         sources = ctx.citations()
@@ -1326,7 +1380,7 @@ async def chat_ask(
                 conversation_id, "assistant", answer, sources=sources,
             )
         else:
-            yield sse({"type": "error", "message": "模型没有返回任何内容"})
+            yield sse({"type": "error", "message": "这次没有生成出任何内容，请再问一次。"})
 
         yield sse({"type": "sources", "sources": sources})
         yield sse({"type": "done", "conversation_id": conversation_id,
@@ -1360,7 +1414,7 @@ async def get_house_detail(layout_id: str) -> ApiResponse:
     """
     layout = await layout_store.load(layout_id)
     if not layout:
-        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+        raise ApiError(4004, "这套户型的解析结果不存在或已过期（保留 1 小时）。")
     return ApiResponse.ok({"layout_id": layout_id,
                            "house_detail": layout.get("house_detail")})
 
@@ -1376,16 +1430,18 @@ async def save_house_detail(
     """
     layout = await layout_store.load(layout_id)
     if not layout:
-        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+        raise ApiError(4004, "这套户型的解析结果不存在或已过期（保留 1 小时）。")
 
     text = (req.text or "").strip()
     if not text:
-        raise ApiError(4001, "户型详情不能为空 —— 要去掉这份详情请用 DELETE（本演示里留空即清空）")
+        raise ApiError(4001, "户型详情不能为空，请填写内容后再保存。")
     if len(text) > HOUSE_DETAIL_MAX_CHARS * 2:
+        # ⚠️ 只说"太长、请精简到多少字"。"超出的部分不会进诊断提示词"
+        #    是给开发者的说明 —— 用户不需要知道提示词这回事。
         raise ApiError(
             4001,
-            f"户型详情太长了（{len(text)} 字符）。请精简到 "
-            f"{HOUSE_DETAIL_MAX_CHARS * 2} 字符以内 —— 超出的部分不会进诊断提示词。",
+            f"户型详情太长了（{len(text)} 字符），"
+            f"请精简到 {HOUSE_DETAIL_MAX_CHARS * 2} 字符以内再保存。",
         )
 
     layout["house_detail"] = {
@@ -1420,11 +1476,11 @@ async def sample_house_detail(layout_id: str) -> ApiResponse:
     """
     layout = await layout_store.load(layout_id)
     if not layout:
-        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+        raise ApiError(4004, "这套户型的解析结果不存在或已过期（保留 1 小时）。")
 
     samples = _demo_house_details()
     if not samples:
-        raise ApiError(4004, "本机没有演示用户型详情（seed_data/demo_house_details/ 为空）")
+        raise ApiError(4004, "这台机器上没有可用的演示户型详情。")
 
     area = float(layout.get("total_area") or 0)
     best = min(samples, key=lambda s: abs(s["area"] - area)) if area > 0 else samples[0]
@@ -1435,7 +1491,7 @@ async def sample_house_detail(layout_id: str) -> ApiResponse:
             f"套内总面积最接近：本户型 {area:.1f} ㎡ / 该样例 {best['area']:.1f} ㎡"
             if area > 0 else "本地演示样例（本户型未给出面积，取第一份）"
         ),
-        "note": "这是**演示样例**。真实使用时请填你自己房子的实际情况。",
+        "note": "这是演示样例。真实使用时请填你自己房子的实际情况。",
     })
 
 
@@ -1482,7 +1538,7 @@ async def get_diagnosis(layout_id: str) -> ApiResponse:
     """
     layout = await layout_store.load(layout_id)
     if not layout:
-        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+        raise ApiError(4004, "这套户型的解析结果不存在或已过期（保留 1 小时）。")
     diagnosis = layout.get("diagnosis")
     if not diagnosis:
         diagnosis = await _run_diagnosis(layout_id, layout)
@@ -1499,7 +1555,7 @@ async def rerun_diagnosis(layout_id: str) -> ApiResponse:
     """
     layout = await layout_store.load(layout_id)
     if not layout:
-        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+        raise ApiError(4004, "这套户型的解析结果不存在或已过期（保留 1 小时）。")
     diagnosis = await _run_diagnosis(layout_id, layout)
     return ApiResponse.ok({"layout_id": layout_id, "diagnosis": diagnosis})
 
@@ -1519,7 +1575,7 @@ async def _run_diagnosis(layout_id: str, layout: dict[str, Any]) -> dict[str, An
         out = await LayoutDiagnoserAgent().execute(state)
     except Exception as e:  # noqa: BLE001
         logger.exception(f"[diagnose] 诊断失败 layout={layout_id} 房间={first_room}")
-        raise ApiError(5003, f"诊断失败：{type(e).__name__}") from e
+        raise ApiError(5003, "这次没能给出诊断结果，请稍后重试。") from e
 
     diagnosis = out.get("diagnosis")
     if not diagnosis:
@@ -1561,13 +1617,13 @@ async def layout_walkable(layout_id: str, plan_id: str = "") -> ApiResponse:
     """
     layout = await layout_store.load(layout_id)
     if not layout:
-        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+        raise ApiError(4004, "这套户型的解析结果不存在或已过期（保留 1 小时）。")
 
     try:
         scene, plan = render_plan_for(layout)
     except Exception as e:  # noqa: BLE001
         logger.exception(f"[render] 场景归一化失败 layout_id={layout_id}")
-        raise ApiError(5003, f"场景归一化失败：{type(e).__name__}") from e
+        raise ApiError(5003, "这套户型的 3D 场景暂时生成不出来，请稍后重试。") from e
 
     walk = build_walkable(scene)
     payload = {
@@ -1622,14 +1678,14 @@ async def layout_furniture(
     """
     layout = await layout_store.load(layout_id)
     if not layout:
-        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+        raise ApiError(4004, "这套户型的解析结果不存在或已过期（保留 1 小时）。")
 
     try:
         scene, _plan = render_plan_for(layout)
         walkable = build_walkable(scene)
     except Exception as e:  # noqa: BLE001
         logger.exception(f"[furniture] 场景归一化失败 layout_id={layout_id}")
-        raise ApiError(5003, f"场景归一化失败：{type(e).__name__}") from e
+        raise ApiError(5003, "这套户型的 3D 场景暂时生成不出来，请稍后重试。") from e
 
     room_phrases = await _phrases_from_plan(layout_id, plan_id)
 
@@ -1760,20 +1816,22 @@ async def _phrases_from_plan(
         #
         # 现在用 `pool.is_available()` 把两种情形**分开**，各说各的 ——
         # 如果真的查不到，那就是真的没有，不必再提数据库。
+        # ⚠️ 两句都不带 `plan_id` / `layout_id`（内部主键），也不提
+        #    "数据库"——用户要知道的是"是暂时读不到，还是确实没有"，
+        #    以及"我们不会换成默认摆放来糊弄你"。
         if not await pool.is_available():
             raise ApiError(
                 4004,
-                f"数据库暂时不可用，读不到方案 {plan_id}（户型 {layout_id}）。"
-                f"这不是「没有这个方案」—— 请稍后重试。"
-                f"此时不会退回默认摆放，因为那会让你以为这套 3D 是"
-                f"按你选的方案摆的。",
+                "暂时读不到这套方案（数据服务连不上）。"
+                "这不是「没有这套方案」—— 请稍后重试。"
+                "此时不会退回默认摆放，因为那会让你以为这套 3D 是"
+                "按你选的方案摆的。",
             )
         raise ApiError(
             4004,
-            f"找不到方案 {plan_id}（户型 {layout_id}）—— 数据库是通的，"
-            f"所以确实没有这一套（可能还没生成过，或结果已过期）。"
-            f"此时不会退回默认摆放，因为那会让你以为这套 3D 是按你选的"
-            f"方案摆的。",
+            "确实找不到这套方案 —— 可能还没生成过，或者结果已经过期。"
+            "此时不会退回默认摆放，因为那会让你以为这套 3D 是"
+            "按你选的方案摆的。",
         )
     space = rows.get("space_plan") or {}
     out: dict[str, list[str]] = {}
@@ -1799,14 +1857,14 @@ async def layout_hotspots(layout_id: str) -> ApiResponse:
     """
     layout = await layout_store.load(layout_id)
     if not layout:
-        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+        raise ApiError(4004, "这套户型的解析结果不存在或已过期（保留 1 小时）。")
 
     try:
         scene, plan = render_plan_for(layout)
         payload = hotspot_payload(scene, plan.projection)
     except Exception as e:  # noqa: BLE001
         logger.exception(f"[render] 热区生成失败 layout_id={layout_id}")
-        raise ApiError(5003, f"热区生成失败：{type(e).__name__}") from e
+        raise ApiError(5003, "这套户型的物品信息暂时生成不出来，请稍后重试。") from e
 
     return ApiResponse.ok({
         "layout_id": layout_id,
@@ -1876,9 +1934,12 @@ async def knowledge_list(user: User = Depends(current_user)) -> ApiResponse:
             "max_upload_chars": chunking.MAX_UPLOAD_CHARS,
             "min_chunk_chars": chunking.MIN_CHUNK_CHARS,
         },
+        # ⚠️ 这两条会上屏（知识库管理页）。原来写的是"按 `source` 聚合，
+        #    只读元数据，不读正文"与"chunk id 是内容的 sha1，入库是幂等的"——
+        #    字段名、实现细节、`**` 都不该出现在用户读的文字里。
         "notes": [
-            "文档清单按 `source` 聚合，只读元数据，不读正文。",
-            "入库是幂等的：chunk id 是内容的 sha1，同一份文档再传一次是覆盖。",
+            "文档清单按来源汇总，只显示出处与条数，不显示正文。",
+            "同一份内容重复上传会覆盖原来那一份，不会重复堆积。",
         ],
     })
 
@@ -1920,15 +1981,16 @@ async def knowledge_upload(
     if len(text) > chunking.MAX_UPLOAD_CHARS:
         raise ApiError(
             4001,
-            f"正文 {len(text)} 字符，超过单次上限 "
-            f"{chunking.MAX_UPLOAD_CHARS}。请拆成多篇分批上传，"
-            f"或走离线入库：`python scripts/ingest_knowledge.py`。",
+            f"正文 {len(text)} 字符，超过单次上传上限 "
+            f"{chunking.MAX_UPLOAD_CHARS} 字符。请拆成多篇分批上传。",
         )
     if req.doc_type not in chunking.DOC_TYPES:
+        # ⚠️ 这一段是**给管理员看的**（知识库只有管理员能维护），
+        #    但照样不该印字段名与英文枚举 —— 说清可选的是哪几类即可。
         raise ApiError(
             4001,
-            f"doc_type={req.doc_type!r} 不在允许的取值里："
-            f"{list(chunking.DOC_TYPES)}。",
+            f"内容类型取值不合法，可选的是："
+            f"{_cn_list(list(chunking.DOC_TYPES), DOC_TYPE_CN)}。",
         )
     tags = [str(t).strip() for t in (req.tags or []) if str(t).strip()]
     if len(tags) > 12:
@@ -1952,30 +2014,38 @@ async def knowledge_upload(
         # 依赖现在已经装上了，但这条分支留着：**懒加载的导入失败必须
         # 说清是哪个包** —— 否则下次再有"功能搬家、依赖没跟上"，
         # 排查又会从"服务内部错误"这四个字开始。
+        # ⚠️ 原来的报错正文写着「入库要用 langchain-text-splitters（见
+        #    backend/requirements.txt）」—— 包名与依赖文件路径都不该
+        #    出现在界面上。原文进日志（下面这行），用户只被告知
+        #    "组件没就绪、这次什么都没写"。
+        logger.error(f"[knowledge] 切块依赖缺失（ImportError）：{type(e).__name__}: {e}")
         raise ApiError(
             5002,
-            f"切块所需的依赖没有装：{e}。"
-            f"入库要用 langchain-text-splitters（见 backend/requirements.txt）。"
-            f"本次没有写入任何内容。",
+            "内容切分所需的组件没有就绪，本次没有写入任何内容。"
+            "请联系维护人员，或稍后重试。",
         ) from e
     if not chunks:
         raise ApiError(
             4001,
-            f"切不出任何 chunk —— 正文太短或没有可切的结构。"
-            f"单条 chunk 至少要 {chunking.MIN_CHUNK_CHARS} 字符，"
+            f"这段正文太短或结构不够，切不出可入库的内容 —— "
+            f"每条至少要 {chunking.MIN_CHUNK_CHARS} 字符，"
             f"当前正文 {len(text)} 字符。",
         )
 
     try:
         vectors = store.embed_texts([c["text"] for c in chunks])
     except Exception as e:  # noqa: BLE001
-        # 不吞：embedding 依赖不可用要说清是哪一步、怎么修
+        # 不吞：向量化依赖不可用要说清是哪一步、用户能做什么。
+        # ⚠️ 但异常类名、`ollama serve` 命令、`OLLAMA_EMBEDDING_MODEL`
+        #    这类环境变量名**只进日志** —— 原来它们都在界面上。
+        logger.error(
+            f"[knowledge] 文本向量化失败：{type(e).__name__}: {e}"
+            f"（模型 {settings.OLLAMA_EMBEDDING_MODEL}）"
+        )
         raise ApiError(
             5002,
-            f"文本向量化失败（{type(e).__name__}: {e}）。"
-            f"入库需要本机 Ollama 提供 embedding 服务，"
-            f"检查 `ollama serve` 与 OLLAMA_EMBEDDING_MODEL="
-            f"{settings.OLLAMA_EMBEDDING_MODEL}。本次没有写入任何内容。",
+            "文本向量化服务连不上，本次没有写入任何内容。"
+            "请确认本机的向量化服务已启动，或稍后重试。",
         ) from e
 
     written = store.upsert_chunks(chunks, embeddings=vectors)
@@ -1992,8 +2062,8 @@ async def knowledge_upload(
         "chunk_count": info.count,
         "available": info.available,
         "notes": [
-            "入库是幂等的：同一份内容再传一次是覆盖，不会重复。",
-            f"库内共 {info.count} 条 chunk。",
+            "同一份内容重复上传会覆盖原来那一份，不会重复堆积。",
+            f"知识库当前共 {info.count} 条内容。",
         ],
     })
 
@@ -2028,19 +2098,21 @@ async def dashboard_stats(user: User = Depends(current_user)) -> ApiResponse:
         kb["documents"] = len(docs)
 
     if not await pool.is_available():
+        # ⚠️ 这段 reason 会**显示在工作台上**。原来写的是"只在内存 + Redis 里
+        #    （重启即失）"，还附了 `POSTGRES_HOST=…` 与 `docker compose ps`
+        #    两条排查命令 —— 那是给开发者的，不是给用这个页的人看的。
         return ApiResponse.ok({
             "available": False,
             "reason": (
-                "数据库不可用 —— 户型与方案只在内存 + Redis 里（重启即失），"
-                "所以这里给不出累计数字。"
-                f"检查 POSTGRES_HOST={settings.POSTGRES_HOST} 与 `docker compose ps`。"
+                "数据服务暂时不可用，所以这里给不出累计数字 —— "
+                "这不代表一件都没做过，稍后重试即可。"
             ),
             "layouts": None,
             "plans": None,
             "audit_events": None,
             "by_action": {},
             "kb": kb,
-            "notes": ["`null` 表示读不到，不是 0 —— 两者含义相反。"],
+            "notes": ["「暂时读不到」与 0 是两回事 —— 这里给的是读不到，不是一件都没有。"],
         })
 
     by_action = await repository.audit_counts_by_action() or {}
@@ -2053,8 +2125,8 @@ async def dashboard_stats(user: User = Depends(current_user)) -> ApiResponse:
         "by_action": by_action,
         "kb": kb,
         "notes": [
-            "户型与方案是**累计**值，不受任务结果 1 小时过期影响。",
-            "审计事件数含登录，所以它比任务数大是正常的。",
+            "户型与方案是累计值，不受任务结果 1 小时过期的影响。",
+            "操作记录里含登录，所以它比任务数大是正常的。",
         ],
     })
 
@@ -2074,37 +2146,55 @@ async def system_health() -> ApiResponse:
     tm = get_task_manager()
     checks: dict[str, Any] = {}
 
-    # ── LLM 主模型 ──
+    # ⚠️ **键名保持不变**（`deepseek` / `redis` / …）：它是响应结构的一部分，
+    #    改了会动到接口契约。给界面用的名字放在每条里的 `label` ——
+    #    工作台那一页原来是把**键名**直接印出来的（`redis：…`），
+    #    那是运维视角。前端改成渲染 `label` 即可，两边不必互相等。
+    #    同理，`detail` 里不写环境变量名、库名与异常类名。
+
+    # ── 主模型 ──
     checks["deepseek"] = {
+        "label": "云端模型",
         "ok": bool(settings.DEEPSEEK_API_KEY),
-        "detail": "已配置" if settings.DEEPSEEK_API_KEY else "未配置 DEEPSEEK_API_KEY，将走本地 Ollama",
+        "detail": "已配置" if settings.DEEPSEEK_API_KEY else "未配置，将改用本地模型",
     }
 
-    # ── Redis ──
+    # ── 进度缓存 ──
     try:
         ok = await get_redis().ping()
-        checks["redis"] = {"ok": bool(ok),
-                           "detail": "可用" if ok else "不可用（进度退化为内存）"}
+        checks["redis"] = {
+            "label": "进度缓存",
+            "ok": bool(ok),
+            "detail": "可用" if ok else "不可用（进度将不再跨重启保留）",
+        }
     except Exception as e:  # noqa: BLE001
-        checks["redis"] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
+        logger.warning(f"[health] 进度缓存探活失败：{type(e).__name__}: {e}")
+        checks["redis"] = {"label": "进度缓存", "ok": False,
+                           "detail": "连不上（进度仍可正常使用，但不再跨重启保留）"}
 
     # ── 知识库 ──
     try:
         info = knowledge_store.collection_info()
         checks["knowledge"] = {
+            "label": "知识库",
             "ok": info.available and info.count > 0,
-            "detail": (f"{info.count} 条 chunk"
+            "detail": (f"已收录 {info.count} 条内容"
                        if info.available else info.reason),
         }
     except Exception as e:  # noqa: BLE001
-        checks["knowledge"] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
+        logger.warning(f"[health] 知识库探活失败：{type(e).__name__}: {e}")
+        checks["knowledge"] = {"label": "知识库", "ok": False,
+                               "detail": "暂时读不到知识库状态"}
 
     # ── 材料目录 ──
     try:
         n = len(catalog.all_products())
-        checks["material_catalog"] = {"ok": n > 0, "detail": f"{n} 个商品"}
+        checks["material_catalog"] = {"label": "材料目录", "ok": n > 0,
+                                      "detail": f"共 {n} 件演示商品"}
     except Exception as e:  # noqa: BLE001
-        checks["material_catalog"] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
+        logger.warning(f"[health] 材料目录探活失败：{type(e).__name__}: {e}")
+        checks["material_catalog"] = {"label": "材料目录", "ok": False,
+                                     "detail": "暂时读不到材料目录"}
 
     return ApiResponse.ok({
         "status": "ok" if all(c["ok"] for c in checks.values()) else "degraded",
@@ -2150,7 +2240,10 @@ def _build_overview(days: int) -> dict[str, Any]:
                 "label": target["label"],
                 "available": False,
                 # ⚠️ **不给 0**。"没采到"和"0 秒"是两件事，混起来就是谎。
-                "reason": (f"最近 {days} 天的审计文件里没有 {kind} 任务的完成记录"
+                #    这句话会显示在性能页的"样本不足 —— …"里，所以用中文的
+                #    指标名（`target["label"]`），不写 `parse` / `generate`
+                #    这类内部枚举，也不提"审计文件"。
+                "reason": (f"最近 {days} 天里没有采集到「{target['label']}」的完成记录"
                            f"（{sweep.errors[0] if sweep.errors else '样本不足 2 条'}）"),
             }
             continue
@@ -2172,7 +2265,7 @@ def _build_overview(days: int) -> dict[str, Any]:
             metrics_out[name] = {
                 "label": target["label"],
                 "available": False,
-                "reason": "进程内样本不足 2 条（环形缓冲重启即清零）",
+                "reason": "最近还没有采集到足够的样本（服务重启后样本会重新累积）",
             }
             continue
         metrics_out[name] = {
@@ -2196,15 +2289,23 @@ def _build_overview(days: int) -> dict[str, Any]:
             "unit": "ms",
             **summary,
             "avg_total_tokens": round(sum(tokens) / len(tokens)) if tokens else None,
+            # ⚠️ 键名仍是内部代号（`A-01`）—— 那是审计记录里的口径，接口结构不动；
+            #    但性能页会把每一行印出来，**界面上不该出现 `A-01`**（验收要求）。
+            #    所以补一个中文名给前端渲染。认不出的代号原样返回。
+            "label": _AGENT_CN.get(agent, agent),
         }
 
+    # ⚠️ `notes` 会**整段显示在性能页上**，所以这里不提"审计文件"、
+    #    "环形缓冲"、"2.3.1 节"、"V2.4" 这些实现与文档内部的词 ——
+    #    用户要知道的只是"哪几项数字会跨重启保留、哪几项不会"。
     notes.append(
-        "长任务（解析/生成）与各 Agent 的耗时来自审计文件，进程重启后仍在；"
-        "HTTP 与矢量图渲染来自进程内环形缓冲（上限 5000 条），重启即清零。"
+        "「户型解析」「方案生成」与各环节的模型调用耗时是长期累积的，"
+        "服务重启后仍在；接口响应与矢量图渲染的耗时只看最近的记录，"
+        "服务重启后会重新开始累积。"
     )
     notes.append(
-        "第 2.3.1 节里未采集的两项：热区悬停响应（要前端 Performance API）、"
-        "AI 效果图 P95（该交付物已于 V2.4 作废，见修订说明第三节）。"
+        "还有两项没有采集：热区悬停的响应速度（需要在浏览器侧测量）、"
+        "AI 效果图的生成耗时（这项交付物已经取消）。"
     )
     if sweep.errors:
         notes.extend(sweep.errors)
@@ -2217,6 +2318,22 @@ def _build_overview(days: int) -> dict[str, Any]:
         "source": sweep.to_source(),
         "notes": notes,
     }
+
+
+#: 各环节的内部代号 → 中文名。**只用于展示**（接口里的键名仍是代号）。
+#:
+#: ⚠️ 与 `agents/*.py` 里每个类的 `code` / `label` 一一对应。
+#:    `tests/test_metrics.py::test_代号与中文名的对应表没有漂移` 会把两边比一遍 ——
+#:    加了新环节却忘了补这里，那条会红。
+_AGENT_CN = {
+    "A-01": "户型解析",
+    "A-02": "户型诊断",
+    "A-03": "空间规划",
+    "A-04": "预算估算",
+    "A-05": "材料选择",
+    "A-06": "避坑审查",
+    "fan-in": "方案汇总",
+}
 
 
 @router.get("/system/metrics", response_model=ApiResponse)
@@ -2245,7 +2362,7 @@ async def system_metrics(days: int = 1,
     if days < 1 or days > 30:
         # 上限 30 天：审计文件保留 180 天，全扫一遍要几秒 —— 那是接口该
         # 拒绝的量级，不是该默默承受的。
-        raise ApiError(4001, f"days 取值需在 1..30 之间，收到 {days}")
+        raise ApiError(4001, f"统计天数需在 1 到 30 之间（收到 {days}），请调整后重试。")
 
     overview = await _overview(days=days)
     # ⚠️ 落库那一块**不能放进 `_build_overview`**：它是同步函数、跑在
@@ -2280,19 +2397,24 @@ async def _persistence_block() -> dict[str, Any]:
     }
 
     if not available:
+        # ⚠️ 这段 reason 会显示在性能页上。原来写着"只进内存 + Redis
+        #    （重启即失）"，还附了 `POSTGRES_HOST=…` 与 `docker compose ps`
+        #    两条排查命令 —— 那两样都只进日志。
+        logger.warning(
+            f"[metrics] 数据库连接不可用（POSTGRES_HOST={settings.POSTGRES_HOST}）"
+        )
         block["available"] = False
         block["reason"] = (
-            "数据库连接不可用 —— 户型与方案只进内存 + Redis（重启即失），"
-            "审计事件只落文件。"
-            f"检查 POSTGRES_HOST={settings.POSTGRES_HOST} 与 `docker compose ps`。"
+            "数据服务暂时连不上 —— 这段时间的落库统计拿不到，"
+            "不代表没有记录。稍后重试即可。"
         )
         return block
 
     block["migrations"] = sorted(await migrations.applied() or [])
     block["audit_rows"] = await repository.count_audit_events()
     block["note"] = (
-        "`audit_rows` 是库里的累计行数；它与审计文件里的行数**不要求相等** —— "
-        "文件是进程外日志、库是结构化存储，各自保留策略不同。"
+        "「已入库的操作记录」是数据库里的累计行数；它与日志文件里的行数"
+        "不要求相等 —— 两者各自保存，保留策略也不同。"
     )
     return block
 

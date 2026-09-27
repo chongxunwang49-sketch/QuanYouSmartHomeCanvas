@@ -90,6 +90,16 @@ _SIDES: tuple[str, ...] = ("S", "E", "N", "W")
 #: 房间轮廓是 bbox 近似，门窗中心未必正好落在边上，给一点容差。
 _ON_WALL_TOLERANCE_M = 0.55
 
+#: 目录里 `prefer` 字段的取值 → 中文说法。
+#:
+#: ⚠️ 它进的是 `Placement.basis`（"为什么摆在这里"），而那几行会**悬停
+#:    显示在 3D 页上** —— 所以印的是「空墙」「最长墙」，不是 `blank` / `longest`。
+_PREFER_CN: dict[str, str] = {
+    "blank": "空墙",
+    "longest": "最长的那面墙",
+    "any": "任意可用墙面",
+}
+
 
 @dataclass(frozen=True)
 class Box:
@@ -670,7 +680,9 @@ def place_room(
             rejected.append({
                 "room": name, "spec_id": spec.id, "label": spec.label,
                 "kind": "policy",     # 不是放不下，是"这间房已经有这类了"
-                "reason": f"同类已有一件（family={spec.family}）",
+                # ⚠️ 这条 reason 会**显示在 3D 页的"未摆放"清单里**，所以
+                #    不写 `family=` 这种内部字段名与它的英文取值。
+                "reason": "这一间已经有同类家具了，同类只摆一件",
             })
             continue
         # 这件家具放下去会不会超出这间房的占地额度。**判据的位置很关键**：
@@ -747,9 +759,12 @@ def place_room(
                     color=((family_colors or {}).get(spec.family)
                            or (surface_colors or {}).get(spec.color_role, "")),
                     extras=spec.extras,
+                    # ⚠️ `basis` 会**悬停显示在 3D 页上**（"为什么摆在这里"），
+                    #    所以不印 `prefer=` 这种内部字段名与 `blank` / `any` /
+                    #    `longest` 这些英文取值。
                     basis=[
                         f"放在{where}",
-                        f"按 prefer={spec.prefer} 选的位置",
+                        f"按{_PREFER_CN.get(spec.prefer, '常规')}选的位置",
                         (f"前方留出 {spec.clearance_m}m 净空"
                          if spec.clearance_m > 0 else "无需前方净空"),
                     ],
@@ -875,11 +890,13 @@ def place_all(
         "rejected": all_rejected,
         "warnings": warnings,
         # 口径写进响应里：前端不必猜这些坐标是什么坐标系的
+        #
+        # ⚠️ 这三条会**显示在 3D 页上**，所以不写接口路径
+        #    （`/layout/{id}/walkable`）与源码文件名（`three/coords.ts`）。
         "notes": [
-            "坐标与 /layout/{id}/walkable 同一套场景坐标系（米），"
-            "前端可直接用 three/coords.ts 转换",
-            "家具朝向只有 0/90/180/270 四个值（轴对齐放置），不做自由角度",
-            "摆不下的家具在 rejected 里，带原因 —— 不是静默丢弃",
+            "这里的坐标与 3D 漫游用的是同一套场景坐标系，单位为米。",
+            "家具朝向只有 0/90/180/270 四个值（贴着墙、不斜放），不做自由角度。",
+            "摆不下的家具会逐条列出并写明原因，不会静默丢弃。",
         ],
     }
 

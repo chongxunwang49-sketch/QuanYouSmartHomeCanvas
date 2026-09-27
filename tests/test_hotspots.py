@@ -424,7 +424,9 @@ class TestPrices:
         for h in payload["hotspots"]:
             assert h["price_range"] is None
             assert h["items"] == []
-            assert any("目录不可用" in n for n in h["notes"]), (
+            # 2026-09-27 改：这条 notes 会跟着热区进响应，所以不再写异常类名
+            # （`CatalogError`）。"价格缺失的原因必须写出来"这条性质没变。
+            assert any("价格暂时取不到" in n for n in h["notes"]), (
                 "价格缺失的原因必须写出来，不能静默返回空数组"
             )
         # 图本身必须还能渲染

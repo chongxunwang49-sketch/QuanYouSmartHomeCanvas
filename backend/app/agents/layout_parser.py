@@ -46,6 +46,7 @@ class LayoutParserAgent(BaseAgent):
 
     code = "A-01"
     name = "LayoutParserAgent"
+    label = "户型解析"
     requires_vision = True
     # 多模态解析比纯文本慢，给更宽的熔断窗口。
     #
@@ -171,10 +172,15 @@ class LayoutParserAgent(BaseAgent):
             gate_failures.append(f"仅识别出 {len(degraded.rooms)} 个房间，信息量不足")
 
         if gate_failures:
+            # ⚠️ 这句话会**上屏**（经 `errors[].message` 进「有几个环节没能完成」
+            #    那张清单），所以写的是给用户看的话：发生了什么、他能做什么。
+            #    闸门判据与主模型失败原因（含异常类名）只进日志 —— 上面那行
+            #    `self.log.warning(f"启用本地降级解析（原因: {cause} / {primary_error}）")`
+            #    已经把它们记下了，排查时查得到。
             raise LLMError(
-                f"[A-01] 降级解析未通过质量闸门（{'；'.join(gate_failures)}）。"
-                f"主模型失败原因: {primary_error}。"
-                f"建议用户稍后重试或更换更清晰的户型图，不返回低质量结果。"
+                f"这次没能从图上认出足够的房间（{'；'.join(gate_failures)}），"
+                f"本次解析已停止 —— 宁可不给结果，也不会返回一份低质量的户型。"
+                f"换一张更清晰、更完整的户型图重试通常能成功。"
             )
 
         # 关键：结构字段全部留空，不由模型推断
@@ -192,18 +198,22 @@ class LayoutParserAgent(BaseAgent):
             "has_north_arrow": False,
             "confidence": degraded.confidence,
             "uncertain_points": [
-                "本次由本地兜底模型完成，仅能识别房间名称",
+                "本次只做了简版识别，仅能给出房间名称",
                 "墙体、门窗、尺寸、面积均未识别，请勿据此做拆改或预算决策",
                 degraded.uncertainty or "",
             ],
             "image_quality_note": "",
             "model_used": llm_result.model_used,
+            # ⚠️ `warnings` 会上屏。原来第二条写的是 `原因：{primary_error}`，
+            #    而 primary_error 形如 `RuntimeError: ...` 或是上游的原始报文 ——
+            #    那是给排查用的，只留在上面那行日志里。
             "warnings": [
                 self._degrade_headline(cause),
-                f"原因：{primary_error}",
+                "本次只读到房间名称，墙体、门窗、尺寸与面积都没有读出来。"
+                "换一张更清晰的户型图重新解析，或稍后重试。",
             ],
             "safety_notice": (
-                "本结果未经完整解析，**无法判断承重墙**。任何拆改前必须由具备资质的"
+                "本结果未经完整解析，无法判断承重墙。任何拆改前必须由具备资质的"
                 "专业人员现场复核，切勿依据本系统结论直接施工。"
             ),
         }
@@ -217,8 +227,7 @@ class LayoutParserAgent(BaseAgent):
             "layout_id": layout_id,
             "degraded": True,
             "degrade_reasons": [
-                f"[A-01] {self._degrade_headline(cause)}（{primary_error}），"
-                f"仅识别到房间名称，结构信息缺失"
+                f"{self._degrade_headline(cause)}，仅识别到房间名称，结构信息缺失"
             ],
             "phase": "degraded",
             "_llm_meta": self._last_llm_meta,
