@@ -1308,7 +1308,7 @@ class TestExteriorDoorIsIdentified:
             f"3D 里就没有「大门」可言了"
         )
         assert ent[0].width_m == pytest.approx(1.0, abs=0.05)
-        assert not any("户外" in n for n in w.notes), "认出来了就不该再说没有"
+        assert not any("户外" in n for n in w.issues), "认出来了就不该再说没有"
 
     def test_室内门不会被误认成入户门(self):
         """三扇都开在房间之间的门，一扇都不该标成通外。"""
@@ -1323,6 +1323,9 @@ class TestExteriorDoorIsIdentified:
         这时必须有一句话说明"围墙是整圈闭合的"，否则用户只会以为自己没找到门。
         """
         w = build_walkable(normalize_layout(REAL_LAYOUT))
-        assert any("没有识别到通往户外的门" in n for n in w.notes), (
-            f"没有通外的门却不吭声。当前 notes：{w.notes}"
+        # ⚠️ 断言的是 `issues` 不是 `notes`：**界面上只渲染 issues**
+        #    （`SceneViewer` 的"后端自己报出来的问题"那一块）。
+        #    这句话本来写进 notes，等于写在没人看的地方。
+        assert any("没有识别到通往户外的门" in n for n in w.issues), (
+            f"没有通外的门却不吭声。当前 issues：{w.issues}"
         )
