@@ -211,13 +211,22 @@ class TaskRecord:
         return self.handle is not None and not self.handle.done()
 
     def to_dict(self, now: float | None = None) -> dict[str, Any]:
-        """给轮询接口的视图。字段与 4.4 的响应对齐。"""
+        """
+        给轮询接口的视图。字段与 4.4 的响应对齐。
+
+        ⚠️ **跑完的任务，`elapsed_seconds` 必须停在完成那一刻。**
+        `build_view` 里算的是 `now - started_at`，而 `now` 默认取当前时间 ——
+        于是任务完成之后这个数会**一直涨下去**：实测（探针恢复一个几十分钟前
+        完成的解析任务）界面上写着"完成 · 用时 56 分 56 秒"，而实际只跑了 40 秒。
+        已完成/失败的任务，把 `now` 换成 `finished_at` 就冻住了。
+        """
         from ..core.redis_client import PHASE_TEXT
 
         view = build_view(
             kind=self.kind, phase=self.phase, status=self.status,
             started_at=self.started_at, phase_entered_at=self.phase_entered_at,
             fallback_progress=self.progress, now=now,
+            finished_at=self.finished_at,
         )
         return {
             "task_id": self.task_id,
@@ -1027,6 +1036,8 @@ class TaskManager:
                 trace_id=rec.trace_id,
                 result=result,
                 error=error or None,
+                # 跑完的时刻也落库：跨进程读这条记录时，界面的"用时"要停在这一刻
+                finished_at=rec.finished_at,
                 ttl=RESULT_TTL,
             )
         except Exception as e:  # noqa: BLE001
@@ -1073,6 +1084,8 @@ class TaskManager:
                 kind=kind, phase=phase, status=status,
                 started_at=started_at, phase_entered_at=phase_entered_at,
                 fallback_progress=stored_progress,
+                # 老记录没有这个字段 → None → 行为与从前一致（不猜）
+                finished_at=remote.get("finished_at"),
             )
             return {
                 "task_id": task_id,

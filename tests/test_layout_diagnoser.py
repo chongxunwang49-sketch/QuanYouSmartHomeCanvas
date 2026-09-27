@@ -488,3 +488,115 @@ class TestDiagnosisSchema:
             "green_score": {"score": 7},
         })
         assert d.data_gaps == [] and d.confidence == 0.0
+
+
+# ══════════════════════════════════════════════════════════════════
+# 屋主提供的户型详情（4.3′）
+# ══════════════════════════════════════════════════════════════════
+
+
+#: 一份最小的屋主详情（内容不重要，重要的是"它存在且被当作依据"）
+HOUSE_DETAIL = """# 屋主自述
+- 层高 2.90 m，装修后净高 2.72 m
+- 主朝向正南，南向采光面 9.6 m，厨房与卫生间都有外窗（全明）
+- 南北通透，夏季穿堂风速 1.0–1.5 m/s
+- 承重墙：南向外墙、东侧分户墙；其余为 120 mm 非承重隔墙
+- 收纳：玄关可放 1.5 m 通高鞋柜；主卧衣柜位 3.0 m × 0.6 m
+"""
+
+
+class TestHouseDetailRaisesConfidence:
+    """
+    需求方 2026-09-27 的问题：「户型诊断一直出现综合评分低、数据不足」。
+    根因是平面图**读不出**层高/朝向/采光面/通风/收纳 —— 诊断只能如实写缺口。
+    屋主补一份文字详情就把这些补齐了，所以：
+
+      ① 详情要进提示词，且被标明"优先采信"；
+      ② 代码兜底产生的 data_gaps（无指北针等）在有详情时**不再出现**；
+      ③ 置信度不再被"缺口 ≥3 → 压到 0.5 以下"那条规则误伤；
+      ④ 依据来源要如实列出来（平面图 + 详情），不能黑箱。
+    """
+
+    @staticmethod
+    def _layout_with_detail() -> dict:
+        layout = json.loads(json.dumps(FULL_LAYOUT))
+        layout["has_north_arrow"] = False       # 图上没有指北针 —— 这是常见情况
+        layout["house_detail"] = {
+            "text": HOUSE_DETAIL, "title": "屋主自述.md",
+            "source": "user", "updated_at": "2026-09-27T12:00:00+08:00",
+        }
+        return layout
+
+    def test_详情被带进提示词且标明优先采信(self):
+        fake = _FakeLLM()
+        asyncio.run(LayoutDiagnoserAgent(llm=fake).execute(_state(self._layout_with_detail())))
+        assert fake.calls, "模型没被调用"
+        prompt = fake.calls[0]["user"]
+        assert "层高 2.90 m" in prompt, "详情正文没有进提示词"
+        assert "权威输入" in prompt or "优先采信" in prompt, (
+            "详情必须被标明是权威输入 —— 否则模型仍会按平面图推断"
+        )
+
+    def test_有详情时不再因为没指北针记缺口(self):
+        without = asyncio.run(
+            LayoutDiagnoserAgent(llm=_FakeLLM()).execute(
+                _state({**FULL_LAYOUT, "has_north_arrow": False}))
+        )["diagnosis"]
+        with_detail = asyncio.run(
+            LayoutDiagnoserAgent(llm=_FakeLLM()).execute(_state(self._layout_with_detail()))
+        )["diagnosis"]
+
+        assert any("指北针" in g for g in without["data_gaps"]), (
+            "前提不成立：没有详情时本来就该记这条缺口"
+        )
+        assert not any("指北针" in g for g in with_detail["data_gaps"]), (
+            "有了详情（里面写着朝向）还把「无指北针」记成缺口 —— 用户补了资料却不见好转"
+        )
+
+    def test_有详情时采光通风不算数据不足(self):
+        """窗户一个都没识别到时，详情里写了采光面与通风路径，这两维就不该标不可评估。"""
+        no_window = {**FULL_LAYOUT, "windows": []}
+        plain = asyncio.run(
+            LayoutDiagnoserAgent(llm=_FakeLLM()).execute(_state(no_window)))["diagnosis"]
+        assert plain["lighting"].get("insufficient_data"), "前提不成立：没窗户本来就该标不可评估"
+
+        with_detail = json.loads(json.dumps(no_window))
+        with_detail["house_detail"] = {"text": HOUSE_DETAIL, "title": "屋主自述.md"}
+        got = asyncio.run(
+            LayoutDiagnoserAgent(llm=_FakeLLM()).execute(_state(with_detail)))["diagnosis"]
+        assert not got["lighting"].get("insufficient_data"), (
+            "详情里写了采光面，采光不该再判「数据不足」"
+        )
+        assert not got["ventilation"].get("insufficient_data")
+
+    def test_置信度不再被缺口数量误伤(self):
+        """缺口 ≥3 时那条"压到 0.5 以下"的规则，在详情补齐数据后不该继续生效。"""
+        layout = self._layout_with_detail()
+        layout["windows"] = []          # 制造多个缺口
+        got = asyncio.run(
+            LayoutDiagnoserAgent(llm=_FakeLLM(_diag_payload(confidence=0.85)))
+            .execute(_state(layout))
+        )["diagnosis"]
+        assert got["confidence"] >= 0.8, (
+            f"置信度被压到 {got['confidence']} —— 详情已经补齐了采光/朝向，不该再按"
+            f"「缺 3 项以上」处理"
+        )
+
+    def test_依据来源如实列出(self):
+        plain = asyncio.run(
+            LayoutDiagnoserAgent(llm=_FakeLLM()).execute(_state(FULL_LAYOUT)))["diagnosis"]
+        assert plain["evidence_sources"] == ["平面图解析结果（房间/墙体/门窗/面积）"]
+
+        got = asyncio.run(
+            LayoutDiagnoserAgent(llm=_FakeLLM()).execute(_state(self._layout_with_detail()))
+        )["diagnosis"]
+        assert len(got["evidence_sources"]) == 2
+        assert "屋主自述.md" in got["evidence_sources"][1]
+        assert got["model_based_on"]["has_house_detail"] is True
+
+    def test_没有详情时行为与从前一致(self):
+        """回归：不带详情的那条路一个字都不该变。"""
+        got = asyncio.run(
+            LayoutDiagnoserAgent(llm=_FakeLLM()).execute(_state(FULL_LAYOUT)))["diagnosis"]
+        assert got["model_based_on"]["has_house_detail"] is False
+        assert got["data_gaps"] == []

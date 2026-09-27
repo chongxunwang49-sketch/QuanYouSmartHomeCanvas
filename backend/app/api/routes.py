@@ -87,6 +87,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import pathlib
+import re
+from datetime import datetime, timezone
 
 from typing import Any, get_args
 
@@ -104,6 +107,7 @@ from ..core.redis_client import get_quota_limiter
 from ..graph.state import initial_state
 from ..graph.workflow import get_compiled_graph
 from ..schemas.plan import BudgetGrade, PlanStyle
+from ..agents.layout_diagnoser import HOUSE_DETAIL_MAX_CHARS
 from ..services.furniture import scaling
 from ..services.geometry import build_walkable
 from ..services.material import catalog
@@ -115,6 +119,7 @@ from .schemas import (
     ApiResponse,
     FloorMaterialRequest,
     GenerateRequest,
+    HouseDetailRequest,
     KnowledgeUploadRequest,
     LoginRequest,
     MembershipRequest,
@@ -1113,11 +1118,191 @@ async def set_floor_material(
     return ApiResponse.ok(_floor_payload(layout_id, hotspots, subs))
 
 
+@router.get("/layout/{layout_id}/house-detail", response_model=ApiResponse)
+async def get_house_detail(layout_id: str) -> ApiResponse:
+    """
+    屋主补充的「户型详情」（文字）。
+
+    ══════════════════════════════════════════════════════════════════
+    为什么要有这个接口
+    ══════════════════════════════════════════════════════════════════
+    平面图是**二维**的：层高、朝向、采光面、通风路径、收纳位置这些它都没有。
+    于是户型诊断只能反复写"数据不足、置信度下调" —— 实测就是这个现象。
+    屋主补一份文字说明就把这些补齐了，而且这份说明比从图上推断更权威。
+
+    它存在户型记录里（`layout["house_detail"]`），与户型同寿命（1 小时），
+    也随户型一起落库 —— 不需要第二套存储。
+    """
+    layout = await layout_store.load(layout_id)
+    if not layout:
+        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+    return ApiResponse.ok({"layout_id": layout_id,
+                           "house_detail": layout.get("house_detail")})
+
+
+@router.post("/layout/{layout_id}/house-detail", response_model=ApiResponse)
+async def save_house_detail(
+    layout_id: str,
+    req: HouseDetailRequest,
+) -> ApiResponse:
+    """
+    保存屋主补充的户型详情。**保存后要重新跑一次诊断才有意义** ——
+    见 `POST /layout/{id}/diagnose`（前端是"保存并重新诊断"一个动作）。
+    """
+    layout = await layout_store.load(layout_id)
+    if not layout:
+        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+
+    text = (req.text or "").strip()
+    if not text:
+        raise ApiError(4001, "户型详情不能为空 —— 要去掉这份详情请用 DELETE（本演示里留空即清空）")
+    if len(text) > HOUSE_DETAIL_MAX_CHARS * 2:
+        raise ApiError(
+            4001,
+            f"户型详情太长了（{len(text)} 字符）。请精简到 "
+            f"{HOUSE_DETAIL_MAX_CHARS * 2} 字符以内 —— 超出的部分不会进诊断提示词。",
+        )
+
+    layout["house_detail"] = {
+        "text": text,
+        "title": (req.title or "屋主提供的户型详情").strip(),
+        "source": (req.source or "user").strip(),
+        "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    # ⚠️ 走同一个 store：内存 + Redis + 落库三处一起更新，
+    #    否则会出现"这次能看到、刷新就没了"。
+    await layout_store.save(layout_id, layout)
+    logger.info(f"[house-detail] 保存 {len(text)} 字符 layout={layout_id}")
+    audit("house_detail", resource_type="layout", resource_id=layout_id,
+          chars=len(text))
+    return ApiResponse.ok({"layout_id": layout_id,
+                           "house_detail": layout["house_detail"]})
+
+
+@router.get("/layout/{layout_id}/house-detail/sample", response_model=ApiResponse)
+async def sample_house_detail(layout_id: str) -> ApiResponse:
+    """
+    给当前户型**推荐一份演示用的户型详情**（按面积最接近的那份）。
+
+    ⚠️ 这是**演示辅助**，不是产品能力：`seed_data/demo_house_details/` 里放着
+    三份与演示户型图配套的详情文档。前端把它填进输入框，**由用户点保存** ——
+    不是后端自动替他填上。区别很重要：数据是"屋主提供的"，得由人确认一次。
+    """
+    layout = await layout_store.load(layout_id)
+    if not layout:
+        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+
+    samples = _demo_house_details()
+    if not samples:
+        raise ApiError(4004, "本机没有演示用户型详情（seed_data/demo_house_details/ 为空）")
+
+    area = float(layout.get("total_area") or 0)
+    best = min(samples, key=lambda s: abs(s["area"] - area)) if area > 0 else samples[0]
+    return ApiResponse.ok({
+        "title": best["title"],
+        "text": best["text"],
+        "matched_by": (
+            f"套内总面积最接近：本户型 {area:.1f} ㎡ / 该样例 {best['area']:.1f} ㎡"
+            if area > 0 else "本地演示样例（本户型未给出面积，取第一份）"
+        ),
+        "note": "这是**演示样例**。真实使用时请填你自己房子的实际情况。",
+    })
+
+
+#: 演示详情文档的缓存（读一次就够，文件不会变）。
+_DEMO_DETAIL_CACHE: list[dict[str, Any]] = []
+
+
+def _demo_house_details() -> list[dict[str, Any]]:
+    """
+    读 `seed_data/demo_house_details/*.md`，并从正文里取"建筑面积"用于匹配。
+
+    ⚠️ 面积是从文档里**用正则读出来的**，不是在代码里再写一份 ——
+    写两份的话，改了文档忘了改代码，匹配就会静默错位。
+    """
+    if _DEMO_DETAIL_CACHE:
+        return _DEMO_DETAIL_CACHE
+    root = pathlib.Path(__file__).resolve().parents[3] / "seed_data" / "demo_house_details"
+    if not root.is_dir():
+        return []
+    for f in sorted(root.glob("*.md")):
+        text = f.read_text(encoding="utf-8")
+        m = re.search(r"建筑面积[：:]\s*\**\s*([0-9]+(?:\.[0-9]+)?)", text)
+        _DEMO_DETAIL_CACHE.append({
+            "title": f.stem,
+            "text": text,
+            "area": float(m.group(1)) if m else 0.0,
+        })
+    return _DEMO_DETAIL_CACHE
+
+
+@router.get("/layout/{layout_id}/diagnosis", response_model=ApiResponse)
+async def get_diagnosis(layout_id: str) -> ApiResponse:
+    """
+    户型诊断（五维）。**有存下来的就直接给，没有就现跑一次。**
+
+    为什么要单开一条读接口，而不是只用解析结果里那份：
+    屋主补了户型详情之后需要**重新诊断**，而解析任务早已结束 ——
+    诊断必须能脱离那次任务独立取用（刷新页面、隔一会儿再看，都还在）。
+    """
+    layout = await layout_store.load(layout_id)
+    if not layout:
+        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+    diagnosis = layout.get("diagnosis")
+    if not diagnosis:
+        diagnosis = await _run_diagnosis(layout_id, layout)
+    return ApiResponse.ok({"layout_id": layout_id, "diagnosis": diagnosis})
+
+
+@router.post("/layout/{layout_id}/diagnose", response_model=ApiResponse)
+async def rerun_diagnosis(layout_id: str) -> ApiResponse:
+    """
+    强制重跑一次五维诊断（用于补完户型详情之后）。
+
+    ⚠️ 与首次解析时的诊断**走同一个 agent**（A-02），只是输入多了那份详情 ——
+    没有任何"演示专用"的旁路，评分高是因为依据齐了，不是因为走了别的路。
+    """
+    layout = await layout_store.load(layout_id)
+    if not layout:
+        raise ApiError(4004, f"户型 {layout_id} 不存在或已过期（保留 1 小时）")
+    diagnosis = await _run_diagnosis(layout_id, layout)
+    return ApiResponse.ok({"layout_id": layout_id, "diagnosis": diagnosis})
+
+
+async def _run_diagnosis(layout_id: str, layout: dict[str, Any]) -> dict[str, Any]:
+    """
+    跑一次 A-02，并把结果写回户型记录。
+
+    两个调用方（首次取用 / 重新诊断）共用同一份实现 —— 免得两条路走出两个结果。
+    """
+    from ..agents.layout_diagnoser import LayoutDiagnoserAgent
+
+    first_room = ((layout.get("rooms") or [{}])[0].get("name") if layout.get("rooms")
+                  else "未命名")
+    state = initial_state(task_id=f"diag-{layout_id}", layout=layout)
+    try:
+        out = await LayoutDiagnoserAgent().execute(state)
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"[diagnose] 诊断失败 layout={layout_id} 房间={first_room}")
+        raise ApiError(5003, f"诊断失败：{type(e).__name__}") from e
+
+    diagnosis = out.get("diagnosis")
+    if not diagnosis:
+        raise ApiError(5003, "诊断没有产出结果（agent 返回空）")
+
+    layout["diagnosis"] = diagnosis
+    await layout_store.save(layout_id, layout)
+    logger.info(
+        f"[diagnose] overall={diagnosis.get('overall_score')} "
+        f"confidence={diagnosis.get('confidence')} "
+        f"gaps={len(diagnosis.get('data_gaps') or [])} layout={layout_id}"
+    )
+    return diagnosis
+
+
 @router.get("/layout/{layout_id}/walkable", response_model=ApiResponse)
 async def layout_walkable(layout_id: str, plan_id: str = "") -> ApiResponse:
     """
-    3D 漫游的几何输入（新需求：第一人称在模型中行走）。
-
     返回碰撞线段（门洞已切开）、房间净空、门连通图、出生点。
 
     ⚠️ **`mode` 字段决定前端走哪条路**：

@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
-import { parseLayout } from '@/api'
+import {
+  layoutHouseDetail,
+  parseLayout,
+  rerunDiagnosis,
+  sampleHouseDetail,
+  saveHouseDetail,
+} from '@/api'
+import type { Diagnosis, HouseDetail } from '@/api/types'
 import { messageOf } from '@/api/client'
 import { toast } from '@/utils/toast'
 import { useParseSession } from '@/composables/useParseSession'
@@ -175,16 +182,146 @@ const PIPELINE = [
   { icon: 'layout', title: '矢量图与热区', hint: '矢量户型图必出，物品热区挂价格与购买链接' },
 ] as const
 
+// ══════════════════════════════════════════════════════════════════
+// 户型详情（文字资料）—— 补平面图读不出来的那部分
+// ══════════════════════════════════════════════════════════════════
+/**
+ * ⚠️ **这是与左边「上传平面图」并列的第二个上传模块，但传的是文字。**
+ *
+ * 为什么要有它：平面图是二维的 —— 层高、朝向、采光面、通风路径、收纳位置
+ * 图上根本没有，而户型诊断的五个维度全都要用这些。于是诊断只能一直写
+ * "数据不足、置信度下调"（需求方反馈的原话就是"综合评分低、数据不足"）。
+ * 屋主补一份文字说明把这些补齐，评分与置信度就上得来。
+ *
+ * ⚠️ **两个上传模块必须在文案上就能分清**，否则用户会把户型图传到这里、
+ *    或把这段文字粘到那里。所以这里的每一处措辞都点名"文字/文档"，
+ *    并明确写「不是图片」。
+ */
+const detailText = ref('')
+const detailTitle = ref('')
+const detailSaved = ref<HouseDetail | null>(null)
+const detailBusy = ref(false)
+const detailHint = ref('')
+const detailFileInput = ref<HTMLInputElement | null>(null)
+/** 重新诊断后的结果。用来当场显示"补完资料之后分数变了多少" */
+const rediagnosed = ref<Diagnosis | null>(null)
+
+/**
+ * 当前户型 id。**从解析结果里取** —— `ParseSession` 上没有单独的 `layoutId`，
+ * 而户型详情与五维诊断都是挂在**户型**上的，所以它是这个模块的主键。
+ */
+const layoutId = computed(() => s.layout.value?.layout_id ?? '')
+
+// 进页面读一次已保存的详情；换了户型（重新解析）也要重读 ——
+// 详情是挂在**户型**上的，不是挂在这次会话上。
+onMounted(loadHouseDetail)
+watch(() => layoutId.value, () => {
+  detailSaved.value = null
+  rediagnosed.value = null
+  detailHint.value = ''
+  void loadHouseDetail()
+})
+
+async function loadHouseDetail() {
+  const id = layoutId.value
+  if (!id) return
+  try {
+    const d = await layoutHouseDetail(id)
+    detailSaved.value = d.house_detail
+    if (d.house_detail && !detailText.value) {
+      detailText.value = d.house_detail.text
+      detailTitle.value = d.house_detail.title
+    }
+  } catch {
+    /* 取不到就当没填过 —— 这个模块不该让整页报错 */
+  }
+}
+
+/** 读入一份 .md / .txt。**只是省一次手动复制**，提交的仍然是文本。 */
+async function onPickDetailFile(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const f = input.files?.[0]
+  if (!f) return
+  try {
+    detailText.value = await f.text()
+    if (!detailTitle.value.trim()) detailTitle.value = f.name
+    detailHint.value = `已读入 ${f.name}（${detailText.value.length} 字符），确认后点「保存并重新诊断」`
+  } catch (e) {
+    toast.error(`读取文件失败：${(e as Error).message}`)
+  } finally {
+    input.value = ''
+  }
+}
+
+/** 载入演示样例：**只填进输入框**，仍然要用户点保存。 */
+async function loadSampleDetail() {
+  const id = layoutId.value
+  if (!id) return
+  detailBusy.value = true
+  detailHint.value = ''
+  try {
+    const sample = await sampleHouseDetail(id)
+    detailText.value = sample.text
+    detailTitle.value = `${sample.title}（演示样例）`
+    detailHint.value = `${sample.matched_by}。${sample.note}`
+  } catch (e) {
+    detailHint.value = messageOf(e)
+  } finally {
+    detailBusy.value = false
+  }
+}
+
+async function saveDetailAndRediagnose() {
+  const id = layoutId.value
+  if (!id) return
+  if (!detailText.value.trim()) {
+    toast.warning('先把户型详情写进去（或点「载入演示样例」）')
+    return
+  }
+  detailBusy.value = true
+  detailHint.value = ''
+  try {
+    const saved = await saveHouseDetail(id, {
+      text: detailText.value,
+      title: detailTitle.value.trim() || '户型详情',
+    })
+    detailSaved.value = saved.house_detail
+    // ⚠️ 保存之后**必须重新诊断**：诊断是拿详情算出来的，不重跑就还是旧的那份。
+    const d = await rerunDiagnosis(id)
+    rediagnosed.value = d.diagnosis
+    toast.success(
+      `已保存，并重新诊断：综合 ${d.diagnosis.overall_score.toFixed(1)} 分 · `
+      + `置信度 ${(d.diagnosis.confidence ?? 0).toFixed(2)}`,
+    )
+    if (s.poll.status.value?.result) {
+      // 会话里那份结果也换上新的诊断，免得诊断页显示的与这里不一致
+      s.poll.status.value.result.diagnosis = d.diagnosis
+    }
+  } catch (e) {
+    detailHint.value = messageOf(e)
+    toast.error(detailHint.value)
+  } finally {
+    detailBusy.value = false
+  }
+}
+
 </script>
 
 <template>
   <div class="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
     <!-- ══ 左：上传与选项 ══ -->
     <section class="flex flex-col gap-4">
-      <div class="card p-4">
+      <!--
+        ⚠️ 第一张卡 `flex-1`：两栏的内容长度并不相等（左：上传+选项 /
+        右：详情+房间清单），不撑的话**短的那一栏下面会空出一段**，
+        紧跟着的整幅「完成」进度框就显得贴在一侧、另一侧吊空。
+        让各自的第一张卡吸收多余高度（左边是拖放区变大、右边是文本框变高），
+        两栏底边就自然对齐了。
+      -->
+      <div class="card flex flex-1 flex-col p-4">
         <!-- 拖放区 -->
         <div
-          class="relative flex min-h-[240px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed p-6 text-center transition-all"
+          class="relative flex min-h-[240px] flex-1 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed p-6 text-center transition-all"
           :class="
             dragging
               ? 'border-botanical bg-botanical-surface'
@@ -370,51 +507,131 @@ const PIPELINE = [
         </button>
       </div>
 
-      <!-- 已有结果：只做指路，不重复展示 -->
-      <div v-else-if="s.result.value" class="card p-4">
-        <div class="mb-3 flex items-center justify-between">
+      <!--
+        ══ 户型详情（第二个上传模块 —— 传的是**文字**）══
+
+        ⚠️ **它替代了原来的「识别完成 + 四张指路卡」。** 那两个模块的取舍：
+        指路卡只是导航（侧栏里本来就有同样的四个入口），而"补一份户型详情"
+        是**只有这一页能做**的事，也是诊断能不能给出可信评分的前提。
+        四个入口没有丢 —— 挪到下面「识别到的房间」卡的脚注里了。
+
+        ⚠️ 与左边「上传平面图」必须一眼分得清：标题、图标、说明、按钮文案
+        全部点名"文字/文档"，并反复写「不是图片」。用户传反了就没意义了。
+      -->
+      <div v-else-if="s.result.value" class="card flex flex-1 flex-col p-4">
+        <div class="mb-3 flex items-start justify-between gap-2">
           <h2 class="flex items-center gap-2 font-serif text-[16px] font-semibold text-wood-dark">
-            <AppIcon name="check-circle" :size="17" class="text-botanical" />
-            <span>识别完成</span>
+            <AppIcon name="file-plus" :size="17" class="text-botanical" />
+            <span>户型详情<span class="text-wood-muted">（文字资料）</span></span>
           </h2>
-          <span class="tag">
-            <span class="num">{{ s.layout.value?.rooms?.length ?? 0 }}</span> 个房间
+          <span v-if="detailSaved" class="tag shrink-0">
+            <AppIcon name="check-circle" :size="12" class="mr-1 text-botanical" />
+            已保存
           </span>
         </div>
 
-        <div class="grid grid-cols-2 gap-2">
-          <RouterLink
-            v-for="l in resultLinks"
-            :key="l.to"
-            :to="l.to"
-            class="card-hover flex items-start gap-2.5 rounded-xl border border-warm-border bg-white p-3"
+        <p class="mb-3 rounded-xl border border-botanical/25 bg-botanical-surface p-2.5 text-[11px] leading-relaxed text-wood">
+          <strong class="font-semibold">这一栏填文字，不是图片</strong> ——
+          房子在哪个朝向、层高多少、哪面墙有窗、通风走哪条路、柜子能做多大，
+          这些<strong class="font-semibold">平面图上读不出来</strong>，
+          而户型诊断的五个维度都要用。左边传的是户型图（PNG / JPG），这里传的是
+          文字说明（直接打字，或读入 .md / .txt）。
+        </p>
+
+        <label class="mb-1.5 block text-[12px] font-semibold text-wood-dark">
+          资料名称<span class="ml-1 font-normal text-wood-muted">（会显示在诊断的依据来源里）</span>
+        </label>
+        <input
+          v-model="detailTitle"
+          class="mb-3 w-full rounded-xl border border-warm-border bg-white px-3 py-2 text-[12px] text-wood-dark outline-none focus:border-botanical"
+          placeholder="例如：XX 小区 3 栋 2 单元 602 户型详情"
+          type="text"
+        />
+
+        <textarea
+          v-model="detailText"
+          class="min-h-[220px] w-full flex-1 resize-y rounded-xl border border-warm-border bg-white p-3 text-[12px] leading-relaxed text-wood-dark outline-none focus:border-botanical"
+          placeholder="按条目写就行，例如：&#10;· 层高 2.90 m，装修后净高 2.72 m&#10;· 主朝向正南，南向采光面 9.6 m，厨房与卫生间都有外窗&#10;· 南北通透，夏季穿堂风速 1.0–1.5 m/s&#10;· 承重墙：南向外墙、东侧分户墙；其余为 120 mm 隔墙&#10;· 洗衣机位与地漏在阳台，燃气热水器位在厨房北窗旁"
+        />
+
+        <div class="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            ref="detailFileInput"
+            class="hidden"
+            type="file"
+            accept=".md,.markdown,.txt,text/plain"
+            @change="onPickDetailFile"
+          />
+          <button
+            class="btn-ghost px-3 py-1.5"
+            type="button"
+            @click="detailFileInput?.click()"
           >
-            <span
-              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-botanical/20 bg-botanical-light text-botanical"
-            >
-              <AppIcon :name="l.icon" :size="18" />
-            </span>
-            <span class="min-w-0">
-              <span class="block truncate text-[12px] font-semibold text-wood-dark">
-                {{ l.label }}
-              </span>
-              <span class="mt-0.5 block truncate text-[10px] text-wood-muted">{{ l.hint }}</span>
-            </span>
-          </RouterLink>
+            <AppIcon name="file-plus" :size="15" />
+            <span>读入 .md / .txt</span>
+          </button>
+          <button
+            class="btn-ghost px-3 py-1.5"
+            type="button"
+            :disabled="detailBusy"
+            @click="loadSampleDetail"
+          >
+            <AppIcon :name="detailBusy ? 'spinner' : 'sparkle'" :size="15" />
+            <span>载入演示样例</span>
+          </button>
+          <span class="text-[10px] text-wood-muted/80">
+            样例只是帮您把格式填好，仍然要您确认后保存
+          </span>
         </div>
 
-        <div class="mt-3 flex justify-end">
-          <button class="btn-ghost px-3 py-1.5" type="button" @click="clearFile">
-            <AppIcon name="upload-simple" :size="15" />
-            <span>重新解析</span>
-          </button>
+        <p v-if="detailHint" class="mt-2 rounded-lg bg-warm-sidebar/70 p-2 text-[11px] leading-relaxed text-wood-muted">
+          {{ detailHint }}
+        </p>
+
+        <button
+          class="btn-primary mt-3 w-full py-2.5"
+          type="button"
+          :disabled="detailBusy || !detailText.trim() || !layoutId"
+          @click="saveDetailAndRediagnose"
+        >
+          <AppIcon :name="detailBusy ? 'spinner' : 'check-circle'" :size="17" />
+          <span>{{ detailBusy ? '保存并重新诊断…' : '保存并重新诊断' }}</span>
+        </button>
+
+        <!-- 重新诊断的结果当场给出来：分数变了多少，用户要看得见 -->
+        <div
+          v-if="rediagnosed"
+          class="mt-3 rounded-xl border border-botanical/30 bg-botanical-surface p-3"
+        >
+          <p class="text-[12px] font-semibold text-wood-dark">
+            重新诊断完成：综合
+            <span class="num text-botanical">{{ rediagnosed.overall_score.toFixed(1) }}</span> 分 ·
+            置信度 <span class="num">{{ ((rediagnosed.confidence ?? 0) * 100).toFixed(0) }}%</span>
+            · 数据缺口 <span class="num">{{ rediagnosed.data_gaps?.length ?? 0 }}</span> 项
+          </p>
+          <ul v-if="rediagnosed.evidence_sources?.length" class="mt-1.5 space-y-0.5">
+            <li
+              v-for="(src, i) in rediagnosed.evidence_sources"
+              :key="i"
+              class="text-[10px] leading-relaxed text-wood-muted"
+            >
+              · 依据 {{ i + 1 }}：{{ src }}
+            </li>
+          </ul>
+          <RouterLink class="mt-2 inline-flex items-center gap-1 text-[11px] text-botanical hover:underline" to="/parse/diagnosis">
+            <span>去「户型诊断」看五维明细</span>
+            <AppIcon name="arrow-right" :size="13" />
+          </RouterLink>
         </div>
       </div>
 
       <!--
         ══ 识别到的房间 ══
-        与指路卡**不重复**：上面四个入口说明"还能去哪看"，这里回答
-        "它认出了什么"。降级模式只列名字（见 `roomRows` 的说明）。
+        它回答"这份解析认出了什么"。降级模式只列名字（见 `roomRows` 的说明）。
+
+        ⚠️ 页脚那排入口是**从原来的「识别完成」卡搬过来的** ——
+        那张卡换成了「户型详情」上传模块（见上），但四个子页的入口不能丢，
+        所以缩成一行链接放在这里。侧栏里也有同样四项，两条路都通。
       -->
       <div v-if="s.result.value && roomRows.length" class="card p-4">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -473,12 +690,33 @@ const PIPELINE = [
             </span>
           </li>
         </ul>
+
+        <!-- 四个子页入口（从原「识别完成」卡搬来的一行） -->
+        <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-warm-border pt-3">
+          <span class="text-[10px] font-semibold uppercase tracking-wider text-wood-muted/70">
+            接着看
+          </span>
+          <RouterLink
+            v-for="l in resultLinks"
+            :key="l.to"
+            :to="l.to"
+            class="inline-flex items-center gap-1 text-[11px] text-botanical hover:underline"
+            :title="l.hint"
+          >
+            <AppIcon :name="l.icon" :size="13" />
+            <span>{{ l.label }}</span>
+          </RouterLink>
+          <button class="btn-ghost ml-auto px-2.5 py-1" type="button" @click="clearFile">
+            <AppIcon name="upload-simple" :size="13" />
+            <span>重新解析</span>
+          </button>
+        </div>
       </div>
 
       <!-- 未开始时：等待卡 + 解析链路（右栏不留大片空白） -->
       <template v-else-if="!s.result.value">
-        <div class="card">
-          <div class="flex flex-col items-center justify-center px-6 py-10 text-center">
+        <div class="card flex flex-1 flex-col">
+          <div class="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
             <span
               class="flex h-14 w-14 items-center justify-center rounded-2xl border border-botanical/20 bg-botanical-light text-botanical"
             >

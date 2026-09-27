@@ -44,6 +44,26 @@ from ..graph.state import HomeDecoState
 from ..schemas.layout import LayoutDiagnosis
 from .base import BaseAgent
 
+#: 详情文档进提示词时的截断长度。一份详细说明通常 1–3 KB；
+#: 留 6000 字符足够覆盖，又不至于把上下文挤满（诊断本身还要放户型数据）。
+HOUSE_DETAIL_MAX_CHARS = 6000
+
+
+def house_detail_text(layout: dict[str, Any] | None) -> str:
+    """
+    取出屋主提供的户型详情正文（没有就返回空串）。
+
+    `layout["house_detail"]` 的形状：`{"text": str, "title": str, "source": str,
+    "updated_at": iso}`，由 `POST /layout/{id}/house-detail` 写入。
+    """
+    if not layout:
+        return ""
+    detail = layout.get("house_detail")
+    if not isinstance(detail, dict):
+        return ""
+    text = (detail.get("text") or "").strip()
+    return text[:HOUSE_DETAIL_MAX_CHARS]
+
 SYSTEM_PROMPT = """你是一名从业十年的住宅设计师，擅长从户型图数据中判断居住品质。
 用户会给你一份**结构化的户型解析数据**，你要基于这些数据给出诊断。
 
@@ -81,6 +101,27 @@ summary 是给**业主**看的，不是给设计师看的。
 用"北侧卧室采光不足，建议..."而不是"北向房间采光系数偏低"。
 不要堆术语，要说人话。
 
+【屋主提供的户型详情 —— 优先采信】
+如果用户消息里带了「屋主提供的户型详情」，那是**屋主自己写的房子实际情况**，
+比从平面图上推断的更权威。层高、朝向、采光面、通风路径、收纳、设备这些
+"二维平面图上根本读不出来"的项目，以它为准：
+  · 被它覆盖到的项目**不再算数据缺口**，不要写进 data_gaps；
+  · 不要因为"图上没标注"就压着评分或置信度不给 —— 现在有依据了；
+  · 它与平面图冲突时以详情为准，并在 summary 里说明采信了哪一处。
+⚠️ 但**也不能因为有了详情就把它没写的项目编出来**：详情没提到的，仍然按缺数据处理。
+
+⚠️⚠️ **"平面图没标注、但详情里写了"的项目，不算缺口，也不要写进 data_gaps。**
+   典型的就是窗宽、房间朝向、承重墙位置、层高、收纳尺寸 —— 这些都是详情已经
+   给了的。写成"平面图未标注窗宽，本项依据来自屋主详情"会让用户以为数据还不足，
+   而实际上**依据是齐全的**：来源换了一份而已，不是缺了。
+   这类"换了依据来源"的说明，请写在对应维度的 issues 里（那是解释），
+   **不要写进 data_gaps**（那是缺口清单）。
+
+【置信度怎么给】
+  · 详情覆盖了采光/通风/朝向/墙体/收纳这些关键项时，**置信度应当给到 0.85 以上** ——
+    依据齐全却报 0.5 是过谦，而"过谦"和"编造"一样会让用户不知道该信几分。
+  · data_gaps 为空时，置信度应在 0.9 上下 —— 不要习惯性地只给 0.7、0.8。
+
 【承重墙提示】
 若数据中包含 load_bearing 类型的墙体，必须在 load_bearing_warning 中明确提示
 "任何拆改前必须由具备资质的专业人员现场复核"。这是安全要求，不是建议。"""
@@ -88,7 +129,6 @@ summary 是给**业主**看的，不是给设计师看的。
 
 class LayoutDiagnoserAgent(BaseAgent):
     """A-02：户型结构化数据 → 五维诊断。"""
-
     code = "A-02"
     name = "LayoutDiagnoserAgent"
     requires_vision = False          # 纯文本推理，比 A-01 快得多
@@ -148,6 +188,12 @@ class LayoutDiagnoserAgent(BaseAgent):
         **刻意只传诊断用得到的字段**（房间/门窗/朝向/面积），
         不把整份 layout 塞进去——原始 JSON 里有大量与诊断无关的字段
         （image_quality_note、uncertain_points 等），既费 token 又干扰判断。
+
+        ⚠️ **唯一例外是「屋主提供的户型详情」**（`layout["house_detail"]`，见
+        `POST /layout/{id}/house-detail`）。平面图是二维的，层高、朝向、
+        采光面、通风路径、收纳空间这些**图上根本看不出来** —— 这正是诊断
+        一直"数据不足、置信度低"的原因。屋主补一份文字说明就把这些补齐了，
+        所以要原样带上，并明确它的优先级：**详情文档 > 从图上推断**。
         """
         rooms = layout.get("rooms") or []
         windows = layout.get("windows") or []
@@ -171,6 +217,9 @@ class LayoutDiagnoserAgent(BaseAgent):
 
         load_bearing = [w for w in walls if w.get("type") == "load_bearing"]
 
+        # ── 屋主提供的户型详情（有就带上，它是权威输入）──
+        detail_text = house_detail_text(layout)
+
         data_summary = {
             "房间数量": len(rooms),
             "识别到的窗户数量": len(windows),
@@ -181,7 +230,21 @@ class LayoutDiagnoserAgent(BaseAgent):
             "入户朝向": layout.get("entrance_orientation", "unknown"),
             "图中是否有指北针": layout.get("has_north_arrow", False),
             "面积数据是否完整": all((r.get("area") or 0) > 0 for r in rooms) if rooms else False,
+            "是否有屋主提供的户型详情": bool(detail_text),
         }
+
+        detail_block = ""
+        if detail_text:
+            detail_block = f"""
+【屋主提供的户型详情（**权威输入，优先采信**）】
+{detail_text}
+
+⚠️ 上面这份详情是屋主自己写的房子实际情况。**它说的是这房子的真实信息**，
+   层高/朝向/采光面/通风路径/收纳位置这些"平面图上读不出来"的项目，
+   以它为准。凡是被这份详情覆盖到的项目，就**不再是数据缺口**，
+   不要写进 data_gaps，也不要因为"图上没标注"而压低评分或置信度。
+   它与平面图冲突时以详情为准，并在 summary 里说明你采信了哪一处。
+"""
 
         return f"""请对以下户型数据做诊断。
 
@@ -199,7 +262,7 @@ class LayoutDiagnoserAgent(BaseAgent):
 
 【上游解析的自评置信度】
 {layout.get('confidence', 0)}
-
+{detail_block}
 请基于以上数据给出五个维度的诊断。
 **再次强调**：数据中没有的项目不要编造，把"缺什么、因此哪个评分不可靠"写进 data_gaps。"""
 
@@ -210,11 +273,18 @@ class LayoutDiagnoserAgent(BaseAgent):
         """
         代码兜底，不把关键约束交给模型的自觉。
 
-        两件事：
+        三件事：
         1. **承重墙提示强制生成** —— 安全要求，不能指望模型每次都记得写；
-        2. **data_gaps 兜底** —— 若模型声称"一切正常"但实际数据缺失，代码补上。
+        2. **data_gaps 兜底** —— 若模型声称"一切正常"但实际数据缺失，代码补上；
+        3. **屋主提供的详情文档算"有数据"** —— 见下面 `has_detail` 那一段。
         """
         payload = parsed.model_dump()
+
+        # ⚠️ 有屋主详情文档时，采光/通风这两项**不再算数据不足**：
+        #    平面图上读不出层高、朝向、采光面、通风路径，而详情文档里写着。
+        #    不分这一层的话，用户明明补了资料，评分与置信度还是上不去。
+        #    但来源要如实标出来 —— 这是"依据来自详情文档"，不是"我们测出来的"。
+        has_detail = bool(house_detail_text(layout))
 
         # ── 0. 数据不足的维度：由代码强制标记，不给模型编造的机会 ──
         # 每个维度都对应一类必需数据，缺了就标"数据不足"而不是留假分数。
@@ -224,8 +294,12 @@ class LayoutDiagnoserAgent(BaseAgent):
         # 否则换个模型/换个种子就退化成编造。下面逐项兜底。
         _DIM_REQUIRES: list[tuple[str, str, bool, str]] = [
             # (维度, 中文名, 数据是否具备, 缺失说明)
-            ("lighting", "采光", bool(layout.get("windows")), "未识别到窗户"),
-            ("ventilation", "通风", bool(layout.get("windows")), "未识别到窗户"),
+            ("lighting", "采光",
+             bool(layout.get("windows")) or has_detail,
+             "未识别到窗户，且屋主详情里也没写采光面"),
+            ("ventilation", "通风",
+             bool(layout.get("windows")) or has_detail,
+             "未识别到窗户，且屋主详情里也没写通风路径"),
             # 门少于 2 樘就无法判断房间之间的连通关系
             ("circulation", "动线",
              len(layout.get("doors") or []) >= 2, "识别到的门不足 2 樘"),
@@ -269,33 +343,62 @@ class LayoutDiagnoserAgent(BaseAgent):
         # ── 2. data_gaps 兜底：代码能判定的缺失，直接补进去 ──
         gaps = list(payload["data_gaps"])
         rooms = layout.get("rooms") or []
+        #: 代码判定出来的**基础数据缺口**。与模型自己写的那堆"知情说明"分开计数 ——
+        #: 见第 3 步：压低置信度只该由**我们的数据缺失**触发，不该由模型的谨慎措辞触发。
+        hard_gaps: list[str] = []
 
-        if not (layout.get("windows") or []):
+        if not (layout.get("windows") or []) and not has_detail:
             gaps.append("数据中未识别到窗户，采光与通风评分缺乏直接依据")
+            hard_gaps.append("windows")
         if not any((r.get("area") or 0) > 0 for r in rooms):
             gaps.append("房间面积数据缺失，空间利用率评分不可靠")
-        if not layout.get("has_north_arrow"):
+            hard_gaps.append("areas")
+        # 朝向：详情文档里写了朝向，就不算缺口（指北针只是"从图上判断朝向"的手段之一）
+        if not layout.get("has_north_arrow") and not has_detail:
             gaps.append("图中无指北针，朝向判断可能不准确")
+            hard_gaps.append("north_arrow")
         if not (layout.get("walls") or []):
             gaps.append("未识别到墙体，承重墙判断无从进行")
+            hard_gaps.append("walls")
 
         # 去重保序
         payload["data_gaps"] = list(dict.fromkeys(gaps))
 
         # ── 3. 数据缺失时主动压低置信度 ──
-        # 模型有时会对自己没数据也给出高置信度，这里用代码兜一道
-        if len(payload["data_gaps"]) >= 3:
+        # 模型有时会对自己没数据也给出高置信度，这里用代码兜一道。
+        #
+        # ⚠️ **判据是「代码判定的基础缺口」数量，不是 data_gaps 的总条数。**
+        #    原来的口径是"缺口 ≥3 就压到 0.5 以下"——那会把**模型的谨慎措辞**
+        #    也算成数据不足：实测补完屋主详情之后，模型仍然列了 6 条
+        #    "平面图未标注窗宽，本项依据来自屋主详情"这类知情说明，
+        #    于是置信度被死死压在 0.5，用户看到的就是"补了资料还是数据不足"。
+        #    现在只有真的缺基础数据（窗/面积/朝向/墙体）才压，且按缺的条数分档。
+        if len(hard_gaps) >= 2:
             payload["confidence"] = min(payload["confidence"], 0.5)
             payload["data_gaps"].append(
-                "因多项基础数据缺失，本诊断整体置信度已下调至 0.5 以下"
+                f"因缺少 {len(hard_gaps)} 项基础数据（{'、'.join(hard_gaps)}），"
+                "本诊断整体置信度已下调至 0.5 以下"
             )
+        elif len(hard_gaps) == 1:
+            payload["confidence"] = min(payload["confidence"], 0.7)
 
         payload["model_based_on"] = {
             "rooms": len(rooms),
             "windows": len(layout.get("windows") or []),
             "has_area": any((r.get("area") or 0) > 0 for r in rooms),
+            "has_house_detail": has_detail,
         }
+
+        # ── 4. 依据来源：**逐条列出来源**，别让"这份评分是怎么来的"成为黑箱 ──
+        #    （与避坑审查的"每条结论都要能引回原文"同一条纪律。）
+        sources = ["平面图解析结果（房间/墙体/门窗/面积）"]
+        if has_detail:
+            title = (layout.get("house_detail") or {}).get("title") or "屋主提供的户型详情"
+            sources.append(f"屋主提供的户型详情：{title}"
+                           "（层高/朝向/采光/通风/收纳等图上读不出的项目以它为准）")
+        payload["evidence_sources"] = sources
+
         return payload
 
 
-__all__ = ["LayoutDiagnoserAgent"]
+__all__ = ["LayoutDiagnoserAgent", "house_detail_text", "HOUSE_DETAIL_MAX_CHARS"]

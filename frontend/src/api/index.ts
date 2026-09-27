@@ -12,8 +12,11 @@ import { request, requestText } from './client'
 import type {
   DashboardStatsData,
   DevicesData,
+  Diagnosis,
   FloorMaterialsData,
   GenerateRequest,
+  HouseDetail,
+  HouseDetailSample,
   KnowledgeListData,
   KnowledgeUploadResult,
   HealthData,
@@ -295,6 +298,60 @@ export async function layoutFurniture(
     timeout: 15_000,
   })
 }
+
+// ══════════════════════════════════════════════════════════════════
+// 4.3′ 屋主户型详情 + 五维诊断
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * 屋主补充的「户型详情」（**文字资料**，不是图片）。
+ *
+ * 平面图是二维的：层高、朝向、采光面、通风路径、收纳位置它都没有，
+ * 而诊断的五个维度恰好都要用这些 —— 这就是"综合评分低、数据不足"的根因。
+ */
+export const layoutHouseDetail = (layoutId: string) =>
+  request<{ layout_id: string; house_detail: HouseDetail | null }>(
+    'get', `/layout/${encodeURIComponent(layoutId)}/house-detail`, undefined,
+    { timeout: 10_000 },
+  )
+
+/** 保存屋主填的户型详情。**保存后要重新诊断才有意义**（见 `rerunDiagnosis`）。 */
+export const saveHouseDetail = (
+  layoutId: string,
+  body: { text: string; title?: string },
+) =>
+  request<{ layout_id: string; house_detail: HouseDetail }>(
+    'post', `/layout/${encodeURIComponent(layoutId)}/house-detail`, body,
+    // 提示词侧不做校验，服务端只存文本；超长会被后端拒（4001）
+    { timeout: 15_000 },
+  )
+
+/**
+ * 演示用的户型详情样例（后端按**套内面积最接近**挑一份）。
+ *
+ * ⚠️ 拿到之后是**填进输入框、由用户点保存**，不是后端自动替他提交 ——
+ * 数据得由人确认一次。
+ */
+export const sampleHouseDetail = (layoutId: string) =>
+  request<HouseDetailSample>(
+    'get', `/layout/${encodeURIComponent(layoutId)}/house-detail/sample`, undefined,
+    { timeout: 10_000 },
+  )
+
+/** 读五维诊断：有缓存就直接给，没有就现跑一次。 */
+export const layoutDiagnosis = (layoutId: string) =>
+  request<{ layout_id: string; diagnosis: Diagnosis }>(
+    'get', `/layout/${encodeURIComponent(layoutId)}/diagnosis`, undefined,
+    // 现跑要一次 LLM 调用，给足余量（A-02 超时是 60s）
+    { timeout: 90_000 },
+  )
+
+/** 强制重跑五维诊断（补完户型详情之后用）。 */
+export const rerunDiagnosis = (layoutId: string) =>
+  request<{ layout_id: string; diagnosis: Diagnosis }>(
+    'post', `/layout/${encodeURIComponent(layoutId)}/diagnose`, undefined,
+    { timeout: 90_000 },
+  )
 
 // ══════════════════════════════════════════════════════════════════
 // 4.6 健康检查（同步）

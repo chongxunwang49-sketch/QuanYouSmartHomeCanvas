@@ -380,6 +380,9 @@ class RedisClient:
         progress: int,
         started_at: float | None = None,
         phase_entered_at: float | None = None,
+        #: 结束时刻。跑完的任务靠它把"已用时间"冻住 ——
+        #: 不然跨进程读这条记录时会显示成"已经跑了 56 分钟"（实测）。
+        finished_at: float | None = None,
         degraded: bool = False,
         user_id: int | None = None,
         cancelled: bool = False,
@@ -426,7 +429,9 @@ class RedisClient:
         # 但"这个任务是谁的"仍然查得到。
         if user_id is not None:
             mapping["user_id"] = str(user_id)
-        for name, value in (("started_at", started_at), ("phase_entered_at", phase_entered_at)):
+        for name, value in (("started_at", started_at),
+                            ("phase_entered_at", phase_entered_at),
+                            ("finished_at", finished_at)):
             if value is not None:
                 mapping[name] = f"{value:.3f}"
         # trace_id 必须落库：异步任务恢复时要靠它重新绑定日志上下文（ADR-13）
@@ -481,7 +486,7 @@ class RedisClient:
                 out["user_id"] = int(raw["user_id"])
             except ValueError:
                 pass
-        for name in ("started_at", "phase_entered_at"):
+        for name in ("started_at", "phase_entered_at", "finished_at"):
             raw_value = raw.get(name)
             if raw_value:
                 try:
@@ -576,7 +581,7 @@ class TaskProgressStore:
                     "phase": raw.get("phase", "queued"),
                     "trace_id": raw.get("trace_id", ""),
                 }
-                for name in ("started_at", "phase_entered_at"):
+                for name in ("started_at", "phase_entered_at", "finished_at"):
                     try:
                         data[name] = float(raw[name]) if raw.get(name) else None
                     except (TypeError, ValueError):

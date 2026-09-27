@@ -283,6 +283,7 @@ def build_view(
     phase_entered_at: float | None,
     fallback_progress: int = 0,
     now: float | None = None,
+    finished_at: float | None = None,
 ) -> dict[str, Any]:
     """
     由「阶段 + 时间」推出这个轮询该看到的四个数。
@@ -299,13 +300,17 @@ def build_view(
         started_at: 任务开始（epoch 秒）。None = 不知道，此时不报剩余时间。
         phase_entered_at: 当前阶段开始（epoch 秒）。None 视为刚到。
         fallback_progress: 阶段不在模型里时用的值（通常是上一次的进度）。
+        finished_at: 任务**结束**的时刻。给了它就冻结"已用时间" ——
+            不给的话 `now - started_at` 会一直涨：实测一个 40 秒完成的解析，
+            过了一阵再看会显示"用时 56 分 56 秒"。
 
     Returns:
         progress / elapsed_seconds / eta_seconds / overrun
         其中 `eta_seconds=None` 表示**估不出来**，此时前端只显示已用时间。
         给出一个假数字比不给更糟。
     """
-    clock = time.time() if now is None else now
+    # ⚠️ 终态用 finished_at 当"现在"：跑完之后时间必须停住。
+    clock = finished_at if finished_at is not None else (time.time() if now is None else now)
     entry = progress_at(kind, phase)
 
     if status == "completed" or phase in ("done", "degraded"):

@@ -237,6 +237,13 @@ class LayoutDiagnosis(BaseModel):
         default=0.0, ge=0.0, le=1.0,
         description="诊断置信度。输入数据越完整、推断成分越少，分数越高",
     )
+    #: 依据来源。**由代码填，不由模型填** —— 见 `_postprocess` 第 4 步。
+    #: 加了它之后，"这份评分是怎么来的"在界面上是可查的：
+    #: 至少会列出「平面图解析结果」，屋主补了详情文档时再列一条。
+    evidence_sources: list[str] = Field(
+        default_factory=list,
+        description="本次诊断依据的来源清单（平面图解析 / 屋主提供的户型详情）",
+    )
 
 
 __all__ = [

@@ -255,18 +255,11 @@ const BELIEFS = [
         </div>
 
         <!--
-          可读性遮罩。两层：
-            ① 一层均匀的暖底 —— 保证任何一张图（有深色木作也有全白厨房）
-               之上，深色文字都有足够对比度；
-            ② 左上角再压一层 —— 品牌行与标题正好落在这一角，
-               让它们所在的位置最实、最清楚，图的细节留给下半部分。
-          这不只是审美：`wood-dark` 压在没压暗的白厨房照片上会糊掉。
+          ══ 边缘渐隐（唯一压在图上的一层，且很淡）══
+          让滚动中的图从上下边缘柔和进出，不是硬切。
         -->
-        <div class="absolute inset-0 bg-warm-bg/70" />
-        <div class="absolute inset-0 bg-gradient-to-br from-warm-bg/85 via-warm-bg/40 to-transparent" />
-        <!-- 上下两端渐隐，替代 mask 的"图从边缘淡出"效果 -->
-        <div class="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-warm-bg/85 to-transparent" />
-        <div class="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-warm-bg/85 to-transparent" />
+        <div class="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-warm-bg/35 to-transparent" />
+        <div class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-warm-bg/35 to-transparent" />
       </div>
 
       <!--
@@ -278,7 +271,7 @@ const BELIEFS = [
       -->
       <div class="relative z-10 flex min-h-0 flex-1 flex-col justify-between transform-gpu">
         <!-- 品牌行 -->
-        <div class="flex items-center gap-3">
+        <div class="flex w-fit items-center gap-3 rounded-2xl bg-warm-bg/80 px-4 py-2.5">
         <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-botanical text-white">
           <AppIcon name="leaf" :size="19" weight="bold" />
         </span>
@@ -292,8 +285,15 @@ const BELIEFS = [
         </div>
       </div>
 
-      <!-- 艺术字标题：大字号衬线 + 短下划线（官网的标志性装置） -->
-      <div class="max-w-xl animate-fade-up">
+      <!--
+        艺术字标题：大字号衬线 + 短下划线（官网的标志性装置）。
+
+        ⚠️ **文字自带一层很淡的暖色衬底**（`bg-warm-bg/85`，不加 blur ——
+           背景在动，blur 每帧都要重算）。这是"图恢复原样"与"字读得清"
+           同时成立的代价最小做法：**图本身一点不压**，只有文字占的这一块
+           有一层薄底。位置、字号、排版都没动。
+      -->
+      <div class="max-w-xl animate-fade-up rounded-3xl bg-warm-bg/85 p-6">
         <h1 class="font-serif text-[42px] font-bold leading-[1.18] text-wood-dark xl:text-[52px]">
           让每一张户型图<br />
           <span class="text-botanical">都能长出理想的家</span>
@@ -335,7 +335,8 @@ const BELIEFS = [
         -->
         <p
           v-if="imagePool.main.length"
-          class="max-w-md text-[11px] leading-relaxed text-wood-muted/80"
+          class="w-fit max-w-md rounded-xl bg-warm-bg/85 px-3 py-1.5
+                 text-[11px] leading-relaxed text-wood-muted"
         >
           {{ imageAttribution }}
         </p>

@@ -364,6 +364,41 @@ export interface Diagnosis {
   summary: string
   highlights: string[]
   load_bearing_warning: string[]
+  /**
+   * 依据来源清单，**由后端填**（平面图解析 / 屋主提供的户型详情）。
+   *
+   * ⚠️ 加它的理由：界面上一句"综合 8.2 分"必须说得清是**拿什么算的**。
+   * 屋主补了户型详情之后评分会变高 —— 不标出来源，那个变化就成了黑箱。
+   */
+  evidence_sources?: string[]
+  /** 数据不足或推断成分较大的地方 */
+  data_gaps?: string[]
+  /** 置信度（0–1）。缺数据时后端会下调 */
+  confidence?: number
+  /** 这次诊断是基于什么算出来的（计数，便于排查） */
+  model_based_on?: Record<string, boolean | number>
+}
+
+/**
+ * 屋主补充的「户型详情」——**文字资料，不是图片**。
+ *
+ * 它补的正是二维平面图读不出来的东西：层高、朝向、采光面、通风路径、
+ * 收纳、设备。户型诊断一直"数据不足、置信度低"就是因为缺这些。
+ */
+export interface HouseDetail {
+  text: string
+  title: string
+  source: string
+  updated_at: string
+}
+
+/** 后端按面积推荐的演示详情（`GET /layout/{id}/house-detail/sample`）。 */
+export interface HouseDetailSample {
+  title: string
+  text: string
+  /** 为什么推这份 —— 直接显示给用户，不要让他猜 */
+  matched_by: string
+  note: string
 }
 
 /** 单个操作的能力判定（`CapabilityReport.to_dict()` 里 `operations` 的每一项）。 */

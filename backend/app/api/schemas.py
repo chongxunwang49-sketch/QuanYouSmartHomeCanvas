@@ -220,4 +220,22 @@ class UserUpdateRequest(BaseModel):
     is_active: bool | None = Field(default=None, description="false = 封禁（该账号将无法登录）")
 
 
-__all__ += ["LoginRequest", "MembershipRequest", "UserUpdateRequest"]  # type: ignore[name-defined]
+__all__ += ["LoginRequest", "MembershipRequest", "UserUpdateRequest",
+            "HouseDetailRequest"]  # type: ignore[name-defined]
+
+
+class HouseDetailRequest(BaseModel):
+    """
+    屋主补充的「户型详情」（文字）。4.3′ 户型诊断的输入补全。
+
+    ⚠️ **与平面图是两类东西，别混。** 平面图是图（走 `/layout/parse`，
+    多模态解析）；这里是**文字资料**（层高、朝向、采光面、通风路径、收纳、
+    设备、特殊说明），它补的正是二维平面图上读不出来的那部分 ——
+    诊断一直"数据不足"就是因为缺这些。
+
+    前端两个上传模块在文案上必须能一眼分清楚，否则用户会把户型图传到这一栏。
+    """
+
+    text: str = Field(description="户型详情正文（纯文本 / Markdown）")
+    title: str = Field(default="", description="这份详情的名字，界面上与来源一起显示")
+    source: str = Field(default="user", description="来源标记：user / demo / imported")
