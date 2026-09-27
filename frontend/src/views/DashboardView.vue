@@ -222,7 +222,23 @@ const relTime = (ts: number) => {
   return `${Math.round(s / 3600)} 小时前`
 }
 
-const checkEntries = computed(() => Object.entries(health.checks))
+/**
+ * 系统状态那一格的两句话。
+ *
+ * ⚠️ 原来这里逐条列**内部依赖名**（`deepseek` / `redis` / `knowledge` /
+ *    `material_catalog`）加后端给的原始说明（"419 条 chunk"、"28 个商品"）。
+ *    那是运维视角，验收阶段按需求改成人话：只说"哪一类能力能不能用"。
+ *    受限的时候仍然如实说（不许静默降级是这个项目的底线），
+ *    只是不再把内部组件的名字抖给用户。
+ */
+const healthHeadline = computed(() =>
+  health.status === 'ok' ? '各项服务正常' : '部分功能暂时受限',
+)
+const healthDetail = computed(() =>
+  health.status === 'ok'
+    ? '户型解析、方案生成、避坑审查与知识库都可以正常使用。'
+    : '受限的环节会在用到时明确说明，不会悄悄跳过。',
+)
 </script>
 
 <template>
@@ -484,30 +500,22 @@ const checkEntries = computed(() => Object.entries(health.checks))
           </span>
         </div>
 
-        <ul v-if="checkEntries.length" class="divide-y divide-warm-grid">
-          <li
-            v-for="[key, c] in checkEntries"
-            :key="key"
-            class="flex items-start gap-2.5 px-4 py-2.5"
-          >
-            <AppIcon
-              :name="c.ok ? 'check-circle' : 'warning-circle'"
-              :size="15"
-              class="mt-0.5 shrink-0"
-              :class="c.ok ? 'text-botanical' : 'text-accent-gold'"
-            />
-            <div class="min-w-0 flex-1">
-              <p class="font-mono text-[12px] font-semibold text-wood-dark">{{ key }}</p>
-              <p class="mt-0.5 break-words text-[11px] leading-relaxed text-wood-muted">
-                {{ c.detail }}
-              </p>
-            </div>
-          </li>
-        </ul>
+        <div v-if="health.loaded" class="flex items-start gap-2.5 px-4 py-3">
+          <AppIcon
+            :name="health.status === 'ok' ? 'check-circle' : 'warning-circle'"
+            :size="15"
+            class="mt-0.5 shrink-0"
+            :class="health.status === 'ok' ? 'text-botanical' : 'text-accent-gold'"
+          />
+          <div class="min-w-0 flex-1">
+            <p class="text-[12px] font-semibold text-wood-dark">{{ healthHeadline }}</p>
+            <p class="mt-0.5 break-words text-[11px] leading-relaxed text-wood-muted">
+              {{ healthDetail }}
+            </p>
+          </div>
+        </div>
 
-        <p v-else class="px-4 py-6 text-center text-[12px] text-wood-muted">
-          {{ health.loaded ? '拿不到健康检查结果' : '正在检查…' }}
-        </p>
+        <p v-else class="px-4 py-6 text-center text-[12px] text-wood-muted">正在检查…</p>
 
         <p
           v-if="health.error"

@@ -467,9 +467,11 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
                     :key="i"
                     class="rounded-lg bg-warm-sidebar/50 p-2 text-[11px] leading-relaxed text-wood-muted"
                   >
-                    <span class="font-mono text-wood">{{ s.from_product_id }}</span>
+                    <!-- 后端给的是商品对象，不是 id 字符串（原来写 `from_product_id`
+                         渲染出来是空白）—— 这里显示名字，名字比编号对业主有用。 -->
+                    <span class="text-wood">{{ s.from?.name || s.from?.id }}</span>
                     →
-                    <span class="font-mono text-botanical">{{ s.to_product_id }}</span>
+                    <span class="text-botanical">{{ s.to?.name || s.to?.id }}</span>
                     <span class="mt-0.5 block">{{ s.reason }}</span>
                   </li>
                 </ul>

@@ -39,6 +39,21 @@ const loading = ref(true)
 const loadError = ref('')
 
 const title = ref('')
+/**
+ * 内容类型的**中文名**。
+ *
+ * ⚠️ 接口里这几个值是英文枚举（`avoid_pit` / `regulation` / `quanyou_official`），
+ *    它们是契约、不该动；但**界面上不该出现英文枚举**（验收要求）。
+ *    所以在前端做一次展示层映射 —— 与后端 `routes.py::DOC_TYPE_CN` 同一份口径。
+ *    认不出的取值原样显示：宁可露出一个陌生的词，也不要谎报类型。
+ */
+const DOC_TYPE_CN: Record<string, string> = {
+  avoid_pit: '避坑经验',
+  regulation: '规范与工艺标准',
+  quanyou_official: '品牌官方资料',
+}
+const docTypeLabel = (t: string) => DOC_TYPE_CN[t] || t
+
 const docType = ref('avoid_pit')
 const tagText = ref('')
 const text = ref('')
@@ -353,7 +368,7 @@ onMounted(load)
               <td class="num px-2 py-2 text-right text-wood">{{ d.chunks }}</td>
               <td class="px-2 py-2">
                 <span class="rounded-full bg-warm-sidebar px-2 py-0.5 font-mono text-[10px] text-wood">
-                  {{ d.doc_type || '—' }}
+                  {{ docTypeLabel(d.doc_type) || '—' }}
                 </span>
               </td>
               <td class="px-2 py-2">
@@ -424,7 +439,7 @@ onMounted(load)
               <label class="mb-1.5 block text-[12px] font-semibold text-wood-dark">语料类型</label>
               <!-- ⚠️ 可选项来自后端：硬编码一份会随语料类型变更静默漂移 -->
               <select v-model="docType" class="field px-2.5 py-2">
-                <option v-for="t in data.doc_types" :key="t" :value="t">{{ t }}</option>
+                <option v-for="t in data.doc_types" :key="t" :value="t">{{ docTypeLabel(t) }}</option>
               </select>
             </div>
             <div>

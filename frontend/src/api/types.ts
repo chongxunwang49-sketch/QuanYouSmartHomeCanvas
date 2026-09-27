@@ -551,7 +551,16 @@ export interface Materials {
   quanyou_coverage: number
   /** 是否达到 AC-18 要求的 60% 全友覆盖 */
   quanyou_met: boolean
-  auto_substitutions: { from_product_id: string; to_product_id: string; reason: string }[]
+  /**
+   * ⚠️ 后端给的是 `from` / `to` **两个商品对象**（`catalog.to_dict()` 的形状），
+   *    而这里原来声明成 `from_product_id` / `to_product_id` —— 字段名对不上，
+   *    界面渲染出来是**两个空白**（`PlanDrawer` 那两处 {{ }} 一直是空的）。
+   */
+  auto_substitutions: {
+    from: { id: string; name: string; brand?: string }
+    to: { id: string; name: string; brand?: string }
+    reason: string
+  }[]
 }
 
 /** A-06 风险项。`source_ids` 会由后端映射成真实引用，编造的引用记在 `invented_citations`。 */
@@ -843,7 +852,12 @@ export interface PlanRenderData {
 // 健康检查（4.6）
 // ══════════════════════════════════════════════════════════════════
 
-export interface HealthCheck { ok: boolean; detail: string }
+export interface HealthCheck {
+  ok: boolean
+  detail: string
+  /** 中文名（`redis` → 「进度缓存」）。**界面渲染这个，不要渲染键名** —— 键名是内部组件名。 */
+  label?: string
+}
 
 export interface HealthData {
   status: 'ok' | 'degraded'
@@ -1288,6 +1302,14 @@ export interface AgentMetric {
   p95: number
   max: number
   avg_total_tokens: number
+  /**
+   * 这个环节的**中文名**（`A-01` → 「户型解析」）。
+   *
+   * ⚠️ 键名仍是内部代号（接口结构不动），但**界面上不该出现 `A-01`** ——
+   *    验收要求清掉这类工程细节。所以后端在条目里补了一个 `label`，
+   *    前端渲染它。缺失时前端回落到代号（宁可露出代号，也不要渲染空白格）。
+   */
+  label?: string
 }
 
 /** `GET /system/metrics` 的返回体（AC-23）。 */

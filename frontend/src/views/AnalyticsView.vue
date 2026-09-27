@@ -322,7 +322,7 @@ const checkEntries = computed(() => Object.entries(health.checks))
                   :key="a.agent"
                   class="border-t border-warm-border/70"
                 >
-                  <td class="px-3 py-2 font-mono text-wood-dark">{{ a.agent }}</td>
+                  <td class="px-3 py-2 text-wood-dark">{{ a.label || a.agent }}</td>
                   <td class="num px-2 py-2 text-right text-wood-muted">{{ a.n }}</td>
                   <td class="num px-2 py-2 text-right text-wood">
                     {{ (a.p50 / 1000).toFixed(1) }}s
@@ -472,7 +472,13 @@ const checkEntries = computed(() => Object.entries(health.checks))
             :class="c.ok ? 'text-botanical' : 'text-accent-gold'"
           />
           <div class="min-w-0">
-            <p class="font-mono text-[12px] font-semibold text-wood-dark">{{ key }}</p>
+            <!--
+              ⚠️ 这里原来印的是**键名**（`redis` / `deepseek` / `knowledge` /
+                 `material_catalog`）—— 那是运维视角的内部组件名。
+                 后端已给每条加了中文 `label`，这里改渲染它。键名保留在响应里
+                 （接口结构不动），只是不再上屏。
+            -->
+            <p class="text-[12px] font-semibold text-wood-dark">{{ c.label || key }}</p>
             <p class="mt-0.5 break-words text-[11px] leading-relaxed text-wood-muted">
               {{ c.detail }}
             </p>

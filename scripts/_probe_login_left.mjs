@@ -41,6 +41,11 @@ await send('Page.enable')
 await send('Runtime.enable')
 await send('Emulation.setDeviceMetricsOverride',
   { width: 1680, height: 1000, deviceScaleFactor: 1, mobile: false })
+// ⚠️ 先清令牌：登录状态下访问 /login 会被路由重定向到工作台，
+//    于是 .login-left 根本不在 DOM 里（第一次就踩了这个，截了张工作台的图）。
+await send('Page.navigate', { url: 'http://127.0.0.1/login' })
+await new Promise((r) => setTimeout(r, 800))
+await ev(`(()=>{localStorage.clear();sessionStorage.clear();return 1})()`)
 await send('Page.navigate', { url: 'http://127.0.0.1/login' })
 await new Promise((r) => setTimeout(r, 2500))
 for (let i = 0; i < 10; i++) { await send('Page.captureScreenshot', { format: 'jpeg', quality: 30 }) }
