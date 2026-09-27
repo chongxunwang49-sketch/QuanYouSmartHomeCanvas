@@ -1,3 +1,12 @@
+/**
+ * ⚠️ **这个脚本跑不起来**（2026-09-28 整理时发现，如实标注而不是留着让人踩）：
+ *    它 `import { connect, sleep } from './_cdp.mjs'`，而那个文件
+ *    **在仓库里从来没有过**（`git ls-files | grep _cdp` 一次都没有）。
+ *    多半是当时只在本地存在、随某次事故一起没了 —— 全仓只有这一个文件 import 它。
+ *
+ * 要救活的话：照着 `_probe_login_left.mjs` 里那段 CDP 连接代码（原生 WebSocket +
+ * 手写 send/ev）补一个 `_cdp.mjs` 即可；不需要就直接删。
+ */
 
 import { connect, sleep } from './_cdp.mjs'
 import { spawnSync } from 'node:child_process'

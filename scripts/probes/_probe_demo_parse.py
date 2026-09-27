@@ -18,7 +18,24 @@ import sys
 import time
 import urllib.request
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+def _project_root() -> pathlib.Path:
+    """
+    往上找到项目根（**不要写死层数**）。
+
+    ⚠️ 这里原先写的是 `Path(__file__).resolve().parent.parent` —— 在 `scripts/` 下
+    正好是项目根。2026-09-28 把这批一次性探针收进 `scripts/probes/` 之后，
+    它就变成了 `scripts/`：于是 `sys.path` 插错、`import backend` 直接失败，
+    而 `ROOT / "演示素材"` 也会指到一个不存在的地方。
+    改成"往上找带 backend/app 的那一级"，以后无论挪到哪一层都对。
+    """
+    here = pathlib.Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "backend" / "app").is_dir():
+            return parent
+    return here.parent
+
+
+ROOT = _project_root()
 BASE = "http://127.0.0.1/api/v1"
 PLANS = ROOT / "演示素材" / "户型图"
 OUT = ROOT / "logs" / "demo-parse"
