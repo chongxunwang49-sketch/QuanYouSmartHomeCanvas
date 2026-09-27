@@ -1068,3 +1068,111 @@ def _seg_dist(p, a, b) -> float:
     t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy)
     t = max(0.0, min(1.0, t))
     return math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy))
+
+class TestDoorGapUsesWallOffsetNotRawCenter:
+    """
+    ⚠️ **门要开在墙上，洞也要开在门上** —— 两处必须用同一个锚点。
+
+    ══════════════════════════════════════════════════════════════════
+    需求方 2026-09-27 的原话
+    ══════════════════════════════════════════════════════════════════
+    > 明明平面图上面显示有门，这个墙体上却没有门……有时候明明已经识别到
+    > 并生成了门，却没有对应可以行走的口。
+
+    根因在切洞那一步：它拿解析给的 `opening.center` 去找"最近的墙段"，
+    准入条件是"离墙 ≤ 半墙厚 + 0.35m（合计 0.55m）"。而解析给的 center
+    实测能离墙 **0.96 ~ 1.20 m**（`scripts/inspect_layout.py` 早量过、
+    `_build_doors` 的注释里也早写着）—— 于是那几扇门**根本没被切开**：
+    墙上没有洞，门扇却照画。
+
+    演示户型实测：6 扇门里 **4 扇**中招（wall 1 / 5 / 7 各自是一整段完整的墙，
+    wall 8 / 9 只因为 center 恰好贴墙才有洞）。
+
+    另一处（`_build_doors`）早就改用 `wall_index + offset_along_wall_m` 定位了 ——
+    只有切洞还留在 `center` 上，这正是 `DoorEdge` 文档里警告的"两套坐标"。
+    """
+
+    @staticmethod
+    def _layout_with_far_center() -> dict:
+        """
+        把门#0 往房间里推约 1.2m，复现"解析给的门中心离墙很远"那种读数。
+
+        参考场景的像素尺度约 87 px/m（685px ↔ 7.89m），所以推 105px ≈ 1.2m。
+        墙还是同一面（`_locate_on_wall` 取最近墙），变的是 center 离墙的距离。
+        """
+        layout = copy.deepcopy(REAL_LAYOUT)
+        layout["doors"][0]["position"] = [275, 197]
+        return layout
+
+    def test_构造的样本确实复现了那个偏差(self):
+        """先确认这条用例有意义 —— 样本的 center 必须真的离墙 > 旧门槛 0.55m。"""
+        sc = normalize_layout(self._layout_with_far_center())
+        op = [o for o in sc.openings if o.kind == "door"][0]
+        wall = sc.walls[op.wall_index]
+        off = min(_seg_dist((op.center.x, op.center.y), (a.x, a.y), (b.x, b.y))
+                  for a, b in wall.segments())
+        assert off > 0.55, (
+            f"构造的样本离墙只有 {off:.2f}m，没到旧门槛 0.55m —— "
+            f"这条用例会变成「恒过」，失去意义"
+        )
+
+    def test_离墙很远的门也必须在墙上开出洞(self):
+        """
+        核心断言：门的位置上**不许有墙**。
+
+        旧实现在这条上会红：center 离墙 1.2m > 0.55m，切洞那一步直接 continue，
+        于是墙是完整的一段，人走到门口被挡住 —— 而门扇照样画着。
+        """
+        sc = normalize_layout(self._layout_with_far_center())
+        w = build_walkable(sc)
+        assert w.doors, "样本里没有门，用例失效"
+        for d in w.doors:
+            blocked = _blocking_segments(w, d)
+            assert not blocked, (
+                f"门 {d.door_index}（{d.position.x:.2f},{d.position.y:.2f}）"
+                f"被 {len(blocked)} 段碰撞墙堵着 —— 有门没有口。"
+                f"切洞必须用 wall_index + offset_along_wall_m，"
+                f"不能用解析给的 center（它离墙能到 1.2m）"
+            )
+
+    def test_人能从这扇门走过去(self):
+        """把"能走过去"这件事真的走一遍：洪水填充要覆盖到门两侧的房间。"""
+        sc = normalize_layout(self._layout_with_far_center())
+        w = build_walkable(sc)
+        cells = _flood_reachable(w)
+
+        def reached(room) -> bool:
+            cx, cy = room.center.x, room.center.y
+            return any(
+                math.dist((k[0] * 0.15, k[1] * 0.15), (cx, cy)) < 0.9
+                for k in cells
+            )
+
+        for r in w.rooms:
+            if r.standable and r.reachable:
+                assert reached(r), (
+                    f"「{r.name}」被判成可达，但洪水填充走不到它 —— "
+                    f"门洞没切干净"
+                )
+
+
+def _blocking_segments(w, door) -> list:
+    """与门同向、且横跨门中心的碰撞段（= 门被墙堵着）。"""
+    px, py = door.position.x, door.position.y
+    out = []
+    for seg in w.collision:
+        a, b = _xy(seg.a), _xy(seg.b)
+        seg_len = math.dist(a, b)
+        if seg_len <= 1e-9:
+            continue
+        cross = abs((b[0] - a[0]) / seg_len * door.along.y
+                    - (b[1] - a[1]) / seg_len * door.along.x)
+        if cross > 1e-3:
+            continue
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        t = ((px - a[0]) * dx + (py - a[1]) * dy) / (dx * dx + dy * dy)
+        dist = math.hypot(px - (a[0] + min(1.0, max(0.0, t)) * dx),
+                          py - (a[1] + min(1.0, max(0.0, t)) * dy))
+        if 1e-6 < t < 1 - 1e-6 and dist <= 0.35:
+            out.append(seg)
+    return out

@@ -42,6 +42,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -65,6 +66,13 @@ DEFAULT_EYE_HEIGHT_M = 1.6
 #: 门是关联到墙上的（`wall_index >= 0`），但关联只保证"最近的墙在 1m 内"，
 #: 不保证真贴着。切错的后果是墙上多一个莫名其妙的洞。
 CUT_DISTANCE_TOLERANCE_M = 0.35
+
+#: 由 `offset_along_wall_m` 推出来的门位，与解析给的 `center` 最多能差多远。
+#:
+#: 超过就认为这个 offset 不可信（例如墙序被动过），**宁可不切也不切错位置**。
+#: 实测解析的 center 离墙 0.5–1.2m，所以这里放到 1.5m —— 它拦的是
+#: "定位到了另一面墙上"这种数量级的错误，不是解析噪声。
+MAX_DOOR_CENTER_OFFSET_M = 1.5
 
 #: 切出来的碎段短于这个长度就丢掉（门在墙角时会切出这种）。
 MIN_SEGMENT_M = 0.02
@@ -314,13 +322,18 @@ def build_walkable(
     half = _half_wall(scene)
 
     rooms = _build_rooms(scene, half, player_radius_m)
-    doors, door_issues = _build_doors(scene, rooms)
+    doors, door_issues, dropped_doors = _build_doors(scene, rooms)
     issues.extend(door_issues)
 
-    collision = _cut_door_gaps(scene, half)
+    # ⚠️ 被去重丢掉的那几扇门**不再单独开洞**：门扇只画一扇，洞也只该有一个。
+    #    不传这个集合的话会留下"有口没有门"（需求方 2026-09-27 明确点出这条）。
+    collision = _cut_door_gaps(scene, half, skip=set(dropped_doors))
 
     spawn_room, spawn, yaw = _pick_spawn(rooms, doors)
     _mark_reachable(rooms, doors, spawn_room)
+
+    # ── 门与门洞必须一一对应；进不去的房间要说出来 ──
+    issues.extend(_audit_doors_and_access(rooms, doors, collision, scene))
 
     # ── 四条判据，逐条判并逐条说 ──
     if not scene.quality.can_build_walls:
@@ -420,29 +433,90 @@ def _half_wall(scene: Scene) -> float:
     return max(w.thickness_m for w in scene.walls) / 2
 
 
-def _cut_door_gaps(scene: Scene, half: float) -> list[CollisionSeg]:
+def _wall_seg_at(wall: WallSeg, offset_m: float | None) -> tuple[int, float] | None:
+    """
+    墙上第 `offset_m` 米落在哪一段、段内参数是多少。
+
+    与 `normalize.wall_point_at` 是同一套遍历（那个返回点，这里返回索引+参数），
+    因为它们回答的是同一个问题 —— 门挂在墙的哪个位置。
+    """
+    if offset_m is None:
+        return None
+    travelled = 0.0
+    for si, (a, b) in enumerate(wall.segments()):
+        seg_len = math.dist((a.x, a.y), (b.x, b.y))
+        if seg_len <= 1e-9:
+            continue
+        if travelled + seg_len >= offset_m:
+            t = (offset_m - travelled) / seg_len
+            return si, min(1.0, max(0.0, t))
+        travelled += seg_len
+    return None
+
+
+def _cut_door_gaps(
+    scene: Scene, half: float, skip: Collection[int] = (),
+) -> list[CollisionSeg]:
     """
     墙体折线 → 实心线段（门洞处断开）。
 
     ⚠️ **这一步不做，人就被关在房间里出不去** —— 见模块说明。
+
+    ══════════════════════════════════════════════════════════════════
+    ⚠️ 门洞位置**一律从 `wall_index` + `offset_along_wall_m` 推**
+    （`wall_point_at` 那一套），和门扇、2D 平面图、连通图用**同一个锚点**。
+    ══════════════════════════════════════════════════════════════════
+    2026-09-27 修：原先这里拿 `opening.center` 去"找最近的墙段"，
+    并以"离墙 ≤ 半墙厚 + 容差（合计 0.55m）"为准入。而解析给的 `center`
+    实测能离墙 **0.96～1.20 m**（`_build_doors` 的注释里早就写了这件事）——
+    于是那几扇门**根本没被切开**：墙上没有洞，门扇却照画。
+
+    用户看到的就是两句话：「平面图上这面墙有门，3D 里是实的」和
+    「明明生成了门，却走不过去」。演示户型 6 扇门里 **4 扇**中招
+    （wall 1 / 5 / 7 各自是一整段；wall 8 / 9 只因为 center 恰好贴墙才有洞）。
+
+    现在两处用同一个锚点，**门与门洞一一对应**这句话就是构造出来的，
+    不是靠容差碰运气。
+
+    Args:
+        skip: 被判为「重复、已并入另一扇门」的 opening 下标 —— 不再单独开洞，
+              否则会出现"有口没有门"（`_dedupe_doors` 丢掉的那扇只剩洞）。
     """
     # 先按墙归集：每段墙上有哪些门需要开洞
     gaps: dict[int, list[tuple[float, float]]] = {}
-    for op in scene.openings:
+    for i, op in enumerate(scene.openings):
         if op.kind != "door" or op.wall_index < 0:
+            continue
+        if i in skip:
             continue
         if op.wall_index >= len(scene.walls):
             continue
         wall = scene.walls[op.wall_index]
         segs = wall.segments()
-        # 找最近的那一段，算出切口在这段上的参数区间
+
+        # ── ① 主路径：按墙上的偏移量定位（与门扇同一套）──
         best: tuple[float, float, float] | None = None   # (dist, seg_idx, t)
-        for si, (a, b) in enumerate(segs):
-            dist, t = _point_seg_distance(op.center, a, b)
-            if best is None or dist < best[0]:
+        hit = _wall_seg_at(wall, op.offset_along_wall_m)
+        if hit is not None:
+            si, t = hit
+            a, b = segs[si]
+            p = Vec2(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y))
+            dist = math.dist((p.x, p.y), (op.center.x, op.center.y))
+            # 校验：由偏移量算出的点也得离解析给的 center 不太远，
+            # 否则说明 offset 不可信（解析改了墙序之类），退回按 center 投影
+            if dist <= half + MAX_DOOR_CENTER_OFFSET_M:
                 best = (dist, float(si), t)
-        if best is None or best[0] > half + CUT_DISTANCE_TOLERANCE_M:
-            continue
+
+        # ── ② 兜底：没有 offset 或校验不过时，退回"找离 center 最近的段" ──
+        if best is None:
+            if op.offset_along_wall_m is not None:
+                continue          # 有 offset 但校验不过 —— 宁可不切，也不切错地方
+            for si, (a, b) in enumerate(segs):
+                dist, t = _point_seg_distance(op.center, a, b)
+                if best is None or dist < best[0]:
+                    best = (dist, float(si), t)
+            if best is None or best[0] > half + CUT_DISTANCE_TOLERANCE_M:
+                continue
 
         _dist, si, t = best
         a, b = segs[int(si)]
@@ -681,7 +755,7 @@ def _build_doors(
                 normal=n,
             )
         )
-    return doors, issues
+    return doors, issues, [loser for loser, _winner in duplicates]
 
 
 #: 同一面墙、同一对房间的两扇门，投影点相距小于这个值就判定为**同一扇**。
@@ -910,6 +984,100 @@ def _facing_into_room(room: RoomNode) -> float:
     return 0.0 if (x2 - x1) >= (y2 - y1) else 90.0
 
 
+def _gap_exists_on_wall(collision: list[CollisionSeg], door: DoorEdge,
+                        half: float) -> bool:
+    """
+    这扇门的位置上，墙体是不是**真的断开了**。
+
+    判据：有没有哪一段**与门同向**的碰撞墙，横跨了门中心（投影参数落在段内部），
+    且垂距在墙厚量级内。有 → 门被墙堵着（有门没有口）。
+    """
+    px, py = door.position.x, door.position.y
+    for seg in collision:
+        dx = seg.b.x - seg.a.x
+        dy = seg.b.y - seg.a.y
+        seg_len = math.hypot(dx, dy)
+        if seg_len <= 1e-9:
+            continue
+        # 平行才算同一面墙（门洞只会开在它自己那面墙上）
+        cross = abs((dx / seg_len) * door.along.y - (dy / seg_len) * door.along.x)
+        if cross > 1e-3:
+            continue
+        dist, t = _point_seg_distance(Vec2(px, py), seg.a, seg.b)
+        if 1e-6 < t < 1 - 1e-6 and dist <= half * 1.5 + 1e-6:
+            return False
+    return True
+
+
+def _audit_doors_and_access(
+    rooms: list[RoomNode], doors: list[DoorEdge],
+    collision: list[CollisionSeg], scene: Scene,
+) -> list[str]:
+    """
+    门 ↔ 门洞 ↔ 可达性 的一致性自检。
+
+    ══════════════════════════════════════════════════════════════════
+    需求方 2026-09-27 的口径
+    ══════════════════════════════════════════════════════════════════
+    > 门和门的口都是一一对应的，不要出现只有门没有口，也不要出现只有口没有门；
+    > 不要出现平面图显示这个地方可以进入，却没有相应的入口和门；
+    > 一些房间没有任何入口出口这种情况应该规避。
+
+    三条对应这里的三个检查：
+
+      ① **有门必有口**：每扇画出来的门，它那面墙必须真的断开。
+         这是 `_cut_door_gaps` 的**验收**，不是它的重复 —— 切洞那一步曾经
+         因为拿错锚点（`center` 而不是 `offset_along_wall_m`）漏切 4/6 扇门，
+         而那种失败在数据里看不出来（门照样画、几何照样"合法"）。
+      ② **有口必有门**：洞是由门切出来的，构造上成立；`skip` 那批重复门
+         也已经在切洞时排除。这里不重复检查，写成注释留痕。
+      ③ **进不去的房间要说出来**：解析漏门时我们**不能凭空画一扇**
+         （那是编造），但必须让用户看到"这间房进不去、原因是解析没给门"。
+
+    返回的是**给用户看的句子**，会原样显示在 3D 页的 issues 里。
+    """
+    issues: list[str] = []
+    half = _half_wall(scene)
+
+    blocked = [d.door_index for d in doors
+               if not _gap_exists_on_wall(collision, d, half)]
+    if blocked:
+        issues.append(
+            "有 "
+            + "、".join(f"第 {i} 扇" for i in blocked)
+            + "门所在的墙没有开出对应的门洞（平面图上有门、3D 里是实墙）—— "
+            "这属于几何生成的问题，请连同 layout_id 一起报给开发"
+        )
+
+    connected: set[int] = set()
+    for d in doors:
+        if d.passable:
+            connected.add(d.from_room)
+            connected.add(d.to_room)
+
+    doorless = [r for r in rooms if r.index not in connected]
+    if doorless:
+        names = "、".join(f"「{r.name}」" for r in doorless)
+        issues.append(
+            f"{names}在解析结果里没有任何一扇门通往它 —— "
+            "我们没有凭空给它补一扇门（那会画出一条现实里不存在的通路），"
+            "所以在 3D 里进不去：这几间会标成不可达、并且不计入可漫游面积。"
+            "要完整走进去，请换一张门洞更清晰的户型图重试"
+        )
+
+    # 有门、但从出生点走不过去的那批：常见于"解析漏了连通走廊的那扇门"，
+    # 于是整块区域成了孤岛。同样不能凭空补门，但必须说清楚是哪几间。
+    stranded = [r for r in rooms if not r.reachable and r.index in connected]
+    if stranded:
+        names = "、".join(f"「{r.name}」" for r in stranded)
+        issues.append(
+            f"{names}自己有门，但从出生点出发的通行图连不到它们（通常是解析"
+            "漏掉了连接这片区域的那扇门）—— 3D 里同样走不进去，"
+            "这几间在界面上会标成不可达"
+        )
+    return issues
+
+
 def _mark_reachable(rooms: list[RoomNode], doors: list[DoorEdge],
                     spawn_room: int) -> None:
     """从出生点做广度优先，标出哪些房间走得到。"""
@@ -917,7 +1085,7 @@ def _mark_reachable(rooms: list[RoomNode], doors: list[DoorEdge],
         return
     adj: dict[int, set[int]] = {r.index: set() for r in rooms}
     for d in doors:
-        if d.from_room in adj and d.to_room in adj:
+        if d.passable and d.from_room in adj and d.to_room in adj:
             adj[d.from_room].add(d.to_room)
             adj[d.to_room].add(d.from_room)
 

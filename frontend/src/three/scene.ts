@@ -133,12 +133,20 @@ export interface SceneHandles {
   /** 离给定位置最近、且在 `maxDist` 之内的门。准星的退路。 */
   nearestDoor(planPos: [number, number], maxDist: number): DoorHandle | null
   /**
-   * 准星对着哪件家具（没有就是 `null`）。
+   * 准星（或鼠标）对着哪件家具 —— 没对着就 `null`。
    *
    * ⚠️ **和门一样要"先撞到墙就不算"** —— 否则站在客厅能"看穿"墙
    * 报出隔壁卧室的床，而屏幕上那块地方明明是一面墙。
+   *
+   * @param ndc 射线的屏幕位置，归一化设备坐标（-1..1，y 向上）。
+   *            不给就是画面正中（准星）。**给了就用它** ——
+   *            没进漫游时用户是用鼠标指的，那时光标不在正中，
+   *            一律按正中射线会出现"鼠标明明在家具上却不显示名字"。
    */
-  furnitureAtCrosshair(camera: THREE.Camera): FurnitureInfo | null
+  furnitureAtCrosshair(
+    camera: THREE.Camera,
+    ndc?: { x: number; y: number },
+  ): FurnitureInfo | null
 }
 
 /**
@@ -410,6 +418,8 @@ export function buildScene(
   //    而玩家低头开门是很自然的动作。
   const raycaster = new THREE.Raycaster()
   const SCREEN_CENTER = new THREE.Vector2(0, 0)
+  /** 复用同一个向量喂 `setFromCamera` —— 10Hz 调用，每次 new 一个没必要。 */
+  const aimPoint = new THREE.Vector2(0, 0)
   /** 命中结果里反查是哪扇门。门扇、门把手、门楣都打了 `doorIndex` 标记。 */
   const doorByIndex = new Map<number, DoorHandle>()
   for (const d of doors) doorByIndex.set(d.index, d)
@@ -464,11 +474,15 @@ export function buildScene(
    *    但也不能无界：射到场景外面时不该报出背后房间的东西，
    *    所以仍受"先撞墙就停"的限制。
    */
-  function furnitureAtCrosshair(camera: THREE.Camera): FurnitureInfo | null {
+  function furnitureAtCrosshair(
+    camera: THREE.Camera,
+    ndc: { x: number; y: number } = SCREEN_CENTER,
+  ): FurnitureInfo | null {
     if (!furnitureHandles) return null
     // 见 doorAtCrosshair 的说明：相机这一帧刚挪过，矩阵要手动刷
     camera.updateMatrixWorld()
-    raycaster.setFromCamera(SCREEN_CENTER, camera)
+    aimPoint.set(ndc.x, ndc.y)
+    raycaster.setFromCamera(aimPoint, camera)
     raycaster.far = FURNITURE_REACH_M
     const hits = raycaster.intersectObjects(
       [furnitureHandles.group, wallGroup], true,

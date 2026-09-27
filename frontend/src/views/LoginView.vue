@@ -186,12 +186,23 @@ const BELIEFS = [
 </script>
 
 <template>
-  <main class="relative flex min-h-full w-full overflow-hidden bg-warm-bg">
+  <!--
+    ⚠️ **这一层必须能纵向滚。** 原来是 `overflow-hidden`，配上 `min-h-full`：
+    浏览器窗口不高的时候（实测视口高 460px），两栏的内容各自有 797px 高 ——
+    于是整页比视口高 337px，而根节点又是 `overflow-hidden`，
+    **下面那 337px 永远看不到也滚不到**：演示账号卡与「登录」按钮全在里面。
+    用户的原话就是「浏览器没开全屏时滑轮滑不到最下面，按不到下面的按钮」。
+
+    修法：根节点 `h-full` + 纵向可滚（横向仍然裁 —— 图墙的横向滚动条不该出现在页面上）。
+    `h-full` 让根节点的高度是**确定的**（= 外层的高度），内容超出才滚；
+    窗口够高时内容本来就装得下，不会出现多余滚动条。
+  -->
+  <main class="relative flex h-full w-full overflow-y-auto overflow-x-hidden scroll-thin bg-warm-bg">
     <!-- ══════════════════════════════════════════════════════
          左栏：品牌与实拍
          ══════════════════════════════════════════════════════ -->
     <section
-      class="relative hidden min-w-0 flex-1 flex-col justify-between overflow-hidden px-14 py-12 lg:flex xl:px-20"
+      class="login-left relative hidden min-w-0 flex-1 flex-col justify-between overflow-hidden px-14 py-12 lg:flex xl:px-20"
     >
       <!--
         ══ 背景：滚动的实景图墙（两列，一列上、一列下）══
@@ -477,4 +488,27 @@ const BELIEFS = [
   图墙的动画在全局 `style.css` 里（`.wall` / `.wall-track`），不在这个
   scoped 块里：那里还写清了「为什么不用带 mask 的 `.marquee`」这个坑。
 */
+
+/*
+  窗口矮的时候（实测视口 460px）左栏的内容比框高 35px —— 左栏根是
+  `overflow-hidden`（图墙必须裁），那 35px 就永远看不到，正好压在
+  「素材来自…」那行声明上。
+
+  这里不引入滚动条（左栏是品牌区，滚起来很怪），而是**把纵向留白收紧**：
+  上下内边距与标题上方的间距各收一档，实测能收回 40px 以上，刚好够。
+  阈值取 620px：比常见笔记本视口（约 640~700）低一点，避免正常窗口下也变样。
+*/
+@media (max-height: 620px) {
+  .login-left {
+    padding-top: 1.75rem;
+    padding-bottom: 1.75rem;
+  }
+  .login-left h1 {
+    font-size: 2rem;
+    line-height: 1.2;
+  }
+  .login-left ul {
+    margin-top: 1rem;
+  }
+}
 </style>

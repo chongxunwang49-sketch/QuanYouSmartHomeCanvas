@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type * as THREE_NS from 'three'
 
+import type { FurnitureInfo } from '@/three/furniture'
+
 import AppIcon from './AppIcon.vue'
 import {
   layoutFurniture,
@@ -368,6 +370,8 @@ function frame(now: number) {
     //    而且引导层会盖住画布 —— 那时还亮着一扇门只会让人困惑。
     if (locked.value) updateDoorTarget()
     else setDoorTarget(null)
+    // 家具说明卡：锁定走准星、没锁走鼠标（见 updateFurnitureHover）
+    updateFurnitureHover()
     if (doorToastAt > 0) {
       doorToastAt -= 100
       if (doorToastAt <= 0) doorToast.value = ''
@@ -456,6 +460,69 @@ function onBlur() {
 function onMouseMove(e: MouseEvent) {
   if (!locked.value || !rig) return
   rig.look(e.movementX, e.movementY)
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 家具说明卡：准星（或鼠标）指着哪件家具，就在它右上方弹一张小卡
+// ══════════════════════════════════════════════════════════════════
+/**
+ * 需求方原话（2026-09-27）：
+ * 「鼠标放在家具上面没有家具的相关信息……希望鼠标放在家具上，
+ *   准星右上（贴近准星但不挡住）能够弹出该家具的名字」。
+ *
+ * 数据侧早就有了（`scene.ts` 的 `furnitureAtCrosshair` 与挂在体块
+ * `userData.furniture` 上的 `FurnitureInfo`），缺的是**把它显示出来**这一步。
+ *
+ * 两个位置口径：
+ *   · 锁了指针（在漫游）→ 射线走画面正中（准星），卡片贴在准星右上方
+ *   · 没锁（刚打开、还没点进去）→ 射线走**鼠标位置**，卡片贴光标右上方
+ *     ⚠️ 这一条是必须的：没锁时鼠标是系统光标，用户就是用鼠标指家具的，
+ *        一律按画面正中射线会出现"鼠标明明在家具上却不显示名字"。
+ *
+ * ⚠️ `pointer-events-none`：卡片只是说明，压住家具反而挡了视线；
+ *    偏移量 18px 是为了**不挡住准星**（需求方点名要求）。
+ */
+const hoverInfo = ref<FurnitureInfo | null>(null)
+/** 卡片锚点（画布内像素）。锁定时是画面中心，否则是光标。 */
+const hoverAnchor = ref({ x: 0, y: 0 })
+const hoverNdc = ref({ x: 0, y: 0 })
+
+function onCanvasPointerMove(e: MouseEvent) {
+  if (locked.value) return
+  const el = canvasEl.value
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  if (r.width <= 0 || r.height <= 0) return
+  const px = e.clientX - r.left
+  const py = e.clientY - r.top
+  hoverAnchor.value = { x: px, y: py }
+  // 画布坐标 → 归一化设备坐标（y 轴翻转）
+  hoverNdc.value = { x: (px / r.width) * 2 - 1, y: -(py / r.height) * 2 + 1 }
+}
+
+function onCanvasPointerLeave() {
+  if (!locked.value) hoverInfo.value = null
+}
+
+/**
+ * 更新家具说明卡。按 10Hz 调，与门提示同一个节奏（每帧做一次射线没必要，
+ * 而且家具是静止的，人眼也分辨不出 100ms 的差）。
+ */
+function updateFurnitureHover() {
+  if (!handles || !rig || loading.value || error.value || webglFailed.value) {
+    hoverInfo.value = null
+    return
+  }
+  const el = canvasEl.value
+  const lockedNow = locked.value
+  const ndc = lockedNow ? { x: 0, y: 0 } : hoverNdc.value
+  const info = handles.furnitureAtCrosshair(rig.camera, ndc)
+  hoverInfo.value = info
+  if (info && el) {
+    hoverAnchor.value = lockedNow
+      ? { x: el.clientWidth / 2, y: el.clientHeight / 2 }
+      : hoverAnchor.value
+  }
 }
 
 async function requestLock() {
@@ -807,6 +874,8 @@ const keyChips = computed(() =>
         ref="canvasEl"
         class="block h-full w-full"
         @click="requestLock"
+        @mousemove="onCanvasPointerMove"
+        @mouseleave="onCanvasPointerLeave"
       />
 
       <!-- 未进入漫游：盖一层引导。**不能省** —— 不进指针锁定时鼠标是系统光标，
@@ -815,6 +884,8 @@ const keyChips = computed(() =>
         v-if="!locked && !loading && !error && !webglFailed"
         class="absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-2 bg-wood-dark/45 backdrop-blur-[2px]"
         @click="requestLock"
+        @mousemove="onCanvasPointerMove"
+        @mouseleave="onCanvasPointerLeave"
       >
         <AppIcon name="cube" :size="30" class="text-white/90" />
         <p class="text-[14px] font-semibold text-white">点击进入漫游</p>
@@ -939,6 +1010,59 @@ const keyChips = computed(() =>
             ? 'h-2.5 w-2.5 bg-accent-gold ring-accent-gold/60'
             : 'h-1.5 w-1.5 bg-white/80 ring-black/30'"
         />
+      </div>
+
+      <!--
+        ══ 家具说明卡 ══
+        指着家具时弹在**准星（或鼠标）的右上方**，18px 偏移是为了不挡视线中心
+        —— 需求方点名要求"贴近准星但不挡住"。
+
+        `-translate-y-full` 让卡片整体落在锚点上方，`left-*`/`top-*` 用的是
+        画布内像素（见 updateFurnitureHover 的口径）。
+
+        `pointer-events-none`：它是说明，不是可点区域；能点的话会挡住
+        鼠标继续移动（也就再也刷不出 "指着另一件家具" 了）。
+      -->
+      <div
+        v-if="hoverInfo && !loading && !error && !webglFailed"
+        class="pointer-events-none absolute z-10 -translate-y-full"
+        :style="{ left: `${hoverAnchor.x + 18}px`, top: `${hoverAnchor.y - 12}px` }"
+      >
+        <div
+          class="max-w-[260px] rounded-xl border border-white/15 bg-wood-dark/85 px-3 py-2
+                 text-white shadow-lg backdrop-blur-sm"
+        >
+          <p class="flex items-center gap-1.5 text-[12px] font-semibold leading-snug">
+            <span
+              v-if="hoverInfo.color"
+              class="inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white/40"
+              :style="{ background: hoverInfo.color }"
+            />
+            <span>{{ hoverInfo.label }}</span>
+          </p>
+          <p class="mt-0.5 text-[10px] leading-relaxed text-white/75">
+            {{ hoverInfo.room_name }} ·
+            {{ hoverInfo.w.toFixed(1) }}×{{ hoverInfo.d.toFixed(1) }}m ·
+            高 {{ hoverInfo.h.toFixed(2) }}m
+          </p>
+          <!--
+            `basis` 是后端给的"为什么摆在这里"。**能说出口才算数** ——
+            摆位是规则算出来的，说得出依据才敢承认这是系统摆的（见 ADR-14）。
+            没有就整段不显示，不硬凑一句。
+          -->
+          <ul
+            v-if="hoverInfo.basis.length"
+            class="mt-1 space-y-0.5 border-t border-white/15 pt-1"
+          >
+            <li
+              v-for="(b, i) in hoverInfo.basis"
+              :key="i"
+              class="text-[10px] leading-relaxed text-white/70"
+            >
+              · {{ b }}
+            </li>
+          </ul>
+        </div>
       </div>
 
       <!--
