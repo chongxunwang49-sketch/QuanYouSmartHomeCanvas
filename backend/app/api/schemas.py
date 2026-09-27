@@ -221,7 +221,8 @@ class UserUpdateRequest(BaseModel):
 
 
 __all__ += ["LoginRequest", "MembershipRequest", "UserUpdateRequest",
-            "HouseDetailRequest"]  # type: ignore[name-defined]
+            "HouseDetailRequest", "ChatConversationRequest",
+            "ChatConversationPatch", "ChatAskRequest"]  # type: ignore[name-defined]
 
 
 class HouseDetailRequest(BaseModel):
@@ -239,3 +240,42 @@ class HouseDetailRequest(BaseModel):
     text: str = Field(description="户型详情正文（纯文本 / Markdown）")
     title: str = Field(default="", description="这份详情的名字，界面上与来源一起显示")
     source: str = Field(default="user", description="来源标记：user / demo / imported")
+
+
+# ══════════════════════════════════════════════════════════════════
+# 智友问答（对话式 RAG）
+# ══════════════════════════════════════════════════════════════════
+
+
+class ChatConversationRequest(BaseModel):
+    """新建会话。标题可以留空 —— 第一条提问会自动成为标题。"""
+
+    title: str = Field(default="", description="会话标题；空则由第一条提问生成")
+    layout_id: str = Field(default="", description="挂在哪台户型上（可空）")
+    plan_id: str = Field(default="", description="挂在哪套方案上（可空）")
+
+
+class ChatConversationPatch(BaseModel):
+    """
+    重命名 / 置顶。
+
+    ⚠️ 两个字段都是 `None` 默认 —— **`None` 表示"这一项不动"**，
+    不是"改成空"。用空串/False 表示"清空"，两者必须分得开：
+    界面上"只改标题"和"只取消置顶"是两个独立动作。
+    """
+
+    title: str | None = Field(default=None, description="新标题；None = 不改")
+    pinned: bool | None = Field(default=None, description="是否置顶；None = 不改")
+
+
+class ChatAskRequest(BaseModel):
+    """提一个问题。`conversation_id` 为空时后端**自动建一个新会话**。"""
+
+    question: str = Field(description="用户的问题")
+    conversation_id: str = Field(default="", description="会话 id；空 = 新建一个")
+    layout_id: str = Field(default="", description="本次带上哪台户型的资料（可空）")
+    plan_id: str = Field(default="", description="本次带上哪套方案（可空）")
+    prefer_local: bool = Field(
+        default=False,
+        description="只用本地模型（隐私模式）。**在提供方选择那一层生效**，不只是提示词",
+    )

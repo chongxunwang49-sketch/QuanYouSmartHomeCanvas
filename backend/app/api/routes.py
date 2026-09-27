@@ -90,10 +90,13 @@ import json
 import pathlib
 import re
 from datetime import datetime, timezone
+from uuid import uuid4
 
+from collections.abc import AsyncIterator
 from typing import Any, get_args
 
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from ..core import auth
@@ -101,6 +104,8 @@ from ..core.auth import User
 from ..core.logger import audit
 from ..core.capabilities import OperationNotAllowedError
 from ..core import metrics
+from ..core.llm_client import LLMError
+from ..db import repository
 from ..core.config import settings
 from ..core.progress import total_seconds
 from ..core.redis_client import get_quota_limiter
@@ -108,6 +113,7 @@ from ..graph.state import initial_state
 from ..graph.workflow import get_compiled_graph
 from ..schemas.plan import BudgetGrade, PlanStyle
 from ..agents.layout_diagnoser import HOUSE_DETAIL_MAX_CHARS
+from ..services.chat import build_context, build_history, stream_answer
 from ..services.furniture import scaling
 from ..services.geometry import build_walkable
 from ..services.material import catalog
@@ -117,6 +123,9 @@ from .deps import consume_quota, current_user, require_paid
 from .schemas import (
     ApiError,
     ApiResponse,
+    ChatAskRequest,
+    ChatConversationPatch,
+    ChatConversationRequest,
     FloorMaterialRequest,
     GenerateRequest,
     HouseDetailRequest,
@@ -1116,6 +1125,222 @@ async def set_floor_material(
     audit("floor_material", resource_type="layout", resource_id=layout_id,
           room_index=room_index, material_id=material_id)
     return ApiResponse.ok(_floor_payload(layout_id, hotspots, subs))
+
+
+# ══════════════════════════════════════════════════════════════════
+# 智友问答（对话式 RAG）—— 见 `services/chat/answer.py`
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.get("/chat/conversations", response_model=ApiResponse)
+async def list_chat_conversations(user: User = Depends(current_user)) -> ApiResponse:
+    """
+    我的会话列表（置顶优先、其次最近更新）。
+
+    ⚠️ **库不通时返回 5003，不返回空列表。** 空列表在界面上就是
+    "你还没有对话" —— 用户会以为历史丢了，而其实只是连不上。
+    """
+    rows = await repository.list_conversations(user.id)
+    if rows is None:
+        raise ApiError(5003, "读不到会话列表（数据库不可用）—— 稍后重试，历史没有丢")
+    return ApiResponse.ok({"conversations": rows})
+
+
+@router.post("/chat/conversations", response_model=ApiResponse)
+async def create_chat_conversation(
+    req: ChatConversationRequest,
+    user: User = Depends(current_user),
+) -> ApiResponse:
+    """新建一个会话。标题可以空着 —— 第一条提问会自动成为标题。"""
+    cid = f"chat_{datetime.now(timezone.utc).strftime('%Y%m%d')}_{uuid4().hex[:10]}"
+    ok = await repository.create_conversation(
+        cid, user.id,
+        title=(req.title or "新对话"),
+        layout_id=(req.layout_id or "").strip() or None,
+        plan_id=(req.plan_id or "").strip() or None,
+    )
+    if not ok:
+        raise ApiError(5003, "新建会话失败（数据库不可用）")
+    row = await repository.get_conversation(cid)
+    return ApiResponse.ok({"conversation": row or {"conversation_id": cid}})
+
+
+@router.patch("/chat/conversations/{conversation_id}", response_model=ApiResponse)
+async def patch_chat_conversation(
+    conversation_id: str,
+    req: ChatConversationPatch,
+    user: User = Depends(current_user),
+) -> ApiResponse:
+    """
+    重命名 / 置顶 / 取消置顶。
+
+    ⚠️ **先查归属再改**：不查的话，改别人会话的标题是可以成功的
+    （只要猜得到 id）—— 那是越权，不是"用不到的功能"。
+    """
+    row = await repository.get_conversation(conversation_id)
+    if not row:
+        raise ApiError(4004, f"会话 {conversation_id} 不存在")
+    if int(row.get("user_id") or -1) != user.id:
+        raise ApiError(4002, "这个会话不属于当前账号，不能修改")
+    ok = await repository.update_conversation(
+        conversation_id, title=req.title, pinned=req.pinned,
+    )
+    if not ok:
+        raise ApiError(5003, "更新会话失败（数据库不可用）")
+    return ApiResponse.ok({"conversation": await repository.get_conversation(conversation_id)})
+
+
+@router.delete("/chat/conversations/{conversation_id}", response_model=ApiResponse)
+async def delete_chat_conversation(
+    conversation_id: str,
+    user: User = Depends(current_user),
+) -> ApiResponse:
+    """删除会话（消息随外键级联删除）。归属校验同 PATCH。"""
+    row = await repository.get_conversation(conversation_id)
+    if not row:
+        raise ApiError(4004, f"会话 {conversation_id} 不存在")
+    if int(row.get("user_id") or -1) != user.id:
+        raise ApiError(4002, "这个会话不属于当前账号，不能删除")
+    if not await repository.delete_conversation(conversation_id):
+        raise ApiError(5003, "删除会话失败（数据库不可用）")
+    audit("chat_conversation_deleted", resource_type="chat",
+          resource_id=conversation_id)
+    return ApiResponse.ok({"deleted": conversation_id})
+
+
+@router.get("/chat/conversations/{conversation_id}/messages", response_model=ApiResponse)
+async def list_chat_messages(
+    conversation_id: str,
+    user: User = Depends(current_user),
+) -> ApiResponse:
+    """一条会话的全部消息（含每条回答当时的引用来源）。"""
+    row = await repository.get_conversation(conversation_id)
+    if not row:
+        raise ApiError(4004, f"会话 {conversation_id} 不存在")
+    if int(row.get("user_id") or -1) != user.id:
+        raise ApiError(4002, "这个会话不属于当前账号")
+    rows = await repository.list_messages(conversation_id)
+    if rows is None:
+        raise ApiError(5003, "读不到消息（数据库不可用）")
+    return ApiResponse.ok({"conversation": row, "messages": rows})
+
+
+@router.post("/chat/ask")
+async def chat_ask(
+    req: ChatAskRequest,
+    user: User = Depends(current_user),
+) -> StreamingResponse:
+    """
+    提问并**流式**拿回答（SSE）。
+
+    ⚠️ 这条路由**不用 `ApiResponse` 包装**：SSE 是一行行的 `data:`，
+    不是一次性 JSON。错误也用同一条流报（`{"error": "..."}`），
+    这样前端只需要处理一种解析路径。
+
+    事件顺序（固定）：
+        {"type": "meta",   ...}     ← 先告诉前端"这次看到了哪些资料"
+        {"type": "delta",  "text": "…"} × N
+        {"type": "sources", "sources": [...]}  ← 引用清单：**由代码给，不由模型写**
+        {"type": "done",   ...}
+        出错时：{"type": "error", "message": "…"}
+    """
+    question = (req.question or "").strip()
+    if not question:
+        raise ApiError(4001, "问题不能为空")
+
+    # 会话：给了 id 就用它，没给就现建一个（前端第一次提问时不用先调一次创建）
+    conversation_id = (req.conversation_id or "").strip()
+    if conversation_id:
+        row = await repository.get_conversation(conversation_id)
+        if not row:
+            raise ApiError(4004, f"会话 {conversation_id} 不存在")
+        if int(row.get("user_id") or -1) != user.id:
+            raise ApiError(4002, "这个会话不属于当前账号")
+    else:
+        conversation_id = f"chat_{datetime.now(timezone.utc).strftime('%Y%m%d')}_{uuid4().hex[:10]}"
+        # 标题取问题前 24 字：用户不用先想标题，列表里也认得出来
+        title = question[:24] + ("…" if len(question) > 24 else "")
+        await repository.create_conversation(
+            conversation_id, user.id, title=title,
+            layout_id=(req.layout_id or "").strip() or None,
+            plan_id=(req.plan_id or "").strip() or None,
+        )
+
+    # 依据：户型 + 屋主详情 + 方案（方案从库里按 plan_id 取）
+    layout_id = (req.layout_id or "").strip() or str(
+        (await repository.get_conversation(conversation_id) or {}).get("layout_id") or ""
+    )
+    plan_id = (req.plan_id or "").strip() or str(
+        (await repository.get_conversation(conversation_id) or {}).get("plan_id") or ""
+    )
+    layout = await layout_store.load(layout_id) if layout_id else None
+    plan = (await repository.load_plan(layout_id, plan_id)
+            if (layout_id and plan_id) else None)
+
+    ctx = build_context(question, layout=layout, plan=plan)
+    history_rows = await repository.list_messages(conversation_id) or []
+    history = build_history(history_rows)
+
+    # 用户这句话先落库：即使模型随后失败，对话里也留得下"我问了什么"
+    await repository.append_message(conversation_id, "user", question)
+
+    async def event_stream() -> AsyncIterator[bytes]:
+        def sse(payload: dict[str, Any]) -> bytes:
+            return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8")
+
+        yield sse({
+            "type": "meta",
+            "conversation_id": conversation_id,
+            "knowledge_available": ctx.knowledge_available,
+            "knowledge_reason": ctx.knowledge_reason,
+            "has_layout": ctx.has_layout,
+            "has_house_detail": ctx.has_detail,
+            "has_plan": ctx.has_plan,
+            "knowledge_count": len(ctx.knowledge),
+        })
+
+        parts: list[str] = []
+        try:
+            async for piece in stream_answer(question, ctx, history=history,
+                                             prefer_local=req.prefer_local):
+                # ⚠️ 顺手抹掉 `**`：界面按纯文本渲染，星号会**原样显示**出来。
+                #    提示词里已经要求模型别写 Markdown，但那是要求、不是保证 ——
+                #    实测第一次回答就带了一堆 `**…**`。项目里本来就有测试
+                #    （test_frontend_contract）禁止界面出现 Markdown 强调，
+                #    所以在这里兜一道，且**流出去的与存下来的用同一份文本**
+                #    （否则用户看到的与翻历史看到的会不一样）。
+                piece = piece.replace("**", "")
+                parts.append(piece)
+                yield sse({"type": "delta", "text": piece})
+        except LLMError as e:
+            logger.warning(f"[chat] 回答失败：{e}")
+            yield sse({"type": "error", "message": f"模型调用失败：{str(e)[:200]}"})
+        except Exception as e:  # noqa: BLE001
+            logger.exception("[chat] 回答异常")
+            yield sse({"type": "error", "message": f"{type(e).__name__}: {str(e)[:200]}"})
+
+        answer = "".join(parts).strip()
+        sources = ctx.citations()
+        if answer:
+            await repository.append_message(
+                conversation_id, "assistant", answer, sources=sources,
+            )
+        else:
+            yield sse({"type": "error", "message": "模型没有返回任何内容"})
+
+        yield sse({"type": "sources", "sources": sources})
+        yield sse({"type": "done", "conversation_id": conversation_id,
+                   "chars": len(answer)})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            # SSE 必须禁缓存：中间层缓存住第一条事件，界面就永远不动
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",     # nginx 不缓冲（否则流式会攒成一坨）
+        },
+    )
 
 
 @router.get("/layout/{layout_id}/house-detail", response_model=ApiResponse)

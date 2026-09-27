@@ -33,7 +33,7 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Literal, Sequence
+from typing import Any, AsyncIterator, Literal, Sequence
 
 import httpx
 from loguru import logger
@@ -381,6 +381,53 @@ class _Provider:
             h["Authorization"] = f"Bearer {self.api_key}"
         return h
 
+    async def stream(
+        self,
+        messages: list[dict],
+        *,
+        max_tokens: int,
+        temperature: float,
+        timeout: float,
+    ) -> AsyncIterator[str]:
+        """
+        逐块吐正文（OpenAI 兼容的 SSE）。
+
+        ⚠️ **只在真的要给用户看"正在打字"时才用它。** Agent 内部一律走
+        `complete` —— 结构化输出必须拿到完整 JSON 才能解析，流式只会添乱。
+        这条路径是给「智友问答」那类对话界面用的：让用户看到字在往外冒，
+        比盯着一个转圈好得多（需求方原话：流式输出让用户不要一直干等）。
+        """
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": True,
+        }
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream(
+                "POST", f"{self.base_url}/chat/completions",
+                headers=self._headers(), json=payload,
+            ) as resp:
+                if resp.status_code >= 400:
+                    body = (await resp.aread()).decode("utf-8", "replace")
+                    raise LLMError(f"[{self.name}] HTTP {resp.status_code}: {body[:300]}")
+                async for line in resp.aiter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    chunk = line[len("data:"):].strip()
+                    if chunk == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(chunk)
+                    except json.JSONDecodeError:
+                        # 半行/心跳：跳过而不是中断整段回答
+                        continue
+                    delta = ((data.get("choices") or [{}])[0].get("delta") or {})
+                    piece = delta.get("content")
+                    if piece:
+                        yield piece
+
     async def complete(
         self,
         messages: list[dict],
@@ -590,6 +637,63 @@ class LLMClient:
                 continue
 
         raise LLMError(f"[{agent}] 所有提供方均失败:\n  " + "\n  ".join(errors))
+
+    # ── 流式（只给对话界面用）──────────────────────────────
+
+    async def stream(
+        self,
+        *,
+        user: str,
+        system: str | None = None,
+        history: Sequence[dict[str, str]] | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        timeout: float | None = None,
+        agent: str = "unknown",
+        force_local: bool = False,
+    ) -> AsyncIterator[str]:
+        """
+        流式产出正文。给「智友问答」那类界面用（让用户看到字在往外冒）。
+
+        ⚠️ **降级只能在"一个字都还没吐出来"的时候做。**
+        已经吐了半句再换提供方，用户会看到两段拼接的回答 ——
+        所以这里对首个 chunk 之前抛的错才继续尝试下一个提供方，
+        之后抛错就直接把异常交给调用方（由它把"说到一半断了"如实告诉用户）。
+        """
+        msgs: list[dict] = []
+        if system:
+            msgs.append({"role": "system", "content": system})
+        for m in (history or []):
+            role = m.get("role") or "user"
+            if role not in ("user", "assistant"):
+                continue          # 别的角色（工具调用等）不进对话历史
+            msgs.append({"role": role, "content": m.get("content") or ""})
+        msgs.append({"role": "user", "content": user})
+
+        errors: list[str] = []
+        for provider in self._chain(vision=False, force_local=force_local):
+            started = False
+            try:
+                async for piece in provider.stream(
+                    msgs,
+                    max_tokens=max_tokens or settings.LLM_MAX_TOKENS,
+                    temperature=settings.LLM_TEMPERATURE if temperature is None else temperature,
+                    timeout=timeout or settings.LLM_TIMEOUT_SECONDS,
+                ):
+                    started = True
+                    yield piece
+                if started:
+                    return
+                # 一个 chunk 都没来 = 这次提供方没成功，继续下一个
+                errors.append(f"{provider.name}: 空响应")
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{provider.name}: {type(e).__name__}: {e}")
+                logger.warning(f"[{agent}] 流式调用 {provider.name} 失败: {e}")
+                if started:
+                    # 已经吐过字了，不能再换一个提供方接着吐（会拼出两段话）
+                    raise
+                continue
+        raise LLMError(f"[{agent}] 流式：所有提供方均失败:\n  " + "\n  ".join(errors))
 
     # ── 结构化输出 ────────────────────────────────────────
 

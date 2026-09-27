@@ -128,7 +128,11 @@ http.interceptors.response.use(
  * 泛型 `T` 是 `data` 字段的类型 —— 调用方写 `request<ParseResult>(...)`。
  */
 export async function request<T>(
-  method: 'get' | 'post' | 'delete',
+  /**
+   * HTTP 方法。`patch` 是给智友问答的"重命名/置顶"用的 ——
+   * 语义上就是局部更新，用 POST 表达会让人以为"提交了一个完整对象"。
+   */
+  method: 'get' | 'post' | 'patch' | 'delete',
   url: string,
   payload?: unknown,
   config: { timeout?: number; signal?: AbortSignal } = {},

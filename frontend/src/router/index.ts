@@ -131,6 +131,16 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '报价单避坑审查' },
   },
   {
+    path: '/chat',
+    name: 'chat',
+    component: () => import('@/views/ChatView.vue'),
+    /**
+     * 智友问答。**所有角色都能用**（业主最需要它：问问自己这套户型怎么装）。
+     * 会话历史是**按用户隔离**的（后端按 user_id 过滤，并且改/删都校验归属）。
+     */
+    meta: { title: '智友问答' },
+  },
+  {
     path: '/knowledge',
     name: 'knowledge',
     component: () => import('@/views/KnowledgeView.vue'),

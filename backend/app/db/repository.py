@@ -496,3 +496,160 @@ async def load_floor_materials(layout_id: str) -> dict[int, str] | None:
             # 跳过而不是整份丢弃 —— 丢一份好的比留一个坏键糟得多
             continue
     return out
+
+
+# ══════════════════════════════════════════════════════════════════
+# 智友问答：会话与消息（005 迁移）
+# ══════════════════════════════════════════════════════════════════
+#
+# ⚠️ **这一组函数的返回值约定与上面不同，写清楚免得踩**：
+#   查列表/查消息返回 `None` = **库不通**，返回 `[]` = 通了但没有。
+#   两者不能混 —— 混了的话，库一挂界面就显示"你还没有对话"，
+#   用户会以为历史丢了（而其实只是连不上）。
+
+
+async def create_conversation(
+    conversation_id: str, user_id: int, *, title: str = "新对话",
+    layout_id: str | None = None, plan_id: str | None = None,
+) -> bool:
+    if not conversation_id:
+        return False
+    return await pool.execute(
+        """
+        INSERT INTO chat_conversations
+            (conversation_id, user_id, title, layout_id, plan_id)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (conversation_id) DO NOTHING
+        """,
+        (conversation_id, user_id, (title or "新对话")[:120],
+         layout_id or None, plan_id or None),
+    ) is not None
+
+
+async def list_conversations(user_id: int, *, limit: int = 100) -> list[dict[str, Any]] | None:
+    """
+    按「置顶优先、其次最近更新」列出会话。**不带消息正文**（列表不需要）。
+
+    ⚠️ **这条 SQL 刻意写得非常平：单表、无子查询、无别名、列名写全。**
+    `tests/test_db_sql_columns.py` 会拿它比对迁移 DDL —— 那个守卫按
+    `表名.列名` 逐段解析，遇到别名（`FROM x c` 写成 `c.title`）或相关子查询
+    （子查询里再引用外层表）就会把列挂到错误的表上，报出并不存在的列。
+    它挡的是真 bug（引用了迁移里没建的列 → psycopg 抛 UndefinedColumn →
+    `pool` 把失败表示成 None → 界面上变成"你没有历史记录"），
+    所以这里顺着它的写法来，代价只是 SQL 啰嗦一点。
+
+    「这条会话有几条消息」这个计数因此不在列表里给（那需要按会话聚合），
+    由前端在打开会话时按实际消息数显示 —— 少一个聚合查询，也不牺牲什么。
+    """
+    return await pool.fetch_all(
+        """
+        SELECT conversation_id, title, pinned, layout_id, plan_id,
+               created_at, updated_at
+          FROM chat_conversations
+         WHERE user_id = %s
+         ORDER BY pinned DESC, updated_at DESC
+         LIMIT %s
+        """,
+        (user_id, max(1, min(limit, 500))),
+    )
+
+
+async def get_conversation(conversation_id: str) -> dict[str, Any] | None:
+    """取一条会话（含 user_id —— 调用方要用它做归属校验）。列名同样写全。"""
+    rows = await pool.fetch_all(
+        """
+        SELECT conversation_id, user_id, title, pinned, layout_id, plan_id,
+               created_at, updated_at
+          FROM chat_conversations
+         WHERE conversation_id = %s
+        """,
+        (conversation_id,),
+    )
+    return rows[0] if rows else None
+
+
+async def update_conversation(
+    conversation_id: str, *, title: str | None = None, pinned: bool | None = None,
+) -> bool:
+    """
+    改标题 / 置顶。**只传来的那几项会被改**（`None` = 这一项不动）。
+
+    ⚠️ 两个都为 None 时**直接返回 True 而不发 SQL** —— 发一条
+    `UPDATE ... SET updated_at = NOW() WHERE id = ...` 会把"最近更新"
+    无端刷新，把这条会话顶到列表最前面。
+    """
+    sets: list[str] = []
+    params: list[Any] = []
+    if title is not None:
+        sets.append("title = %s")
+        params.append((title or "新对话")[:120])
+    if pinned is not None:
+        sets.append("pinned = %s")
+        params.append(bool(pinned))
+    if not sets:
+        return True
+    sets.append("updated_at = NOW()")
+    params.append(conversation_id)
+    return await pool.execute(
+        f"UPDATE chat_conversations SET {', '.join(sets)} WHERE conversation_id = %s",
+        tuple(params),
+    ) is not None
+
+
+async def delete_conversation(conversation_id: str) -> bool:
+    """删会话。消息靠外键 `ON DELETE CASCADE` 一起删（005 迁移里声明了）。"""
+    return await pool.execute(
+        "DELETE FROM chat_conversations WHERE conversation_id = %s",
+        (conversation_id,),
+    ) is not None
+
+
+async def append_message(
+    conversation_id: str, role: str, content: str, *,
+    sources: list[dict[str, Any]] | None = None, model_used: str | None = None,
+) -> bool:
+    """
+    追加一条消息，并把会话的 `updated_at` 推到当前时间。
+
+    写消息之后要把会话的 `updated_at` 推到当前时间 —— 只写消息不推时间，
+    这条会话会一直沉在列表下面；只推时间不写消息，则丢失正文。
+
+    ⚠️ 两条语句**分开发**，不是一个事务。理由是"原子性在这里换不到什么"：
+    中间挂掉只会留下一个偏旧的 `updated_at`（排序略偏），正文已经落库、
+    不会丢。而把两件事写成一条 SQL 需要 CTE，项目的 SQL 列守卫
+    （`tests/test_db_sql_columns.py`）读不懂 CTE 里的 `ins`，会误报。
+    **一个能骗过守卫的写法比一个略有妥协但看得清的写法更糟。**
+    """
+    ok = await pool.execute(
+        """
+        INSERT INTO chat_messages
+            (conversation_id, role, content, sources, model_used)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (conversation_id, role, content, _json(sources), model_used),
+    )
+    if ok is None:
+        return False
+    await pool.execute(
+        """
+        UPDATE chat_conversations
+           SET updated_at = NOW()
+         WHERE chat_conversations.conversation_id = %s
+        """,
+        (conversation_id,),
+    )
+    return True
+
+
+async def list_messages(conversation_id: str, *, limit: int = 200) -> list[dict[str, Any]] | None:
+    """按时间正序列出一条会话的消息（含 assistant 的引用来源）。"""
+    return await pool.fetch_all(
+        """
+        SELECT id, role, content, sources, model_used, created_at
+          FROM chat_messages
+         WHERE conversation_id = %s
+         ORDER BY id
+         LIMIT %s
+        """,
+        (conversation_id, max(1, min(limit, 1000))),
+    )

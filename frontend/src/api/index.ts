@@ -9,6 +9,7 @@
  */
 
 import { request, requestText } from './client'
+import { getToken } from './token'
 import type {
   DashboardStatsData,
   DevicesData,
@@ -352,6 +353,137 @@ export const rerunDiagnosis = (layoutId: string) =>
     'post', `/layout/${encodeURIComponent(layoutId)}/diagnose`, undefined,
     { timeout: 90_000 },
   )
+
+// ══════════════════════════════════════════════════════════════════
+// 智友问答（对话式 RAG）
+// ══════════════════════════════════════════════════════════════════
+
+/** 一条会话（列表里的那一行）。 */
+export interface ChatConversationRow {
+  conversation_id: string
+  title: string
+  pinned: boolean
+  layout_id: string | null
+  plan_id: string | null
+  message_count?: number
+  created_at: string
+  updated_at: string
+}
+
+/** 一条消息。assistant 的带 `sources`（当时的引用来源，**由后端给**）。 */
+export interface ChatMessageRow {
+  id?: number
+  role: 'user' | 'assistant' | string
+  content: string
+  sources?: ChatSource[] | null
+  model_used?: string | null
+  created_at?: string
+}
+
+export interface ChatSource {
+  kind: 'knowledge' | 'layout' | 'house_detail' | 'plan'
+  citation: string
+  source?: string
+  headings?: string
+  doc_type?: string
+}
+
+export const chatConversations = () =>
+  request<{ conversations: ChatConversationRow[] }>('get', '/chat/conversations', undefined, {
+    timeout: 15_000,
+  })
+
+export const createChatConversation = (body: {
+  title?: string; layout_id?: string; plan_id?: string
+}) => request<{ conversation: ChatConversationRow }>(
+  'post', '/chat/conversations', body, { timeout: 15_000 },
+)
+
+/** 重命名 / 置顶。**只传要改的字段**（不传的字段后端不动）。 */
+export const patchChatConversation = (
+  id: string, body: { title?: string; pinned?: boolean },
+) => request<{ conversation: ChatConversationRow }>(
+  'patch', `/chat/conversations/${encodeURIComponent(id)}`, body, { timeout: 15_000 },
+)
+
+export const deleteChatConversation = (id: string) =>
+  request<{ deleted: string }>(
+    'delete', `/chat/conversations/${encodeURIComponent(id)}`, undefined,
+    { timeout: 15_000 },
+  )
+
+export const chatMessages = (id: string) =>
+  request<{ conversation: ChatConversationRow; messages: ChatMessageRow[] }>(
+    'get', `/chat/conversations/${encodeURIComponent(id)}/messages`, undefined,
+    { timeout: 20_000 },
+  )
+
+/** `askChat` 的一个事件（与后端 SSE 的 `type` 一一对应）。 */
+export type ChatEvent =
+  | { type: 'meta'; conversation_id: string; knowledge_available: boolean; knowledge_reason: string; has_layout: boolean; has_house_detail: boolean; has_plan: boolean; knowledge_count: number }
+  | { type: 'delta'; text: string }
+  | { type: 'sources'; sources: ChatSource[] }
+  | { type: 'done'; conversation_id: string; chars: number }
+  | { type: 'error'; message: string }
+
+/**
+ * 提问并**流式**收回答。
+ *
+ * ⚠️ **不用 axios**：它要等响应体完整才 resolve，拿不到增量。
+ *    这里用 `fetch` + `ReadableStream` 自己解析 SSE。
+ * ⚠️ 所以在"业务失败 = HTTP 200 + code != 0"这条项目约定之外 ——
+ *    流式接口的错误走 `{"type":"error"}` 事件，调用方必须处理它，
+ *    不能只看 HTTP 状态。
+ */
+export async function askChat(
+  body: {
+    question: string
+    conversation_id?: string
+    layout_id?: string
+    plan_id?: string
+    prefer_local?: boolean
+  },
+  onEvent: (ev: ChatEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const resp = await fetch('/api/v1/chat/ask', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+    },
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!resp.ok || !resp.body) {
+    onEvent({ type: 'error', message: `HTTP ${resp.status}` })
+    return
+  }
+
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    // SSE 以空行分隔事件；最后一段可能不完整，留在 buf 里等下一块
+    let idx = buf.indexOf('\n\n')
+    while (idx >= 0) {
+      const raw = buf.slice(0, idx)
+      buf = buf.slice(idx + 2)
+      for (const line of raw.split('\n')) {
+        if (!line.startsWith('data:')) continue
+        try {
+          onEvent(JSON.parse(line.slice(5).trim()) as ChatEvent)
+        } catch {
+          /* 半条 JSON：跳过，下一块会补齐 */
+        }
+      }
+      idx = buf.indexOf('\n\n')
+    }
+  }
+}
 
 // ══════════════════════════════════════════════════════════════════
 // 4.6 健康检查（同步）
