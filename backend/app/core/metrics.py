@@ -191,10 +191,7 @@ def sweep_audit_files(log_dir: Path | str, *, days: int = 1) -> AuditSweep:
                     except json.JSONDecodeError:
                         continue          # 半行（进程被杀时可能留下）跳过
                     if not isinstance(rec, dict):
-                        # ⚠️ JSON 合法但**不是对象**（日志被截断/损坏时会出现裸数字）。
-                        #    不挡的话 rec.get 直接抛 AttributeError，整个指标接口 500 ——
-                        #    而下面的立场写得很清楚：一个文件坏了不该让接口失败。
-                        continue
+                        continue          # JSON 合法但不是对象（裸数字/字符串）
                     extra = (rec.get("record") or {}).get("extra") or {}
                     event = extra.get("event")
                     if event == "task_finished":

@@ -124,15 +124,110 @@ class TestFamilyColors:
 
 
 class TestNoWallClipping:
+    """
+    ⚠️ **为什么这里用构造的几何、不只用真实户型。**
+
+    修好之后，真实户型上已经"一件都不嵌"了 —— 拿它们做样本，把修复整个
+    关掉用例**照样是绿的**（实测：把 `violations(..., walls=walls)` 关掉，
+    这一整个类 14 条全过）。那就是一条空跑的用例。
+
+    所以这里**构造**出当初那个几何：房间 bbox 比墙的中线外扩 5cm
+    （实测到的偏差量级），再看两条判据认不认得出。
+    """
+
+    #: 实测的偏差量级：房间 bbox 比墙中线外扩 4~6cm，取中间值。
+    OFFSET_M = 0.05
+
+    def _wall_and_room(self):
+        """一面在 y=0 的横墙（厚 0.2）+ 一间 bbox 从 y=-0.05 起的房间。"""
+        wall = placement.wall_boxes([
+            {"kind": "x", "thickness_m": 0.2,
+             "points": [[0.0, 0.0], [4.0, 0.0]]},
+        ])[0]
+        room = {
+            "index": 0, "name": "测试房", "area_m2": 12.0,
+            # free_rect 是"可站立矩形"（bbox 内缩 半墙厚 + 玩家半径），
+            # 这里按 bbox 外扩 5cm 的偏差反推出来
+            "free_rect": [0.35, 0.35 - self.OFFSET_M, 3.35, 4.35],
+        }
+        return wall, room
+
+    def test_判据抓得住嵌进墙里的家具(self):
+        """
+        ⚠️ **这条才是真正的护栏。** `clip_to_walls` 只负责"少丢家具" ——
+        把候选位置收到墙内表面，免得每一个都因为压墙被拒。
+        而"最终摆下的没有一件压墙"是由 `violations` 里那条判据保证的。
+        两者分工不同，删掉任何一个的表现也不同：
+          · 删判据 → 家具真的嵌进墙（这条要红）
+          · 删收边 → 家具不肯摆（`test_收内轮廓不会把家具全挤掉` 要红）
+        """
+        wall, _room = self._wall_and_room()
+        # 一件压在墙带里的家具：墙带是 y ∈ [-0.1, 0.1]，它占了 [0.0, 0.4]
+        box = placement.Box(1.0, 0.0, 2.0, 0.4)
+        bad = placement.violations(
+            box, interior=placement.Box(0.0, -0.5, 4.0, 4.0), walls=[wall],
+        )
+        assert "嵌进墙体" in bad, f"压在墙带上的家具没被判违规：{bad}"
+
+        # 反过来：完全在墙带之外的同一件，不能误报
+        ok = placement.Box(1.0, 0.2, 2.0, 0.6)
+        assert "嵌进墙体" not in placement.violations(
+            ok, interior=placement.Box(0.0, -0.5, 4.0, 4.0), walls=[wall],
+        )
+
+    def test_收内轮廓会把伸进墙里的那几厘米收掉(self):
+        """
+        构造当初那个几何：反推出来的内轮廓比墙的内表面低 5cm。
+        收完之后它必须不再与墙带相交 —— 否则贴墙摆的候选位置还是全都会被拒。
+        """
+        wall, room = self._wall_and_room()
+        raw = placement.room_interior(room, player_radius_m=0.25)
+        assert raw is not None
+        # 反推的结果**确实伸进了墙带**（这就是当初那个 bug 的样子）
+        assert _overlap(raw, wall) > 0, (
+            "构造的样本没有复现那个偏差 —— 这条用例失去意义了"
+        )
+        clipped = placement.clip_to_walls(raw, [wall])
+        assert _overlap(clipped, wall) <= 1e-9, (
+            "收完之后仍然与墙带相交"
+        )
+        # 只收有墙的那一侧，别的边不许动 —— 整体内缩会把家具白白挤掉
+        assert clipped.x1 <= raw.x1 + 1e-9 and clipped.x2 >= raw.x2 - 1e-9, (
+            "没有墙的左右两侧被一起缩了"
+        )
+
+    def test_摆放时确实按墙收紧了内轮廓(self, monkeypatch):
+        """
+        ⚠️ **这条是变异验证补上的。**
+
+        上面两条测的是 `clip_to_walls` **本身对不对**，而没有任何东西
+        保证 `place_room` **真的在调它**。实测：把 `place_room` 里那句
+        `interior = clip_to_walls(interior, walls)` 删掉，16 条用例全绿。
+
+        这一刀的价值是可量的（7 份解析 × 3 风格：摆下 549 → 528 件，
+        因"嵌进墙体"被拒 60 → 87 次），所以要有东西守着它没被摘掉。
+        """
+        scene, walk = _scene()
+        calls: list[int] = []
+        original = placement.clip_to_walls
+
+        def spy(box, walls):
+            calls.append(len(walls))
+            return original(box, walls)
+
+        monkeypatch.setattr(placement, "clip_to_walls", spy)
+        placement.place_all(
+            walkable=walk.to_dict(), scene=scene.to_dict(), style="modern")
+
+        assert calls, "摆放时一次都没按墙收紧内轮廓"
+        assert all(n > 0 for n in calls), (
+            f"收紧时没把墙传进去（收到的是 0 面墙）：{calls}"
+        )
+
     def test_没有一件家具嵌进墙里(self):
         """
-        ⚠️ 实测踩过：`room_interior()` 是从房间 bbox **反推**的，前提是
-        "房间 bbox 的边 == 墙的中线"。实测这个前提差了 **4~6cm**，
-        于是贴墙摆的家具嵌进墙体 —— 24 组里 54 件中招，
-        最严重的一件（厨房餐桌）嵌进去 **607 c㎡**。
-
-        判据按**墙的真实厚度**取矩形，不按中线 —— 按中线量的话家具紧贴
-        内表面时刚好不碰中线，结果是 0 命中，而画面上已经嵌进去了。
+        端到端的不变量（真实户型）。**它现在是"容易过"的** ——
+        真正的守门人在上面两条构造用例里，这条守的是"别退回去"。
         """
         scene, walk = _scene()
         scene_d = scene.to_dict()

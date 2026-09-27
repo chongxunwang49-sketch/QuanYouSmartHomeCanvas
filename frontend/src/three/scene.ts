@@ -3,7 +3,11 @@ import * as THREE from 'three'
 import type { QualityTier } from '../composables/useFrameStats'
 import type { FurnitureData, WalkableResponse } from '../api'
 import { planToEngine } from './coords'
-import { buildFurniture, type FurnitureHandles } from './furniture'
+import {
+  buildFurniture,
+  type FurnitureHandles,
+  type FurnitureInfo,
+} from './furniture'
 
 /**
  * 从后端给的米制场景建 Three.js 场景。
@@ -50,6 +54,11 @@ const HIGHLIGHT_EMISSIVE = 0x6a4a1e
  * 放太长会让"站在客厅中间按 F 开了卧室的门"，那看起来就是乱响应。
  */
 export const DOOR_REACH_M = 2.6
+
+//: 准星认家具的最远距离（米）。**比门的伸手距离远得多** ——
+//: 家具是隔着几米看的，用 2.6m 会让说明只在贴脸时才弹出来，
+//: 而用户想看的是"那头那个大柜子是什么"。仍受"先撞墙就停"的限制。
+export const FURNITURE_REACH_M = 40
 
 /**
  * 门扇的转轴与开合。
@@ -123,6 +132,13 @@ export interface SceneHandles {
   doorAtCrosshair(camera: THREE.Camera): DoorHandle | null
   /** 离给定位置最近、且在 `maxDist` 之内的门。准星的退路。 */
   nearestDoor(planPos: [number, number], maxDist: number): DoorHandle | null
+  /**
+   * 准星对着哪件家具（没有就是 `null`）。
+   *
+   * ⚠️ **和门一样要"先撞到墙就不算"** —— 否则站在客厅能"看穿"墙
+   * 报出隔壁卧室的床，而屏幕上那块地方明明是一面墙。
+   */
+  furnitureAtCrosshair(camera: THREE.Camera): FurnitureInfo | null
 }
 
 /**
@@ -437,6 +453,32 @@ export function buildScene(
     return best
   }
 
+  /**
+   * 准星对着哪件家具。
+   *
+   * 与 `doorAtCrosshair` 同一套做法，两处差别只有"打哪些物体"：
+   * 门打门扇 + 墙体，家具打家具体块 + 墙体。
+   *
+   * ⚠️ `raycaster.far` 用一个**够远**的值（跨场景），而不是门的伸手距离 ——
+   *    家具是可以隔着几米看的，用伸手距离会让它只在贴脸时才弹说明。
+   *    但也不能无界：射到场景外面时不该报出背后房间的东西，
+   *    所以仍受"先撞墙就停"的限制。
+   */
+  function furnitureAtCrosshair(camera: THREE.Camera): FurnitureInfo | null {
+    if (!furnitureHandles) return null
+    // 见 doorAtCrosshair 的说明：相机这一帧刚挪过，矩阵要手动刷
+    camera.updateMatrixWorld()
+    raycaster.setFromCamera(SCREEN_CENTER, camera)
+    raycaster.far = FURNITURE_REACH_M
+    const hits = raycaster.intersectObjects(
+      [furnitureHandles.group, wallGroup], true,
+    )
+    const first = hits.find((h) => h.object.visible)
+    if (!first) return null
+    // 排在前面的是墙 → 家具在墙后面，不算对准
+    return (first.object.userData?.furniture as FurnitureInfo) ?? null
+  }
+
   function setCeilingVisible(v: boolean) {
     ceilingGroup.visible = v
   }
@@ -448,6 +490,7 @@ export function buildScene(
     setCeilingVisible,
     doorAtCrosshair,
     nearestDoor,
+    furnitureAtCrosshair,
     bounds: { sizeX, sizeZ, height },
     dispose() {
       for (const d of disposables) d.dispose()

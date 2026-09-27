@@ -47,11 +47,56 @@ export interface FurnitureHandles {
   dispose(): void
 }
 
+/**
+ * 体块上挂的"这是什么"，供准星射线取回。
+ *
+ * ⚠️ **挂在 `userData` 上而不是另建一张 Map**：射线命中拿到的是
+ * `Object3D`，`userData` 是它自带的、随对象生命周期走 ——
+ * 另建一张表就要处理"重建场景后旧表还在"的清理问题，
+ * 而那种残留的表现是"对准新家具弹出旧家具的名字"。
+ */
+export interface FurnitureInfo {
+  spec_id: string
+  label: string
+  room_name: string
+  /** 尺寸（米），弹窗里显示 */
+  w: number
+  d: number
+  h: number
+  /** 3D 体块的色号，弹窗里画一个小色块与眼前的东西对上 */
+  color: string
+  /** 后端给的"为什么摆在这里"。**要能说出口**（见 Placement.basis 的说明） */
+  basis: string[]
+}
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/
+
 /** 体块的颜色角色 → 颜色。`color_role` 由目录给，是稳定契约。 */
 function colorFor(data: FurnitureData, role: string): number {
   const hex = (data.palette as Record<string, string | null>)[role]
-  if (hex && /^#[0-9a-fA-F]{6}$/.test(hex)) return parseInt(hex.slice(1), 16)
-  return FALLBACK_COLOR
+  return hex && HEX_RE.test(hex) ? parseInt(hex.slice(1), 16) : FALLBACK_COLOR
+}
+
+/**
+ * 一件家具的体块颜色。
+ *
+ * ⚠️ **优先用后端给的 `p.color`（族色），而不是自己拿 `color_role` 查表。**
+ *
+ * `color_role` 是按**材质**分的六个角色（木/布艺/金属/石材/绿植/白）——
+ * 同一间卧室里床和床头柜都是 `fabric`，画出来是两块一模一样的色块，
+ * 分不出哪个是床。需求方要的是"按家具种类上色"。
+ *
+ * 所以族色由后端算好（`catalog.family_color`，由
+ * `scripts/derive_family_palette.py` 推出，约束是对地面 ≥2:1 且
+ * 会同房的族两两 ΔE ≥6），前端只负责用。**前端不自己查目录** ——
+ * 两处各判一次"这个族该是什么色"迟早会分叉。
+ *
+ * 后端没给（旧数据、目录里新加的族）时才退回角色色。
+ */
+function bodyColor(data: FurnitureData, p: FurniturePlacement): number {
+  const own = (p as { color?: string }).color
+  if (own && HEX_RE.test(own)) return parseInt(own.slice(1), 16)
+  return colorFor(data, p.color_role)
 }
 
 export function buildFurniture(data: FurnitureData): FurnitureHandles {
@@ -65,13 +110,16 @@ export function buildFurniture(data: FurnitureData): FurnitureHandles {
   }
 
   // 每种颜色一个材质，避免每件家具都新建一个（几十件时是明显的开销）
-  const materials = new Map<string, THREE.Material>()
-  const materialFor = (role: string): THREE.Material => {
-    const key = role || 'wood'
+  //
+  // ⚠️ 缓存键是**解析出来的色号**（族色），不是 `color_role` ——
+  //    同族要同色，而键用角色的话，两个不同族会被映射到同一个材质。
+  const materials = new Map<number, THREE.Material>()
+  const materialFor = (color: number): THREE.Material => {
+    const key = color
     let m = materials.get(key)
     if (!m) {
       m = track(new THREE.MeshLambertMaterial({
-        color: colorFor(data, key),
+        color,
         // 半透明只给"不参与碰撞"的软性件（地毯/地台），让它们看着是铺在地上的
         transparent: false,
       }))
@@ -82,7 +130,7 @@ export function buildFurniture(data: FurnitureData): FurnitureHandles {
 
   for (const room of data.rooms) {
     for (const p of room.placements) {
-      addOne(group, track, p, materialFor(p.color_role))
+      addOne(group, track, p, materialFor(bodyColor(data, p)))
     }
   }
 
@@ -106,6 +154,13 @@ function addOne(
   const geo = track(new THREE.BoxGeometry(p.w, p.height_m, p.d))
   const mesh = new THREE.Mesh(geo, material)
   mesh.name = `furniture:${p.spec_id}`
+  // 准星对准它时弹出来的那张小卡片（见 FurnitureInfo 的说明）
+  const info: FurnitureInfo = {
+    spec_id: p.spec_id, label: p.label, room_name: p.room_name,
+    w: p.w, d: p.d, h: p.height_m, color: p.color ?? '',
+    basis: p.basis ?? [],
+  }
+  mesh.userData.furniture = info
 
   // 底面离地 = y_offset_m；中心再抬半个高度
   const [ex, , ez] = planToEngine(p.x, p.y, p.y_offset_m + p.height_m / 2)
@@ -130,6 +185,9 @@ function addOne(
     )
     em.position.set(gx, p.y_offset_m + Number(extra.dz ?? 0) + h / 2, gz)
     em.rotation.y = mesh.rotation.y
+    // 附件（镜面/吊柜）也打同一个标记 —— 准星打在镜子上时
+    // 用户心里想的是"这是浴室柜"，不是"这是一块镜子"
+    em.userData.furniture = info
     group.add(em)
   }
 }

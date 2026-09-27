@@ -268,7 +268,7 @@ class TestFailsClosed:
 class TestCalibration:
     def test_标定报告给出分布与建议阈值(self, aligned_image, noise_image):
         """
-        需求文档 0.2 的坑 19 自己承认了：0.70 是拍的，而且可能**让所有图
+        需求文档 附录 B.2 的坑 19 自己承认了：0.70 是拍的，而且可能**让所有图
         都不达标**。这个报告就是用来把那个数字换成实测值的。
         """
         report = calibration_report([

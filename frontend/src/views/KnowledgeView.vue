@@ -170,7 +170,7 @@ const PIPELINE = [
     step: '02',
     icon: 'cube',
     title: '向量化',
-    desc: 'bge-large-zh-v1.5，1024 维。批量 16 条一批，块 id 用文本 sha1 生成，重复入库不会产生副本。',
+    desc: 'bge-large-zh-v1.5，1024 维。批量 16 条一批，同一段文字重复入库不会产生副本。',
   },
   {
     step: '03',
@@ -521,14 +521,14 @@ onMounted(load)
       </div>
     </section>
 
-    <!-- ══ 语料来源 ══ -->
+    <!-- ══ 知识来源 ══ -->
     <section class="card p-4">
       <h2 class="mb-2 flex items-center gap-2 font-serif text-[16px] font-semibold text-wood-dark">
         <AppIcon name="plant" :size="17" class="text-botanical" />
-        <span>语料来源</span>
+        <span>知识来源</span>
       </h2>
       <p class="mb-3 text-[11px] leading-relaxed text-wood-muted">
-        语料分两类，界面上分开标识：
+        知识来源分两类，界面上分开标识：
       </p>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div class="rounded-xl border border-warm-border bg-white p-3">

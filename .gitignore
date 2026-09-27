@@ -57,7 +57,6 @@ chroma/
 node_modules/
 frontend/dist/
 frontend/node_modules/
-frontend/node_modules_旧_空壳备份/
 .vite/
 
 # ── UI 素材（版权 + 体积双重原因，不入库）──────────────────────
@@ -99,3 +98,9 @@ desktop.ini
 # ── 本地临时文件 ──────────────────────────────────────────────
 scripts/fixtures/*.tmp
 *.bak
+
+# 无头/可见浏览器验证时用的临时 profile（一次性，含缓存与 Cookie）
+# ⚠️ 不加这条的话 `git add -A` 会把一整个浏览器 profile 提进去。
+.edge-view/
+.edge-profile-*/
+.edge3d/

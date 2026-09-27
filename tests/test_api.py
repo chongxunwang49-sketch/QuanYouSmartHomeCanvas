@@ -820,7 +820,7 @@ class TestPhaseWording:
     """
     阶段措辞要跟**用户正在等的那件事**对上。
 
-    需求文档 2.2.4 的核心不是"显示进度"，是「用户看到的是正在做什么」。
+    需求文档 11.2.4 的核心不是"显示进度"，是「用户看到的是正在做什么」。
     同一个 `review_risks` 节点在两种语境下含义完全不同：
       · 独立跑报价单审查 —— 用户在看一份合同
       · 方案生成链内部审查 —— 用户在等方案
@@ -916,7 +916,7 @@ class TestPhaseWording:
         这条守的是一个真实存在过的谎：`PHASE_TEXT` 里有
         `detecting_rooms`（"正在识别房间…"，progress 40）和
         `extracting_dimensions`（"正在提取尺寸与朝向…"，progress 65），
-        需求文档 2.2.4 的表格里也列着 —— 但**没有任何代码产出过它们**。
+        需求文档 11.2.4 的表格里也列着 —— 但**没有任何代码产出过它们**。
         它们描述的"边解析边吐子阶段"从来没被实现，A-01 是一次调用返回整份户型。
 
         留在词汇表里的代价是实打实的：进度模型必须为两个永不发生的阶段
@@ -1285,7 +1285,6 @@ class TestAuthGate:
         assert d["upgrade_hint"]
 
 
-
 # ══════════════════════════════════════════════════════════════════
 # 账号管理（AC-01 的延伸）
 # ══════════════════════════════════════════════════════════════════
@@ -1296,15 +1295,15 @@ class TestUserManagement:
     「账号管理」页背后那几条规则。
 
     这一组用例的重点**不是"功能能用"，而是"三条拒绝真的拒绝"** ——
-    权限分配这个功能，做对的标志是它**拒绝**了什么：
+    权限分配这个功能做对的标志，是它**拒绝**了什么：
 
       ① 不能改自己
       ② 不能把别人设成管理员（需求方 2026-09-24：权限分配不含管理员权限）
-      ③ 不能动管理员账号（改角色/档位/封禁都不行）
+      ③ 不能动管理员账号（改角色 / 改档位 / 封禁都不行）
 
     三条都是"能让操作者把自己或别人锁在门外"的形状，所以每一条都值得钉死。
-    它们也很容易在重构时被绕过 —— 比如把"不能改自己"写在角色判断之前还是之后，
-    结果就不一样。
+    它们也很容易在重构时被绕过 —— 比如把"不能改自己"写在角色判断之前
+    还是之后，结果就不一样。
     """
 
     async def test_非管理员不能改账号(self):
@@ -1326,14 +1325,14 @@ class TestUserManagement:
         d = r.json()["data"]
         assert len(d["users"]) >= 4
         for u in d["users"]:
-            assert "is_active" in u, "管理页要显示封禁态，字段不能缺"
+            assert "is_active" in u, "管理页要显示封禁态，这个字段不能缺"
             assert "password" not in json.dumps(u), "账号列表绝不能带口令材料"
 
     async def test_不能改自己(self):
         """
-        演示时若管理员把自己降级/封禁，就再也没有账号能改回来 ——
+        演示时若管理员把自己降级 / 封禁，就再也没有账号能改回来 ——
         只能手删 `data/users_override.json`。一个能让操作者把自己锁在门外的
-        按钮，不该出现在界面上。
+        操作，不该出现在界面上。
         """
         admin = next(u for u in auth.users() if u.username == "admin")
         async with await _client_with("admin") as c:
@@ -1357,52 +1356,55 @@ class TestUserManagement:
         """
         管理员账号整体在本页管辖范围之外 —— 包括**封禁**。
 
-        这条要在改之前判断，否则"先把管理员降级、再封禁"会被拆成两步绕过去。
+        ⚠️ 这条要在改之前判断，否则"先把管理员降级、再封禁"会被拆成两步绕过去。
         """
-        admin = next(u for u in auth.users() if u.username == "admin")
-        other_admin = auth.User(
-            id=admin.id, username=admin.username, display_name=admin.display_name,
-            title=admin.title, avatar_text=admin.avatar_text,
-            role="admin", membership="paid",
+        target_admin = next(u for u in auth.users() if u.username == "admin")
+        # ⚠️ 让**动手的人**是另一个管理员（id=999），**被动的**才是种子里的 admin。
+        #    第一次写这条用例时我把两边的 id 都设成了 999，于是先撞上
+        #    「不能改自己」那条 —— 测的不是这条规则，却"看起来通过了"。
+        #    权限用例最容易这样自欺：拒绝发生了，但拒绝的理由不是你要测的那个。
+        acting_admin = auth.User(
+            id=999, username="another_admin", display_name="另一个管理员",
+            title="", avatar_text="管", role="admin", membership="paid",
         )
-        # 用一个"不是自己"的管理员身份来打 —— 否则会先撞上"不能改自己"那条，
-        # 测不到本用例真正要测的规则。
         import backend.app.core.auth as auth_mod
+
         original = auth_mod.find_by_id
-        auth_mod.find_by_id = lambda uid: (
-            auth.User(id=999, username="another_admin", display_name="另一个管理员",
-                      title="", avatar_text="管", role="admin", membership="paid")
-            if uid == 999 else original(uid)
-        )
+
+        def _by_id(uid: int):
+            return acting_admin if uid == 999 else original(uid)
+
+        auth_mod.find_by_id = _by_id  # type: ignore[assignment]
         auth_mod.reset_user_cache()
         try:
-            token, _ = auth.issue_token(other_admin)
+            token, _ = auth.issue_token(acting_admin)
             app = create_app()
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(
                 transport=transport, base_url="http://test",
                 headers={"Authorization": f"Bearer {token}"},
             ) as c:
-                r = await c.post(f"/api/v1/users/{999}", json={"is_active": False})
+                r = await c.post(f"/api/v1/users/{target_admin.id}",
+                                 json={"is_active": False})
             body = r.json()
             assert body["code"] == 4002, body
-            assert "不在本页的管辖范围内" in body["msg"]
+            assert "管辖范围" in body["msg"], f"拒绝的理由不对：{body['msg']}"
         finally:
-            auth_mod.find_by_id = original
+            auth_mod.find_by_id = original  # type: ignore[assignment]
             auth_mod.reset_user_cache()
 
     async def test_封禁后正确口令被告知已停用(self):
         """
         ⚠️ 与 `test_封禁后错误口令不泄漏账号存在性` 是一对，缺一不可。
 
-        只说"用户名或口令不正确"会让刚点过「停用」的人以为是自己操作错了；
+        只说"用户名或口令不正确"，会让刚点过「停用」的人以为是自己操作错了；
         但对**口令都输错**的人说"账号已停用"，就等于免费告诉他"这个用户名存在"。
         所以这一句只在口令正确时给。
         """
         demo = next(u for u in auth.users() if u.username == "demo")
         async with await _client_with("admin") as c:
-            assert (await c.post(f"/api/v1/users/{demo.id}",
-                                 json={"is_active": False})).json()["code"] == 0
+            r = await c.post(f"/api/v1/users/{demo.id}", json={"is_active": False})
+            assert r.json()["code"] == 0
         async with await _client_with(None) as c:
             r = await c.post("/api/v1/auth/login",
                              json={"username": "demo", "password": "demo123"})
@@ -1425,7 +1427,7 @@ class TestUserManagement:
     async def test_封禁后旧令牌立即失效(self):
         """
         `decode_token` 每次都回查用户表并检查 `is_active`，
-        所以封禁**不需要等令牌过期**就生效了。
+        所以封禁**不必等令牌过期**就生效。
         """
         demo = next(u for u in auth.users() if u.username == "demo")
         token = _token("demo")
@@ -1468,33 +1470,53 @@ class TestUserManagement:
         """
         ⚠️ 这条断言的要害在那个 `note`。
 
-        「登录设备」的依据只有 User-Agent 与来源 IP，**都能伪造**。
+        「登录设备」的依据只有 User-Agent 与来源 IP，**两者都能伪造**。
         接口必须自带一句限定，界面照抄即可 —— 否则它很容易被当成
-        "设备锁"来宣传，而它根本不是。
+        "设备锁"来讲，而它根本不是。
         """
         async with await _client_with("admin") as c:
             r = await c.get("/api/v1/me/devices")
         d = r.json()["data"]
         assert d["devices"], "刚登录过，应当至少有一条设备记录"
-        assert "可被伪造" in d["note"] and "不构成访问控制" in d["note"]
+        assert "可被伪造" in d["note"]
+        assert "不构成访问控制" in d["note"]
         for dev in d["devices"]:
             assert dev["name"], "设备名不能为空（认不出也要说「未知设备」）"
             assert dev["count"] >= 1
 
-    async def test_设备记录按用户隔离(self):
-        """别人的设备记录不能出现在我的接口里。"""
-        async with await _client_with("admin") as c:
-            adm = (await c.get("/api/v1/me/devices")).json()["data"]["devices"]
-        async with await _client_with("demo") as c:
-            demo = (await c.get("/api/v1/me/devices")).json()["data"]["devices"]
-        adm_keys = {d["key"] for d in adm}
-        demo_keys = {d["key"] for d in demo}
-        # 同一台机器、同一个 UA 时 key 会相同（这是设计如此：key 只由 UA+IP 决定），
-        # 但**两个接口各自返回的列表必须是按 user_id 取的那一份** ——
-        # 所以这里比的是"记录条数不会互相污染"，用一个更硬的判据：
-        # demo 的记录里不能出现只有 admin 才有的次数。
-        assert isinstance(adm_keys, set) and isinstance(demo_keys, set)
-        assert len(demo) <= 10, "每账号上限 10 台设备"
+    async def test_设备记录按账号取(self):
+        """
+        两个账号拿到的必须是各自的列表。
+
+        ⚠️ 不能用"key 不重叠"来判 —— key 只由 UA + IP 决定，
+        同一台机器同一个浏览器登录两个账号时 key 是**相同**的（设计如此）。
+        所以判据换成：每账号的记录条数不超过上限，且各自非空。
+        """
+        # ⚠️ 必须**走登录接口**才有记录 —— 设备记录是 `auth_login` 写的，
+        #    而 `_client_with` 只是用 `issue_token` 签个令牌，不产生登录事件。
+        #    第一版直接 `_client_with("vip")` 去查，拿到空列表，
+        #    看起来像"按账号取"这个功能坏了，其实是测试没登录。
+        async def _devices_of(username: str, password: str) -> list[dict]:
+            # ⚠️ `_client_with(None)` 建的客户端**不带令牌**；登录拿到的令牌
+            #    必须自己挂回请求头，否则紧接着那次 `/me/devices` 会撞 4003。
+            #    第一版漏了这一步，报的是 `KeyError: 'devices'` —— 看着像
+            #    接口返回结构不对，其实是测试自己没带令牌。
+            async with await _client_with(None) as c:
+                r = await c.post("/api/v1/auth/login",
+                                 json={"username": username, "password": password})
+                assert r.json()["code"] == 0
+                c.headers["Authorization"] = f"Bearer {r.json()['data']['access_token']}"
+                return (await c.get("/api/v1/me/devices")).json()["data"]["devices"]
+
+        vip = await _devices_of("vip", "vip123")
+        adm = await _devices_of("admin", "admin123")
+
+        assert vip and adm
+        assert len(adm) <= auth.MAX_DEVICES_PER_USER
+        assert len(vip) <= auth.MAX_DEVICES_PER_USER
+        # 两个账号各自的最近一条都应当是**刚才这次**登录
+        assert vip[0]["last_seen"] >= vip[-1]["last_seen"], "列表要按最近登录排序"
+        assert adm[0]["last_seen"] >= adm[-1]["last_seen"]
 
 
 # ══════════════════════════════════════════════════════════════════

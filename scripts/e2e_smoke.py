@@ -310,8 +310,8 @@ async def main() -> int:
     #    ⚠️ 用**一份全新的 state**，不复用上面那条链的：`ainvoke` 虽然不
     #    改传入的 dict，但两个任务共用一份状态是自找麻烦（task_id 之类的
     #    字段会互相看得到），而这里多构造一次的成本是零。
-    phases_seen = await _observe_phases(
-        initial_state(
+    phases_seen, phases_note = await _observe_phases(
+        lambda: initial_state(
             task_id="e2e-ac36",
             image_ref=part.to_data_uri(),
             image_media_type=part.media_type,
@@ -319,10 +319,12 @@ async def main() -> int:
         ),
         kind="parse",
     )
+    if phases_note:
+        print(f"  ⚠️ AC-36 未能测量：{phases_note}")
 
     # ── 验收清单（AC-15）──
     passed, total = checklist(out, expected_rooms=expected_rooms,
-                              phases=phases_seen)
+                              phases=phases_seen, phases_note=phases_note)
     banner(f"验收清单：{passed}/{total}")
     ok = passed == total
     print(f"\n  {'✓ 链路通过' if ok else '✗ 链路存在问题'}")
@@ -396,6 +398,7 @@ async def _observe_phases(state_fn, *, kind: str,
 #: 三套方案里有一套没出预算、审查结论全是编造的引用，链路照样"跑通"。
 def checklist_rows(
     out: dict, *, expected_rooms: int = 4, phases: list[str] | None = None,
+    phases_note: str = "",
 ) -> list[tuple[str, bool, str]]:
     """
     构造逐条检查的结果，返回 `[(条目名, 是否通过, 证据)]`。
@@ -522,7 +525,18 @@ def checklist_rows(
     #    而不是判成"通过"或"失败" —— 没测过的条目报任何一个结论都是假话。
     #    重放脚本（`replay_golden_path.py`）不经过任务管理器，所以它那里
     #    总数会少一条，那是实情。
-    if phases is not None:
+    if phases_note:
+        # ⚠️ **观测任务自己没跑完 —— 那是"没测成"，不是"不达标"。**
+        #    报成一个红的 AC 是"看起来合理的错误"：读的人会去查阶段模型，
+        #    而问题在一次 API 抖动上。所以这一条如实说"未能测量"。
+        checks.append((
+            "AC-36 语义化进度（本次未能测量）",
+            False,
+            f"观测任务没跑完：{phases_note}。"
+            f"**这不代表 AC-36 不达标** —— 阶段模型本身由 "
+            f"tests/test_progress.py 守着。重跑一次 `e2e_smoke` 通常就有结果。",
+        ))
+    elif phases is not None:
         checks.append((
             "AC-36 语义化进度（一次执行中 phase 至少 3 个不同取值）",
             len(phases) >= 3,
@@ -533,14 +547,16 @@ def checklist_rows(
 
 
 def checklist(out: dict, *, expected_rooms: int = 4,
-              phases: list[str] | None = None) -> tuple[int, int]:
+              phases: list[str] | None = None,
+              phases_note: str = "") -> tuple[int, int]:
     """
     逐条检查黄金路径的产物。返回 (通过数, 总数)。
 
     ⚠️ 每一条都对应需求文档里的一个验收项（编号写在描述里），
     这样"20/20"就不是一个自报的数字，而是能指回契约的结论。
     """
-    checks = checklist_rows(out, expected_rooms=expected_rooms, phases=phases)
+    checks = checklist_rows(out, expected_rooms=expected_rooms,
+                            phases=phases, phases_note=phases_note)
     for name, ok, detail in checks:
         mark = "✓" if ok else "✗"
         print(f"  {mark} {name}")
