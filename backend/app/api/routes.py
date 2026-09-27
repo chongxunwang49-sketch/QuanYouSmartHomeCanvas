@@ -1412,6 +1412,11 @@ async def sample_house_detail(layout_id: str) -> ApiResponse:
     ⚠️ 这是**演示辅助**，不是产品能力：`seed_data/demo_house_details/` 里放着
     三份与演示户型图配套的详情文档。前端把它填进输入框，**由用户点保存** ——
     不是后端自动替他填上。区别很重要：数据是"屋主提供的"，得由人确认一次。
+
+    ⚠️ 这里的 `seed_data/demo_house_details/` 是**镜像**，不是作者改的那一份。
+       真源在 `演示素材/演示资料/`（跟三张户型图并排，一一对应），
+       改完跑 `python scripts/sync_demo_details.py`，一致性由
+       `tests/test_demo_assets.py` 守着。为什么必须是两个位置，见该脚本的模块说明。
     """
     layout = await layout_store.load(layout_id)
     if not layout:
@@ -1444,6 +1449,11 @@ def _demo_house_details() -> list[dict[str, Any]]:
 
     ⚠️ 面积是从文档里**用正则读出来的**，不是在代码里再写一份 ——
     写两份的话，改了文档忘了改代码，匹配就会静默错位。
+    同一个正则也被 `tests/test_demo_assets.py` 用着（那边量的是"后端到底会读到哪个数"），
+    改这里要连带看那边。
+
+    ⚠️ 目录里那三份是**镜像**，作者改的是 `演示素材/演示资料/`（真源）。
+       改完跑 `python scripts/sync_demo_details.py`，再重建后端镜像。
     """
     if _DEMO_DETAIL_CACHE:
         return _DEMO_DETAIL_CACHE

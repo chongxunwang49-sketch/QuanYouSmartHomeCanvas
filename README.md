@@ -223,10 +223,11 @@ backend/app/
                budget/（规则引擎）  material/  furniture/  knowledge/（RAG）  image/
   db/          pool.py  repository.py  audit_sink.py  migrations/
 seed_data/     价格表 · 材料目录（28）· 家具目录（51）· 语料白名单 · 样本报价单
+               演示户型详情（3 份，由 演示素材/演示资料/ 同步而来，见 sync_demo_details.py）
 mcp_servers/   parse_house_layout · calc_budget · render_layout_svg
 scripts/       e2e_smoke · review_sample_quote · replay_golden_path · mcp_smoke …
 frontend/src/  api/  components/（17）  views/（18）  composables/  stores/  three/
-演示素材/       三张自绘户型图（不涉版权，脚本可重跑）
+演示素材/       户型图（3 张，不涉版权，脚本可重跑）+ 演示资料（3 份屋主详情，与图一一对应）
 docs/          需求/（项目说明书）· 参考/（开源清单）· 面试/（亮点与追问预案）
 ```
 
