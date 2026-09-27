@@ -1,13 +1,17 @@
 /**
- * 登录页在矮窗口下：左栏（品牌/标题/主张/声明）有没有被裁掉、够不够得到。
+ * 矮窗口下登录页左栏的三段（品牌行 / 标题 / 图片来源声明）会不会被裁掉。
  *
- * 左栏的根是 `overflow-hidden`（图墙必须裁），所以"内容比框高"时，
- * 多出来的部分**永远看不到也滚不到** —— 这正是"滑不到最下面"的症状之一。
- * 关键：要先清掉 token，否则 /login 会直接跳到工作台，量到的不是登录页。
+ * 起因：内容层从 `justify-between` 改成了"品牌行贴顶 + 标题紧跟 + 声明 mt-auto"，
+ * 声明是靠自动外边距压到底的 —— 窗口一矮，自动外边距先被吃掉，
+ * 再矮就轮到声明被裁。左栏本身是 `overflow-hidden`（图墙必须裁），裁掉就真看不见了。
+ *
+ *     node scripts/_probe_login_short.mjs
  */
+import { writeFileSync } from 'node:fs'
+
+const ROOT = 'C:/Users/DELL/Desktop/全友·智绘家QuanYou Smart HomeCanvas'
+const SIZES = [[1680, 1000], [1440, 800], [1280, 700], [1280, 600], [1280, 520]]
 const PORT = 9222
-const APP = 'http://127.0.0.1/'
-const HEIGHT = Number(process.argv[2] || 500)
 
 const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()
 const ws = new WebSocket(list.find((t) => t.type === 'page').webSocketDebuggerUrl)
@@ -31,62 +35,37 @@ const send = (method, params = {}) =>
     pend.set(n, { res, rej })
     ws.send(JSON.stringify({ id: n, method, params }))
   })
-const ev = async (e) => {
-  const r = await send('Runtime.evaluate', {
-    expression: e, awaitPromise: true, returnByValue: true })
-  if (r.exceptionDetails) throw new Error('JS: ' + (r.exceptionDetails.exception?.description || '').slice(0, 140))
-  return r.result.value
-}
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const ev = async (e) => (await send('Runtime.evaluate', {
+  expression: e, awaitPromise: true, returnByValue: true })).result?.value
 
 await send('Page.enable')
 await send('Runtime.enable')
-await send('Emulation.setDeviceMetricsOverride',
-  { width: 1280, height: HEIGHT, deviceScaleFactor: 1, mobile: false })
-await send('Page.navigate', { url: APP + 'login' })
-await sleep(1500)
-await ev('localStorage.clear(); sessionStorage.clear();')
-await send('Page.navigate', { url: APP + 'login' })
-await sleep(3200)
 
-console.log(`视口 1280×${HEIGHT}`)
-console.log(await ev(`(()=>{
-  const secs=[...document.querySelectorAll('main > section')];
-  const info=(el)=>{ if(!el) return null; const b=el.getBoundingClientRect();
-    return {cls:(el.className||'').toString().slice(0,24), clientH:el.clientHeight,
-            scrollH:el.scrollHeight, 藏住:el.scrollHeight-el.clientHeight,
-            overflowY:getComputedStyle(el).overflowY,
-            top:Math.round(b.top), bottom:Math.round(b.bottom)};};
-  const left=secs[0];
-  const kids=[...left.querySelectorAll('*')].filter(e=>e.getBoundingClientRect().height>4);
-  const last=kids.reduce((a,c)=>a.getBoundingClientRect().bottom>c.getBoundingClientRect().bottom?a:c);
-  const lb=last.getBoundingClientRect(), lbb=left.getBoundingClientRect();
-  return JSON.stringify({
-    视口:innerHeight,
-    左栏:info(left), 右栏:info(secs[1]),
-    左栏最后元素:{
-      文案:(last.textContent||'').trim().replace(/\\s+/g,' ').slice(0,22),
-      bottom:Math.round(lb.bottom),
-      超出左栏底:Math.round(lb.bottom-lbb.bottom),
-      在视口内: lb.bottom<=innerHeight+1,
-    },
-    左栏根被裁: left.scrollHeight>left.clientHeight+2,
-  }, null, 1);})()`))
-
-// 左栏里所有文字块的位置（看哪个被推到看不见的地方）
-console.log('\n左栏文字块：')
-console.log(await ev(`(()=>{
-  const left=document.querySelector('main > section');
-  const lb=left.getBoundingClientRect();
-  const out=[];
-  for(const e of left.querySelectorAll('h1, p, li, span')){
-    const t=(e.textContent||'').trim();
-    if(t.length<6 || e.children.length) continue;
-    const b=e.getBoundingClientRect();
-    if(b.height<6) continue;
-    out.push({文案:t.slice(0,26), top:Math.round(b.top), bottom:Math.round(b.bottom),
-      在左栏内: b.bottom<=lb.bottom+1 && b.top>=lb.top-1});
-    if(out.length>=8) break;
+for (const [w, h] of SIZES) {
+  await send('Emulation.setDeviceMetricsOverride',
+    { width: w, height: h, deviceScaleFactor: 1, mobile: false })
+  await send('Page.navigate', { url: 'http://127.0.0.1/login' })
+  await new Promise((r) => setTimeout(r, 1800))
+  for (let i = 0; i < 8; i++) await send('Page.captureScreenshot', { format: 'jpeg', quality: 30 })
+  const info = await ev(`(()=>{
+    const left=document.querySelector('.login-left');
+    if(!left) return {err:'左栏没渲染（宽度不足 lg？）'};
+    const lb=left.getBoundingClientRect();
+    const h1=left.querySelector('h1');
+    const attr=[...left.querySelectorAll('p')].find(p=>/素材|Pexels/.test(p.textContent||''));
+    const bt=(el)=>{const r=el.getBoundingClientRect();return {t:Math.round(r.top),b:Math.round(r.bottom)};};
+    return {left:{t:Math.round(lb.top),b:Math.round(lb.bottom)}, h1:bt(h1),
+      attr:attr?bt(attr):null,
+      attrVisible: attr? attr.getBoundingClientRect().bottom<=lb.bottom+0.5 : null,
+      h1Visible: h1.getBoundingClientRect().top>=lb.top-0.5};})()`)
+  const tag = info?.err ? `  ✗ ${info.err}`
+    : `  标题可见 ${info.h1Visible ? '✓' : '✗'} · 声明可见 ${info.attrVisible ? '✓' : '✗'}`
+      + `（左栏 ${info.left.t}~${info.left.b}，标题 ${info.h1.t}~${info.h1.b}，`
+      + `声明 ${info.attr?.t}~${info.attr?.b}）`
+  console.log(`${w}×${h}${tag}`)
+  if (h === 1000 || h === 600) {
+    const s = await send('Page.captureScreenshot', { format: 'png' })
+    writeFileSync(`${ROOT}/logs/_login-${w}x${h}.png`, Buffer.from(s.data, 'base64'))
   }
-  return JSON.stringify(out, null, 1);})()`))
+}
 ws.close()

@@ -266,12 +266,20 @@ const BELIEFS = [
         ══ 内容层 ══
         `relative z-10 transform-gpu`：压在背景之上，并且**自己一个合成层**
         （`transform-gpu` 是 `translateZ(0)`），图墙的动画不会让它重绘。
-        这一层内部仍是 `justify-between` 的三段（品牌行 / 标题 / 版权行），
-        位置与本页此前一致 —— 只是不再浮在轮播卡片旁边。
+
+        ⚠️ **内部不再是 `justify-between`。** 以前三段均分（品牌行顶 / 标题居中 /
+        声明兜底），标题被推到垂直中间 —— 实测标题块的顶边在 y=293，
+        离品牌行的底边有 207px，中间空着一大块。需求方要求"让标题紧挨着上面那行字"，
+        所以改成：品牌行贴顶、标题用 `mt-4` 紧跟其后、声明用 `mt-auto` 压到底。
+
+        ⚠️ **品牌行的 `px-4 py-2.5` 刻意留着。** 这块原来是带底板的卡片
+        （`bg-warm-bg/80`），底板按需求去掉了，但内边距保留 ——
+        它现在是不可见的内缩，作用就是**让左上角那行字的坐标与改版前逐像素相同**
+        （需求方明确要求"上面的文字不动"）。去掉它品牌文字会左移 16px。
       -->
-      <div class="relative z-10 flex min-h-0 flex-1 flex-col justify-between transform-gpu">
+      <div class="relative z-10 flex min-h-0 flex-1 flex-col transform-gpu">
         <!-- 品牌行 -->
-        <div class="flex w-fit items-center gap-3 rounded-2xl bg-warm-bg/80 px-4 py-2.5">
+        <div class="flex w-fit items-center gap-3 px-4 py-2.5">
         <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-botanical text-white">
           <AppIcon name="leaf" :size="19" weight="bold" />
         </span>
@@ -279,7 +287,12 @@ const BELIEFS = [
           <div class="font-serif text-[17px] font-bold tracking-wide text-wood-dark">
             全友 · 智绘家
           </div>
-          <div class="text-[10px] font-semibold uppercase tracking-[0.22em] text-wood-muted">
+          <!--
+            ⚠️ 这行英文原来也是 `text-wood-muted`（暖灰），底板去掉之后压在照片上
+            就认不出了，所以按"这一类文字改纯白"一并处理。
+            「全友 · 智绘家」那行按需求方要求**保持原样不动**。
+          -->
+          <div class="on-photo text-[10px] font-semibold uppercase tracking-[0.22em] text-white">
             QuanYou Smart HomeCanvas
           </div>
         </div>
@@ -288,12 +301,20 @@ const BELIEFS = [
       <!--
         艺术字标题：大字号衬线 + 短下划线（官网的标志性装置）。
 
-        ⚠️ **文字自带一层很淡的暖色衬底**（`bg-warm-bg/85`，不加 blur ——
-           背景在动，blur 每帧都要重算）。这是"图恢复原样"与"字读得清"
-           同时成立的代价最小做法：**图本身一点不压**，只有文字占的这一块
-           有一层薄底。位置、字号、排版都没动。
+        ⚠️ **这一块原来带一层暖色衬底**（`bg-warm-bg/85 rounded-3xl p-6`），
+           是为了"图恢复原样"与"字读得清"两全。需求方看下来觉得那块底
+           压在照片上突兀，明确要求去掉 —— 去掉之后靠**把这一类文字改成纯白**
+           来保证可读性。
+
+        ⚠️ `px-4` 是配合品牌行留的：品牌行内边距也是 `px-4`，
+           这样标题与品牌图样**左边缘对齐在同一条竖线上**（都在 x=96）。
+           原来靠底板把两块"看起来"对齐，底板一撤就得让文字自己对齐。
+
+        ⚠️ **`.on-photo` 是一层文字投影，不是底板。** 白色文字压到亮色照片上
+           （图池里有白厨房、白卫浴那几张）会直接消失 —— 一个模糊的深色描影
+           解决这件事，而且它不占地方、不形成色块。见文件末尾的样式。
       -->
-      <div class="max-w-xl animate-fade-up rounded-3xl bg-warm-bg/85 p-6">
+      <div class="mt-4 max-w-xl animate-fade-up px-4">
         <h1 class="font-serif text-[42px] font-bold leading-[1.18] text-wood-dark xl:text-[52px]">
           让每一张户型图<br />
           <span class="text-botanical">都能长出理想的家</span>
@@ -302,12 +323,18 @@ const BELIEFS = [
         <!-- 短下划线。官网在居中标题下方用一段两端收尖的短横条，本页保留 -->
         <span class="rule mt-6 block h-[3px] w-20 rounded-full bg-botanical/70" />
 
-        <p class="mt-6 max-w-md text-[13px] leading-relaxed text-wood-muted">
+        <p class="on-photo mt-6 max-w-md text-[13px] leading-relaxed text-white">
           上传一张户型图，系统完成多模态解析、五维诊断、三套方案并行生成、
           预算测算与避坑审查 —— 全程可追溯到每一条结论的依据。
         </p>
 
-        <!-- 三项主张 -->
+        <!--
+          三项主张。
+
+          ⚠️ 小标题（先把户型看懂 / 每一分钱都可追溯 / 风险先于报价被指出）
+             **保持 `text-wood-dark` 不动** —— 需求方点名不要动这几行。
+             跟着变白的是它们下面那行说明（与副标题同属一类文字）。
+        -->
         <ul class="mt-8 space-y-3.5">
           <li v-for="b in BELIEFS" :key="b.title" class="flex items-start gap-3">
             <span
@@ -318,7 +345,7 @@ const BELIEFS = [
             </span>
             <div class="min-w-0">
               <div class="text-[13px] font-semibold text-wood-dark">{{ b.title }}</div>
-              <div class="text-[12px] leading-relaxed text-wood-muted">{{ b.desc }}</div>
+              <div class="on-photo text-[12px] leading-relaxed text-white">{{ b.desc }}</div>
             </div>
           </li>
         </ul>
@@ -332,11 +359,15 @@ const BELIEFS = [
              声明这一行必须留着：换成 Pexels 回落图时，写"全友实景案例"
              就是把没有出处的东西挂在别人名下（见 `assets/images/pool.ts`）。
              图池为空（既没有案例图也没有回落照片）时这一行也不显示。
+
+          ⚠️ `mt-auto` 把它压到左栏底部 —— 内容层不再是 `justify-between` 之后，
+             底部这一行得自己声明"我在最后"。它的暖色衬底同样按需求去掉，
+             改用白字 + 投影。
         -->
         <p
           v-if="imagePool.main.length"
-          class="w-fit max-w-md rounded-xl bg-warm-bg/85 px-3 py-1.5
-                 text-[11px] leading-relaxed text-wood-muted"
+          class="on-photo mt-auto w-fit max-w-md px-3 py-1.5
+                 text-[11px] leading-relaxed text-white"
         >
           {{ imageAttribution }}
         </p>
@@ -489,6 +520,34 @@ const BELIEFS = [
   图墙的动画在全局 `style.css` 里（`.wall` / `.wall-track`），不在这个
   scoped 块里：那里还写清了「为什么不用带 mask 的 `.marquee`」这个坑。
 */
+
+/*
+  ══ `.on-photo`：压在实景照片上的白字 ══
+
+  左栏的暖色衬底按需求去掉了，那一类文字改成纯白。但**白字压到亮色照片上
+  会消失** —— 图池里有白厨房、白卫浴那几张，滚动经过时正好一片白。
+
+  ⚠️ 试过一版"柔和投影"（`0 1px 3px / 0 0 16px`，0.6 透明度），实测**不够**：
+     白字在亮照片上仍然糊成一片（截图见 logs/_login-left-after.png）。
+     只描外圈是不够的 —— 字身本身还是白的，背景一白就没了。
+
+  所以这里是**四向 1px 描边 + 一层散影**，也就是地图标签压在地图上的那套做法：
+    · 四向硬边把每个字的轮廓"抠"出来，白底上也认得出字形；
+    · 底下那层散影压住照片的斑驳，避免小字在花纹上碎掉。
+  色值用深暖色 `rgba(20, 15, 8, ...)` 而不是纯黑 —— 与设计系统"不用纯黑"一致。
+
+  ⚠️ 没用 Tailwind 的任意值写法（`[text-shadow:...]`）：里面 `rgba(...)` 带逗号，
+  在任意值里容易被解析器断错。写成具名类更稳，也便于这里讲清每层各自的作用。
+  描边**不占布局**，所以加了它也不会让文字位移。
+*/
+.on-photo {
+  text-shadow:
+    0 1px 0 rgba(20, 15, 8, 0.92),
+    0 -1px 0 rgba(20, 15, 8, 0.92),
+    1px 0 0 rgba(20, 15, 8, 0.92),
+    -1px 0 0 rgba(20, 15, 8, 0.92),
+    0 2px 10px rgba(20, 15, 8, 0.55);
+}
 
 /*
   窗口矮的时候（实测视口 460px）左栏的内容比框高 35px —— 左栏根是
