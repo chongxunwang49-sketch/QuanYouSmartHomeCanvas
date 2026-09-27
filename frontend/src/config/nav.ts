@@ -143,7 +143,7 @@ export const NAV: readonly NavItem[] = [
     to: '/knowledge',
     icon: 'book-open',
     label: '知识库管理',
-    hint: 'RAG 语料与检索',
+    hint: '知识语料与检索',
     /**
      * **只有管理员。** 这一页做的是语料维护（建库、重检索、看待审条目），
      * 是**管理动作**，不是设计动作 —— 设计师需要的是"引用可溯源"，

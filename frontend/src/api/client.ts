@@ -104,19 +104,18 @@ http.interceptors.response.use(
       throw new BizError(NetErrorCode.CANCELED, '请求已取消', { traceId })
     }
     if (err.response) {
-      const detail =
-        (err.response.data as { detail?: string; msg?: string } | undefined)?.detail ??
-        (err.response.data as { msg?: string } | undefined)?.msg ??
-        err.response.statusText
+      // ⚠️ 这里原来把后端的 `detail`/`msg` 拼进给用户看的文案里 ——
+      //    那些是接口契约层的原文（可能带字段名、异常类名），不该直接上屏。
+      //    文案统一成用户向；要排查的细节在控制台与后端日志里。
       throw new BizError(
         NetErrorCode.HTTP_ERROR,
-        `服务返回 ${err.response.status}：${detail}`,
+        `服务返回了意外的状态（${err.response.status}），请稍后重试。`,
         { traceId, status: err.response.status },
       )
     }
     throw new BizError(
       NetErrorCode.UNREACHABLE,
-      '连不上后端服务。请确认 `uvicorn backend.app.main:app --port 8000` 已在运行。',
+      '暂时连不上服务，请稍后重试。',
       { traceId },
     )
   },
@@ -156,7 +155,7 @@ export async function request<T>(
   // 后端所有接口都走统一信封。拿不到信封说明命中了别的路由（比如被代理
   // 拦到了前端自己的 index.html）—— 这时报"响应格式异常"比报"解析失败"准。
   if (!body || typeof body !== 'object' || !('code' in body)) {
-    throw new BizError(NetErrorCode.MALFORMED, '服务响应格式异常（缺少统一信封）', {
+    throw new BizError(NetErrorCode.MALFORMED, '服务返回了无法识别的数据，请稍后重试。', {
       traceId,
       received: String(resp.data).slice(0, 200),
     })
@@ -214,8 +213,9 @@ export function traceIdOf(err: unknown): string {
 export function messageOf(err: unknown): string {
   if (err instanceof BizError) {
     if (err.code === NetErrorCode.CANCELED) return ''
-    const trace = traceIdOf(err)
-    return trace ? `${err.message}（trace: ${trace.slice(0, 8)}）` : err.message
+    // trace_id 只进控制台，不拼进给用户看的文案 —— 那是排查用的，不是给业主看的。
+    // 出问题时在浏览器控制台里 `import('@/api/client').then(m => console.log(m.traceIdOf(e)))` 可取。
+    return err.message
   }
   if (err instanceof Error) return err.message
   return String(err)

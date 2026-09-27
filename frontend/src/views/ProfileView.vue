@@ -242,8 +242,8 @@ async function changeMembership(next: Membership) {
               </button>
             </div>
             <p class="mt-2.5 text-[10px] leading-relaxed text-wood-muted">
-              演示环境，<strong class="font-semibold">不会真实扣费</strong>；改动会落盘，重启后仍然有效。
-              会员解锁的是"能不能用"，每日配额仍然照常计算（防止跑飞）。
+              演示环境，<strong class="font-semibold">不会真实扣费</strong>。
+              会员解锁的是"能不能用"，每日配额仍然照常计算。
             </p>
           </template>
 
@@ -264,7 +264,7 @@ async function changeMembership(next: Membership) {
             <span>今日额度</span>
           </h2>
           <p class="mb-3.5 text-[11px] leading-relaxed text-wood-muted">
-            按<strong class="font-semibold">自然日</strong>在后端计算，与设备无关。
+            按<strong class="font-semibold">自然日</strong>统计，与设备无关。
           </p>
 
           <ul v-if="quota" class="space-y-2.5">
@@ -302,7 +302,7 @@ async function changeMembership(next: Membership) {
               </div>
 
               <p v-if="quota.quota[key]?.degraded" class="mt-1.5 text-[10px] leading-relaxed text-accent-gold">
-                后端这几次是"放行且不计数"的 —— 与其显示一个编出来的剩余次数，不如说清它现在不可用。
+                这几次暂时统计不到用量，先按可用处理。
               </p>
               <p v-else-if="quota.quota[key]?.remaining === 0" class="mt-1.5 text-[10px] text-accent-red">
                 今日已用完，{{ quota.quota[key].reset_at }} 重置
@@ -342,8 +342,7 @@ async function changeMembership(next: Membership) {
           </ul>
           <p class="mt-2 text-[10px] leading-relaxed text-wood-muted">
             「需开通」的功能入口仍然可见，只是置灰并说明原因 —— 藏起来会让人不知道有这个能力，
-            也不知道开通能解锁什么。真正的拦截在后端（会返回 4005 权限不足），
-            界面这层只负责说清楚。
+            也不知道开通能解锁什么。
           </p>
         </section>
 
@@ -356,7 +355,7 @@ async function changeMembership(next: Membership) {
           <!-- 免责说明来自后端（`GET /me/devices` 的 note），**原样展示** ——
                前端不要自己重写一遍，两处措辞漂移时以谁为准说不清 -->
           <p class="mb-3.5 text-[10px] leading-relaxed text-wood-muted">
-            {{ devices?.note || '依据登录请求的 User-Agent 与来源 IP 推断，可被伪造；仅用于自查，不构成访问控制。' }}
+            {{ devices?.note || '依据登录时的设备与网络信息推断，仅供你自己核对。' }}
           </p>
 
           <ul v-if="devices?.devices?.length" class="space-y-2">

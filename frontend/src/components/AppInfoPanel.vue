@@ -16,29 +16,22 @@ import { useTaskStore } from '@/stores/task'
  * 那是最坏的一种 UI：它承诺了一个菜单，然后什么都不给。
  *
  * 有两条路：接一个假的"个人设置/退出登录"菜单，或者让它们打开一个
- * **真的有内容**的面板。选了后者——这一页放的全是演示时真会被问到的东西：
- * 后端连的哪、依赖怎么样、这次会话做了些什么、设计稿在哪、素材什么版权。
+ * **真的有内容**的面板。选了后者。
  *
- * 演示时有人问"你这个后端跑在哪"，直接点这里，比翻代码快。
+ * ⚠️ 2026-09-27（验收阶段）按需求**清掉了这一页里的工程信息**：
+ *    后端地址、构建模式、依赖清单（redis / deepseek / material_catalog 这些
+ *    内部依赖名与后端原始说明）、X-Trace-Id 的链路解释、设计令牌色值。
+ *    留下的只有"这次会话做了些什么""素材什么版权"——那是给用户看的。
  */
 const { open, hide } = useInfoPanel()
 const health = useHealthStore()
 const tasks = useTaskStore()
 
-const checks = computed(() => Object.entries(health.checks))
-
 const statusText = computed(() => {
   if (health.status === 'ok') return '全部正常'
-  if (health.status === 'degraded') return '降级运行'
+  if (health.status === 'degraded') return '部分功能受限'
   return '未连接'
 })
-
-const degradedDeps = computed(() => checks.value.filter(([, c]) => !c.ok).map(([k]) => k))
-
-/** 前端拿到的后端地址。开发期是 /api 反代，所以显示代理目标。 */
-const backend = computed(() => import.meta.env.VITE_BACKEND || 'http://127.0.0.1:8000（dev 代理）')
-
-const buildMode = import.meta.env.PROD ? 'production' : 'development'
 
 const sessionStats = computed(() => ({
   total: tasks.entries.length,
@@ -102,53 +95,10 @@ const sessionStats = computed(() => ({
                   {{ statusText }}
                 </span>
               </h4>
-              <dl class="rounded-xl border border-warm-border bg-warm-sidebar/40 p-3 text-[11px]">
-                <div class="flex justify-between gap-3 py-1">
-                  <dt class="text-wood-muted">后端地址</dt>
-                  <dd class="truncate font-mono text-wood-dark">{{ backend }}</dd>
-                </div>
-                <div class="flex justify-between gap-3 py-1">
-                  <dt class="text-wood-muted">后端版本</dt>
-                  <dd class="font-mono text-wood-dark">{{ health.version || '—' }}</dd>
-                </div>
-                <div class="flex justify-between gap-3 py-1">
-                  <dt class="text-wood-muted">前端构建</dt>
-                  <dd class="font-mono text-wood-dark">{{ buildMode }}</dd>
-                </div>
-              </dl>
-            </section>
-
-            <!-- 依赖 -->
-            <section>
-              <h4 class="mb-2 flex items-center gap-1.5 text-[12px] font-semibold text-wood-dark">
-                <AppIcon name="cube" :size="14" class="text-botanical" />
-                <span>依赖</span>
-                <span v-if="degradedDeps.length" class="text-[10px] font-normal text-accent-gold">
-                  （{{ degradedDeps.join('、') }} 不可用）
-                </span>
-              </h4>
-              <ul class="divide-y divide-warm-grid overflow-hidden rounded-xl border border-warm-border">
-                <li
-                  v-for="[key, c] in checks"
-                  :key="key"
-                  class="flex items-start gap-2.5 px-3 py-2"
-                >
-                  <AppIcon
-                    :name="c.ok ? 'check-circle' : 'warning-circle'"
-                    :size="14"
-                    class="mt-0.5 shrink-0"
-                    :class="c.ok ? 'text-botanical' : 'text-accent-gold'"
-                  />
-                  <span class="min-w-0 flex-1">
-                    <span class="block font-mono text-[11px] font-semibold text-wood-dark">
-                      {{ key }}
-                    </span>
-                    <span class="block text-[10px] leading-relaxed text-wood-muted">
-                      {{ c.detail }}
-                    </span>
-                  </span>
-                </li>
-              </ul>
+              <p class="text-[11px] leading-relaxed text-wood-muted">
+                服务连接{{ health.status === 'ok' ? '正常' : '异常' }}。
+                账号与数据均为虚构样本，仅供演示。
+              </p>
             </section>
 
             <!-- 本次会话 -->
@@ -162,7 +112,7 @@ const sessionStats = computed(() => ({
                   v-for="s in [
                     { label: '提交任务', value: sessionStats.total },
                     { label: '进行中', value: sessionStats.running },
-                    { label: '降级完成', value: sessionStats.degraded },
+                    { label: '未完整完成', value: sessionStats.degraded },
                   ]"
                   :key="s.label"
                   class="rounded-xl border border-warm-border bg-warm-sidebar/40 p-2.5 text-center"
@@ -171,31 +121,17 @@ const sessionStats = computed(() => ({
                   <p class="text-[10px] text-wood-muted">{{ s.label }}</p>
                 </div>
               </div>
-              <p class="mt-2 text-[10px] leading-relaxed text-wood-muted">
-                每个请求都带一个 <code class="rounded bg-warm-sidebar px-1 font-mono">X-Trace-Id</code>，
-                贯穿 API → Agent → LLM → 审计日志。失败时界面会把 trace_id 一并显示出来。
-              </p>
             </section>
 
             <!-- 设计稿与素材 -->
             <section>
               <h4 class="mb-2 flex items-center gap-1.5 text-[12px] font-semibold text-wood-dark">
                 <AppIcon name="palette" :size="14" class="text-botanical" />
-                <span>设计稿与素材</span>
+                <span>素材授权</span>
               </h4>
               <div class="rounded-xl border border-warm-border bg-warm-sidebar/40 p-3 text-[11px] leading-relaxed">
-                <p class="text-wood">
-                  设计系统：<span class="font-semibold">Botanical Warmth &amp; Natural Living</span>
-                </p>
-                <p class="mt-0.5 text-wood-muted">
-                  主色叶绿 <code class="font-mono">#4A7C59</code> · 栗棕
-                  <code class="font-mono">#6B4F3A</code> · 画布
-                  <code class="font-mono">#FAF8F3</code>；标题衬线 Newsreader，
-                  正文 Manrope；禁纯黑、禁霓虹。
-                </p>
-                <hr class="my-2 border-warm-border" />
                 <p class="text-wood-muted">
-                  素材：图标 Iconify（MIT）· 插画 unDraw（开放许可，<strong class="font-semibold">已按项目色板重上色</strong>）·
+                  图标 Iconify（MIT）· 插画 unDraw（开放许可，已按项目色板重上色）·
                   照片 Pexels（免费商用）· 实景图来自全友官网（版权归全友家居所有，仅作演示）。
                 </p>
               </div>

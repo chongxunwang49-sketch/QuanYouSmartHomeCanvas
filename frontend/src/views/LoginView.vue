@@ -292,7 +292,7 @@ const BELIEFS = [
             就认不出了，所以按"这一类文字改纯白"一并处理。
             「全友 · 智绘家」那行按需求方要求**保持原样不动**。
           -->
-          <div class="on-photo text-[10px] font-semibold uppercase tracking-[0.22em] text-white">
+          <div class="text-[10px] font-semibold uppercase tracking-[0.22em] text-white">
             QuanYou Smart HomeCanvas
           </div>
         </div>
@@ -310,9 +310,12 @@ const BELIEFS = [
            这样标题与品牌图样**左边缘对齐在同一条竖线上**（都在 x=96）。
            原来靠底板把两块"看起来"对齐，底板一撤就得让文字自己对齐。
 
-        ⚠️ **`.on-photo` 是一层文字投影，不是底板。** 白色文字压到亮色照片上
-           （图池里有白厨房、白卫浴那几张）会直接消失 —— 一个模糊的深色描影
-           解决这件事，而且它不占地方、不形成色块。见文件末尾的样式。
+        ⚠️ **这一块是纯白字，没有描边、也没有底板。**
+           白字压到亮照片上（图池里有白厨房、白卫浴那几张）会有几秒看不清 ——
+           先加过一版四向描边来救，需求方看过之后明确不要黑边
+           （"改成白色无黑白的艺术字，字体大小和布局不变"），所以去掉了。
+           字号与排版从头到尾没动过。真要恢复可读性，加回一层 `text-shadow`
+           即可（历史版本在 git 里）。
       -->
       <div class="mt-4 max-w-xl animate-fade-up px-4">
         <h1 class="font-serif text-[42px] font-bold leading-[1.18] text-wood-dark xl:text-[52px]">
@@ -323,7 +326,7 @@ const BELIEFS = [
         <!-- 短下划线。官网在居中标题下方用一段两端收尖的短横条，本页保留 -->
         <span class="rule mt-6 block h-[3px] w-20 rounded-full bg-botanical/70" />
 
-        <p class="on-photo mt-6 max-w-md text-[13px] leading-relaxed text-white">
+        <p class="mt-6 max-w-md text-[13px] leading-relaxed text-white">
           上传一张户型图，系统完成多模态解析、五维诊断、三套方案并行生成、
           预算测算与避坑审查 —— 全程可追溯到每一条结论的依据。
         </p>
@@ -345,7 +348,7 @@ const BELIEFS = [
             </span>
             <div class="min-w-0">
               <div class="text-[13px] font-semibold text-wood-dark">{{ b.title }}</div>
-              <div class="on-photo text-[12px] leading-relaxed text-white">{{ b.desc }}</div>
+              <div class="text-[12px] leading-relaxed text-white">{{ b.desc }}</div>
             </div>
           </li>
         </ul>
@@ -366,7 +369,7 @@ const BELIEFS = [
         -->
         <p
           v-if="imagePool.main.length"
-          class="on-photo mt-auto w-fit max-w-md px-3 py-1.5
+          class="mt-auto w-fit max-w-md px-3 py-1.5
                  text-[11px] leading-relaxed text-white"
         >
           {{ imageAttribution }}
@@ -458,8 +461,7 @@ const BELIEFS = [
           <span class="text-[10px] text-wood-muted">点击即填入表单</span>
         </div>
         <p class="mt-1 text-[11px] leading-relaxed text-wood-muted">
-          本地演示用的虚构账号，口令明文列出。不同档位登录后看到的菜单与可用操作
-          确实不同 —— 权限是按角色真的判过的，不是摆设。
+          不同角色登录后看到的菜单与可用操作不同，可以逐个对比。
         </p>
 
         <ul class="mt-3 space-y-2">
@@ -520,34 +522,6 @@ const BELIEFS = [
   图墙的动画在全局 `style.css` 里（`.wall` / `.wall-track`），不在这个
   scoped 块里：那里还写清了「为什么不用带 mask 的 `.marquee`」这个坑。
 */
-
-/*
-  ══ `.on-photo`：压在实景照片上的白字 ══
-
-  左栏的暖色衬底按需求去掉了，那一类文字改成纯白。但**白字压到亮色照片上
-  会消失** —— 图池里有白厨房、白卫浴那几张，滚动经过时正好一片白。
-
-  ⚠️ 试过一版"柔和投影"（`0 1px 3px / 0 0 16px`，0.6 透明度），实测**不够**：
-     白字在亮照片上仍然糊成一片（截图见 logs/_login-left-after.png）。
-     只描外圈是不够的 —— 字身本身还是白的，背景一白就没了。
-
-  所以这里是**四向 1px 描边 + 一层散影**，也就是地图标签压在地图上的那套做法：
-    · 四向硬边把每个字的轮廓"抠"出来，白底上也认得出字形；
-    · 底下那层散影压住照片的斑驳，避免小字在花纹上碎掉。
-  色值用深暖色 `rgba(20, 15, 8, ...)` 而不是纯黑 —— 与设计系统"不用纯黑"一致。
-
-  ⚠️ 没用 Tailwind 的任意值写法（`[text-shadow:...]`）：里面 `rgba(...)` 带逗号，
-  在任意值里容易被解析器断错。写成具名类更稳，也便于这里讲清每层各自的作用。
-  描边**不占布局**，所以加了它也不会让文字位移。
-*/
-.on-photo {
-  text-shadow:
-    0 1px 0 rgba(20, 15, 8, 0.92),
-    0 -1px 0 rgba(20, 15, 8, 0.92),
-    1px 0 0 rgba(20, 15, 8, 0.92),
-    -1px 0 0 rgba(20, 15, 8, 0.92),
-    0 2px 10px rgba(20, 15, 8, 0.55);
-}
 
 /*
   窗口矮的时候（实测视口 460px）左栏的内容比框高 35px —— 左栏根是

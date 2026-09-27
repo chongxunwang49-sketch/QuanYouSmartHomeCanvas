@@ -121,9 +121,9 @@ const stats = computed(() => {
 
 /** 后端文档里的实测区间。用来做对照 —— 标注为"参考"而不是实测。 */
 const REFERENCE = [
-  { label: '户型解析', range: '33–48s', note: '两次真实解析分别为 33s / 48s' },
-  { label: '方案生成', range: '~95s', note: '整条链 110s，含解析段' },
-  { label: '避坑审查', range: '~19s', note: '单次 A-06' },
+  { label: '户型解析', range: '33–48s', note: '真实测量区间' },
+  { label: '方案生成', range: '~95s', note: '含前置解析时约 110s' },
+  { label: '避坑审查', range: '~19s', note: '单份报价单' },
 ]
 
 function renderChart() {
@@ -199,7 +199,7 @@ const checkEntries = computed(() => Object.entries(health.checks))
       :breadcrumb="['全友·智绘家', '数据分析']"
       title="运行数据分析"
       :status="{ icon: 'chart-line', text: '仅本会话观测值', tone: 'wood' }"
-      :code="health.version ? `BACKEND v${health.version}` : ''"
+      :code="health.version ? `版本 v${health.version}` : ''"
     />
 
     <!-- 口径声明 -->
@@ -209,11 +209,9 @@ const checkEntries = computed(() => Object.entries(health.checks))
         <p class="text-[11px] leading-relaxed text-wood-muted">
           <span class="font-semibold text-wood">口径说明：</span>
           这一页有三层数据，<strong class="font-semibold">来源各不相同，所以分开陈列</strong>：
-          「本次会话」来自你在这个标签页里真实提交过的任务（刷新即清零）；
-          「后端性能指标」来自
-          <code class="rounded bg-white px-1 font-mono">/system/metrics</code>，
-          是从审计文件与进程内环形缓冲里算出来的跨会话数字；
-          「参考耗时区间」是在标准样张上跑出来的基准值，与上面两者都不是一回事。
+          「本次会话」是你在这个标签页里真正提交过的任务（刷新即清零）；
+          「累计性能指标」是跨会话累计下来的历史数字；
+          「参考耗时区间」是标准样张上的基准值，与上面两者都不是一回事。
         </p>
       </div>
     </section>
@@ -292,8 +290,7 @@ const checkEntries = computed(() => Object.entries(health.checks))
           </table>
         </div>
         <p class="mt-2 text-[10px] leading-relaxed text-wood-muted">
-          「达标」由<strong class="font-semibold">后端</strong>按需求文档 2.3.1 的目标判定，
-          前端不重算 —— 两边各写一份阈值迟早对不上。数据源：{{ metrics.source }}。
+          「达标」按各项指标的既定目标判定，界面不另行计算。
         </p>
 
         <!-- ── LLM 调用：按 Agent 分 ── -->
@@ -341,9 +338,8 @@ const checkEntries = computed(() => Object.entries(health.checks))
             </table>
           </div>
           <p class="mt-2 text-[10px] leading-relaxed text-wood-muted">
-            Token 是<strong class="font-semibold">每 Agent 的平均值</strong>，
-            上表的累计数是"平均值 × 调用次数"求和 —— 后端没有直接给总量，
-            按平均值乘出来的数是<strong class="font-semibold">估算</strong>，不精确到每一次调用。
+            用量是<strong class="font-semibold">估算值</strong>：按每次调用的平均值累计，
+            不会精确到每一次。
           </p>
         </div>
 
@@ -431,8 +427,8 @@ const checkEntries = computed(() => Object.entries(health.checks))
         <span>参考耗时区间</span>
       </h2>
       <p class="mb-3 text-[11px] leading-relaxed text-wood-muted">
-        ⚠️ 下表是<strong class="font-semibold">在标准样张上跑出来的基准值</strong>，
-        不是本会话的观测值，因此和上面的图分开陈列。
+        以下是<strong class="font-semibold">标准样张上的基准值</strong>，不是本会话的实测，
+        所以和上面的图分开陈列。
       </p>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div

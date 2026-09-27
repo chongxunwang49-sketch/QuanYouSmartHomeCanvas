@@ -134,7 +134,7 @@ async function onGenerate() {
   if (s.poll.timedOut.value) {
     // 期限是按后端估算算出来的（见 useTaskPolling），所以这里报实际值，
     // 不写死"120 秒" —— 实测整链 122.9 秒，写死的话提示本身就是错的。
-    toast.warning(`轮询超时（${s.poll.timeoutSeconds.value} 秒）。任务可能仍在后台执行。`)
+    toast.warning(`等待超时（${s.poll.timeoutSeconds.value} 秒）。任务可能仍在处理中。`)
     return
   }
   const n = snap.result?.plans?.length ?? 0
@@ -163,7 +163,6 @@ watch(
       :breadcrumb="breadcrumb"
       :title="title"
       :status="headerStatus"
-      :code="s.layoutId.value ? `LAYOUT: ${s.layoutId.value}` : ''"
     >
       <template #actions>
         <button

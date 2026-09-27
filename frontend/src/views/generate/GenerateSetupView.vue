@@ -168,10 +168,8 @@ function isLockedBrand(brand: string): boolean {
               </span>
               <span class="mt-0.5 block text-[11px] leading-relaxed text-wood-muted">
                 这是<strong class="font-semibold">排序偏好</strong>：开启后同分候选里全友排在前面。
-                平台保底是另一回事 —— 全友覆盖率不低于
-                {{ Math.round((s.materialOpts.value?.constants.min_quanyou_coverage ?? 0.6) * 100) }}%
-                由系统兜底，<strong class="font-semibold">不受这个开关影响</strong>；
-                未达标时的替代记录可见于材料明细。
+                方案本身始终会保证全友自有产品的占比，这一点不受这个开关影响；
+                替换了哪几项，在材料明细里看得到。
               </span>
             </span>
           </label>
@@ -182,8 +180,8 @@ function isLockedBrand(brand: string): boolean {
               <span>关于耗时</span>
             </p>
             <p class="mt-1 text-[11px] leading-relaxed text-wood-muted">
-              生成会并行跑 3 套方案 × 3 个 Agent，加一次汇聚审查，共 10 个产出任务。
-              实测约 95 秒。期间可以切到别的页面，任务在后台继续。
+              三套方案会同时开工，各自产出空间规划、造价明细与材料选型，最后再统一复核一遍。
+              约需 95 秒，期间可以切到别的页面，进度不会中断。
             </p>
           </div>
         </div>

@@ -75,7 +75,7 @@ const planStyle = computed(() => s.selectedPlan.value?.style ?? '')
         <span class="text-wood-muted/70">|</span>
         <span>
           户型几何与「户型解析」的 3D 漫游是<strong class="font-semibold">同一份</strong>
-          （{{ s.layoutId.value }}），家具是这套方案的
+          ，家具是这套方案的
         </span>
         <RouterLink class="text-botanical hover:underline" to="/generate/plans">
           换一套 →

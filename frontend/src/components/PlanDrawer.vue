@@ -46,6 +46,21 @@ watch(
   () => (tab.value = 'bom'),
 )
 
+/**
+ * `missing_artifacts` 里是内部产物 key（`space_plan` / `budget` / `materials` / `risks`），
+ * 直接上屏会显示成「缺少产物：space_plan」。这里映射成中文。
+ * 认不出的 key 就原样返回 —— 宁可露出一个陌生的词，也不要谎报"都齐了"。
+ */
+const ARTIFACT_LABEL: Record<string, string> = {
+  space_plan: '空间规划',
+  budget: '预算造价',
+  materials: '材料选型',
+  risks: '风险审查',
+}
+function missingLabel(key: string): string {
+  return `${ARTIFACT_LABEL[key] || key}没能产出`
+}
+
 const budget = computed(() => props.plan?.budget ?? null)
 const risks = computed(() => props.plan?.risks ?? null)
 const materials = computed(() => props.plan?.materials ?? null)
@@ -81,7 +96,7 @@ const SEVERITY_TONE: Record<string, string> = {
 const risktone = (s: string) => SEVERITY_TONE[s] ?? SEVERITY_TONE.low
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'bom', label: '预算明细 (BOM)', icon: 'receipt' },
+  { key: 'bom', label: '预算明细', icon: 'receipt' },
   { key: 'risks', label: '风险预警', icon: 'shield-check' },
   { key: 'materials', label: '全友材料清单', icon: 'plant' },
 ]
@@ -266,8 +281,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
               <p
                 class="rounded-xl border border-warm-border bg-warm-sidebar/50 p-2.5 text-[10px] leading-relaxed text-wood-muted"
               >
-                金额全部由后端规则引擎按户型面积与地区系数算出，<strong class="font-semibold">不经过大模型</strong>。
-                模型只负责上面那段文字解读。
+                金额按户型面积与当地系数逐项算出，上面那段只是对它的文字解读。
               </p>
             </template>
 
@@ -405,7 +419,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
                       : 'bg-wood-light text-accent-gold'
                   "
                 >
-                  {{ materials.quanyou_met ? '达标 ≥60%' : '未达 60%' }}
+                  {{ materials.quanyou_met ? '已优先推荐全友' : '含较多其他品牌' }}
                 </span>
               </div>
 
@@ -445,7 +459,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
               <div v-if="materials.auto_substitutions?.length" class="card p-3.5">
                 <p class="mb-2 flex items-center gap-1.5 text-[12px] font-semibold text-wood-dark">
                   <AppIcon name="arrow-right" :size="14" class="text-botanical" />
-                  <span>自动替代（{{ materials.auto_substitutions.length }}）</span>
+                  <span>已替换为全友自有产品（{{ materials.auto_substitutions.length }}）</span>
                 </p>
                 <ul class="space-y-1.5">
                   <li
@@ -464,8 +478,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
               <p
                 class="rounded-xl border border-accent-gold/30 bg-wood-light/40 p-2.5 text-[10px] leading-relaxed text-wood"
               >
-                ⚠️ 价格来自演示用种子数据集，<strong class="font-semibold">不是真实市场报价</strong>，仅供流程演示。
-                实际价格以门店与官网为准。
+                以上价格为演示参考数据，不是真实市场报价，实际价格以门店与官网为准。
               </p>
             </template>
 
@@ -532,7 +545,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
           <DegradedNotice
             v-if="plan.missing_artifacts?.length"
             compact
-            :reasons="plan.missing_artifacts.map((k) => `缺少产物：${k}`)"
+            :reasons="plan.missing_artifacts.map(missingLabel)"
           />
         </div>
       </aside>

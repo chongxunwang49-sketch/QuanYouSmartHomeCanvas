@@ -176,8 +176,8 @@ const roomAreaSum = computed(() =>
 
 /** 没结果时右栏的「解析链路」—— 说的是真的会跑的步骤，不是营销文案。 */
 const PIPELINE = [
-  { icon: 'shield-check', title: '本地质量预检', hint: '分辨率/模糊/长宽比先在本地判，不合格不花 Token' },
-  { icon: 'blueprint', title: '多模态解析', hint: '房间、墙体、门窗、尺寸、朝向，产结构化 JSON' },
+  { icon: 'shield-check', title: '图片质量预检', hint: '清晰度不够的先在这里挡下，不会进入识别流程' },
+  { icon: 'blueprint', title: '户型识别', hint: '房间、墙体、门窗、尺寸与朝向，逐项读出来' },
   { icon: 'chart-bar', title: '五维诊断', hint: '采光 / 通风 / 动线 / 收纳 / 绿色，逐项给依据' },
   { icon: 'layout', title: '矢量图与热区', hint: '矢量户型图必出，物品热区挂价格与购买链接' },
 ] as const
@@ -426,8 +426,8 @@ async function saveDetailAndRediagnose() {
                 <span>本地隐私模式</span>
               </span>
               <span class="mt-0.5 block text-[11px] leading-relaxed text-wood-muted">
-                开启后图像<strong class="font-semibold">绝不出本机</strong>，只走本地 Ollama 模型。代价是识别精度低于云端模型，
-                复杂户型可能只出房间名。
+                开启后图像<strong class="font-semibold">绝不出本机</strong>，只在本机完成识别。代价是识别精度会下降，
+                复杂户型可能只读得出房间名。
               </span>
             </span>
           </label>
@@ -464,8 +464,7 @@ async function saveDetailAndRediagnose() {
               图片未通过质量预检
             </h3>
             <p class="mt-1 text-[12px] leading-relaxed text-wood-muted">
-              不合格的图片在<strong class="font-semibold">进入模型之前</strong>就被本地拦下了 —— 没有消耗任何模型调用。
-              换一张更清晰的户型图即可。
+              这张图还不够清楚，先拦下来对你也更省事。换一张更清晰的户型图重试即可。
             </p>
           </div>
         </div>
@@ -766,24 +765,34 @@ async function saveDetailAndRediagnose() {
         </div>
       </template>
 
-      <!-- 错误 -->
+      <!--
+        未能完成的环节。
+
+        ⚠️ 原来叫「执行中的错误」，逐条打印 `[A-01] LLM 调用失败: …` —— 内部环节代号
+           加异常原文，是开发者视角。改成业主看得懂的说法（同 `GeneratePlansView`）。
+           **没有整块删掉**：解析缺东西时"什么都不显示"就是静默失败，
+           而本项目第一条纪律是不许静默降级。
+      -->
       <div
         v-if="s.result.value?.errors?.length"
         class="rounded-xl border border-accent-red/30 bg-accent-red/5 p-3.5"
       >
         <p class="flex items-center gap-1.5 text-[12px] font-bold text-wood-dark">
-          <AppIcon name="bug" :size="14" class="text-accent-red" />
-          <span>执行中的错误（{{ s.result.value.errors.length }}）</span>
+          <AppIcon name="warning-circle" :size="14" class="text-accent-red" />
+          <span>有 {{ s.result.value.errors.length }} 个环节没能完成</span>
         </p>
         <ul class="mt-1.5 space-y-1">
           <li
             v-for="(e, i) in s.result.value.errors"
             :key="i"
-            class="break-words font-mono text-[11px] leading-relaxed text-wood"
+            class="break-words text-[11px] leading-relaxed text-wood"
           >
-            [{{ e.agent || '—' }}] {{ e.message }}
+            {{ e.message }}
           </li>
         </ul>
+        <p class="mt-1.5 text-[11px] leading-relaxed text-wood-muted">
+          换一张更清晰的户型图重试，通常能补上。
+        </p>
       </div>
     </section>
   </div>

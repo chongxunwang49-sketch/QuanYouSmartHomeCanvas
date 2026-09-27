@@ -122,12 +122,7 @@ const degradedDeps = computed(() =>
       <div class="flex min-w-0 flex-col">
         <span class="truncate text-[15px] font-bold tracking-tight text-wood">全友·智绘家</span>
         <div class="flex items-center gap-1.5">
-          <span
-            class="rounded bg-botanical-light px-1 text-[10px] font-semibold uppercase tracking-wider text-botanical"
-          >
-            Nature Edition
-          </span>
-          <span class="text-[10px] text-wood-muted">v2.4</span>
+          <span class="text-[10px] text-wood-muted">装修方案设计</span>
         </div>
       </div>
     </div>
@@ -197,7 +192,14 @@ const degradedDeps = computed(() =>
         </template>
       </nav>
 
-      <!-- ── 依赖健康：后端哪个依赖挂了在这里如实说 ── -->
+      <!--
+        ── 服务状态 ──
+
+        ⚠️ 原来这里逐条列内部依赖（`redis：…` / `deepseek：…` /
+           `material_catalog：…`）再加上后端给的原始说明文字 —— 那是运维视角，
+           验收阶段按需求清掉。留一句"能不能正常用"，异常时如实说，
+           具体是哪一环受限、受限的后果是什么，在用到的那个页面上说（那里更具体）。
+      -->
       <div v-if="health.loaded" class="mt-3 px-3">
         <div
           class="rounded-xl border px-3 py-2 text-[11px] leading-relaxed"
@@ -209,13 +211,11 @@ const degradedDeps = computed(() =>
         >
           <div class="flex items-center gap-1.5 font-semibold">
             <AppIcon :name="degradedDeps.length ? 'warning-circle' : 'check-circle'" :size="13" />
-            <span>{{ degradedDeps.length ? '部分依赖降级' : '依赖全部正常' }}</span>
+            <span>{{ degradedDeps.length ? '部分功能暂时受限' : '服务运行正常' }}</span>
           </div>
-          <ul v-if="degradedDeps.length" class="mt-1 space-y-0.5 text-wood-muted">
-            <li v-for="[key, c] in degradedDeps" :key="key" class="truncate" :title="c.detail">
-              {{ key }}：{{ c.detail }}
-            </li>
-          </ul>
+          <p v-if="degradedDeps.length" class="mt-1 text-wood-muted">
+            受限的环节会在用到时明确说明，不会悄悄跳过。
+          </p>
         </div>
       </div>
     </div>

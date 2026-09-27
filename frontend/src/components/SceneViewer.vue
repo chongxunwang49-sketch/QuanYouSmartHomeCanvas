@@ -311,15 +311,17 @@ async function build() {
   renderer.setAnimationLoop(frame)
 }
 
-/**
- * 为什么不开阴影。
+/*
+ * 为什么不开阴影（**这条只留在注释里，不再上屏**）：
  *
  * 阴影是这里最贵的一项（每个点光源一张 shadow map）。而本机可用显存
  * 是 4GB、还是双显卡笔记本（浏览器可能跑在 Intel 核显上）——
  * 开了之后帧率会掉得比"没有影子"严重得多，而室内本来光线就平，
  * 影子带来的观感提升很有限。**先保证走得顺**。
+ *
+ * 2026-09-27：原来这段原因作为 `SHADOWS_OFF_REASON` 渲染在"性能与显卡信息"
+ * 面板里，随该面板一并清掉了 —— 业主不需要知道阴影为什么关。
  */
-const SHADOWS_OFF_REASON = '室内光照较平，阴影收益有限而开销大；优先保证帧率'
 
 function resize() {
   const el = wrapEl.value
@@ -784,9 +786,6 @@ onBeforeUnmount(() => {
   rig = null
 })
 
-/** 模板里用不了 `window`，所以在这里读一次。**Dpr 探测的输入值，必须在界面上可见** */
-const devicePixelRatio = window.devicePixelRatio || 1
-
 /**
  * 操作提示。**从 `three/keys.ts` 的按键表推出来，不手写。**
  *
@@ -856,14 +855,14 @@ const keyChips = computed(() =>
         <span
           v-else
           class="rounded-lg border border-warm-border/60 px-2.5 py-1.5 text-[11px] text-wood-muted"
-          title="后端判定这个户型的门洞不足以支撑贴地行走，所以不提供该模式"
+          title="这个户型的门洞不足以支撑贴地行走，所以只提供自由视角"
         >仅自由视角</span>
         <span
           v-if="stats.fps.value"
           class="num rounded-lg px-2 py-1.5 text-[11px] font-medium"
           :class="stats.fps.value >= 45 ? 'bg-botanical-light text-botanical' :
                   stats.fps.value >= 25 ? 'bg-wood-light text-wood' : 'bg-accent-red/10 text-accent-red'"
-          :title="`实测帧率。低于 30 会自动降一档画质`"
+          :title="`实测帧率。偏低时会自动降低画面精细度以保证流畅`"
         >{{ stats.fps.value }} fps</span>
       </div>
     </header>
@@ -1179,38 +1178,22 @@ const keyChips = computed(() =>
       </div>
     </div>
 
-    <!-- ══ 性能与硬件诊断 ══ -->
+    <!--
+      ══ 操作与视野 ══
+
+      ⚠️ 这一块原来叫「性能与显卡信息」，是一份**开发者诊断面板**：实时帧率、
+         画质档位与渲染倍率、设备像素比、**显卡型号字符串**、阴影关闭的内部原因、
+         坐标映射自检、"到 `edge://settings/system` 打开图形加速再重启浏览器"
+         这类操作指令。验收阶段按需求清掉 —— 业主不需要知道这些。
+
+         留下两样真给用户用的：**怎么走**（键位表）与**视野调节**（"房间看起来
+         多大"是主观感受，写死一个值总有人觉得不对）。
+    -->
     <div class="border-t border-warm-border bg-warm-sidebar px-4 py-2.5">
       <details class="group">
         <summary class="cursor-pointer list-none text-[11px] font-medium text-wood-muted hover:text-wood">
-          性能与显卡信息
-          <span v-if="gpu" class="ml-1 font-normal">
-            {{ gpu.software ? '· 检测到软件渲染' : `· ${gpu.webglVersion === 2 ? 'WebGL 2' : 'WebGL 1'}` }}
-          </span>
+          操作与视野
         </summary>
-        <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[10px]">
-          <dt class="text-wood-muted">实时帧率</dt>
-          <dd class="num text-wood">{{ stats.fps.value }} fps（窗口均值 {{ stats.avgFps.value }}）</dd>
-          <dt class="text-wood-muted">画质档位</dt>
-          <dd class="text-wood">{{ stats.tier.value }} / 2 · 渲染倍率 {{ cappedPixelRatio(stats.tier.value).toFixed(2) }}</dd>
-          <dt class="text-wood-muted">设备像素比</dt>
-          <dd class="num text-wood">{{ devicePixelRatio.toFixed(2) }}</dd>
-          <dt class="text-wood-muted">显卡</dt>
-          <dd class="break-all text-wood">{{ gpu?.renderer || '未能读取' }}</dd>
-          <dt class="text-wood-muted">门</dt>
-          <dd class="text-wood">
-            {{ handlesRef?.doors.length ?? 0 }} 扇 ·
-            {{ (handlesRef?.doors ?? []).filter((d) => d.isOpen()).length }} 扇开着
-            （默认全开，走到门口按 F 开关）
-          </dd>
-          <dt class="text-wood-muted">天花板</dt>
-          <dd class="text-wood">
-            {{ mode === 'walk' ? '显示' : '飞行模式自动隐藏' }}
-            —— 飞行时被它挡住就看不到格局了
-          </dd>
-          <dt class="text-wood-muted">阴影</dt>
-          <dd class="text-wood">关闭 —— {{ SHADOWS_OFF_REASON }}</dd>
-        </dl>
 
         <!--
           操作键位表。**从 `three/keys.ts` 推出来，不手写。**
@@ -1255,19 +1238,15 @@ const keyChips = computed(() =>
           </p>
         </div>
 
+        <p class="mt-2.5 text-[10px] leading-relaxed text-wood-muted">
+          共 {{ handlesRef?.doors.length ?? 0 }} 扇门，走到门口按 F 开合。
+        </p>
+
         <p v-if="stats.degradeNote.value" class="mt-2 text-[10px] text-accent-gold">
           ⚠️ {{ stats.degradeNote.value }}
         </p>
-        <p v-if="mappingWarning" class="mt-2 text-[10px] leading-relaxed text-accent-red">
-          ⚠️ {{ mappingWarning }}
-        </p>
-        <p v-else-if="mappingChecked" class="mt-2 text-[10px] text-botanical">
-          ✓ 坐标映射自检通过：玩家在 3D 里的位置与平面图上的落点一致
-        </p>
-        <p v-if="gpu?.software" class="mt-2 text-[10px] leading-relaxed text-accent-red">
-          检测到浏览器在用软件渲染（没有走显卡）。请到
-          <span class="font-mono">edge://settings/system</span> 打开「使用图形加速」后重启浏览器，
-          否则 3D 会明显卡顿。
+        <p v-if="gpu?.software" class="mt-2 text-[10px] leading-relaxed text-wood-muted">
+          当前设备没有启用图形加速，3D 画面可能偏卡。
         </p>
       </details>
     </div>

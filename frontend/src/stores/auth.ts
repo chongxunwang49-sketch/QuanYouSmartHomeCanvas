@@ -93,7 +93,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (canUsePaid.value) return ''
     const name = PAID_FEATURES[feature]
     if (!user.value) return `「${name}」需要登录后使用`
-    return `「${name}」需要开通会员。当前档位：免费版 —— 在「个人中心 → 我的套餐」里开通演示会员即可解锁（演示环境，不会真实扣费）`
+    return `「${name}」需要开通会员。当前档位：免费版 —— 在「个人中心 → 我的套餐」里开通会员即可解锁（演示环境，不会真实扣费）`
   }
 
   // ── 动作 ────────────────────────────────────────────────

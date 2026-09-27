@@ -74,8 +74,7 @@ const ecoTone = (lv: string) => {
     <PageHeader
       :breadcrumb="['全友·智绘家', '材料价格查询']"
       title="材料价格查询"
-      :status="{ icon: 'currency-cny', text: '同步接口 · 毫秒级', tone: 'wood' }"
-      :code="data ? `CATALOG: ${data.catalog_version}` : ''"
+      :status="{ icon: 'currency-cny', text: '实时查询', tone: 'wood' }"
     />
 
     <!-- ══ 演示数据声明：置顶，与筛选条同级 ══ -->

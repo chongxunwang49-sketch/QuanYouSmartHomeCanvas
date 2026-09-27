@@ -191,11 +191,6 @@ const toggleActive = (u: AuthUser) =>
             <AppIcon name="users" :size="16" class="text-botanical" />
             <span>全部账号</span>
           </h2>
-          <span class="text-[10px] text-wood-muted">
-            改动会落盘到
-            <code class="rounded bg-warm-sidebar px-1 font-mono">data/users_override.json</code>
-            （不进仓库）
-          </span>
         </div>
 
         <div class="overflow-x-auto scroll-thin">
@@ -335,28 +330,6 @@ const toggleActive = (u: AuthUser) =>
           </table>
         </div>
 
-        <div class="border-t border-warm-border bg-warm-sidebar/40 px-5 py-3">
-          <h3 class="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-wood-dark">
-            <AppIcon name="info" :size="13" class="text-wood-muted" />
-            <span>本页做不了的三件事，以及为什么</span>
-          </h3>
-          <ul class="space-y-1 text-[10px] leading-relaxed text-wood-muted">
-            <li>
-              · <strong class="font-semibold">不能改自己</strong> —— 演示时一旦把自己降级或停用，
-              就没有账号能改回来了，只能手删 <code class="rounded bg-white px-1 font-mono">data/users_override.json</code>。
-            </li>
-            <li>
-              · <strong class="font-semibold">不能把别人设成管理员</strong> ——
-              本页做的是权限分配，但<strong class="font-semibold">不含管理员权限</strong>。
-              这条路径一旦可点，一个误操作就能造出一个权限对等的账号，
-              而且没有任何地方能看出是谁造的。
-            </li>
-            <li>
-              · <strong class="font-semibold">不能停用管理员账号</strong> —— 封了管理员就没人能解封。
-              要增减管理员请直接改 <code class="rounded bg-white px-1 font-mono">seed_data/users.json</code> 并重启。
-            </li>
-          </ul>
-        </div>
       </section>
     </template>
 

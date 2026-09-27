@@ -102,7 +102,7 @@ async function submit() {
     const snap = await poll.start(created.task_id, created.estimated_seconds)
     if (poll.timedOut.value) {
       // 期限由后端估算算出（见 useTaskPolling），报实际值而不是写死"120 秒"
-      toast.warning(`轮询超时（${poll.timeoutSeconds.value} 秒）。任务可能仍在后台执行。`)
+      toast.warning(`等待超时（${poll.timeoutSeconds.value} 秒）。任务可能仍在处理中。`)
       return
     }
     if (!snap) return
@@ -194,7 +194,7 @@ onMounted(async () => {
             <span class="text-[11px] text-wood-muted">
               {{ quoteText.length }} 字
               <span v-if="quoteText.length" class="ml-1 text-wood-muted/70">
-                · 内容只用于本次审查，不落库
+                · 内容只用于本次审查，不会被保存
               </span>
             </span>
             <button
@@ -253,7 +253,7 @@ onMounted(async () => {
             </li>
           </ul>
           <p class="mt-2.5 rounded-lg border border-warm-border bg-warm-sidebar/60 p-2 text-[10px] leading-relaxed text-wood-muted">
-            审查结论由 RAG 检索 + 模型判断给出，<strong class="font-semibold">每条风险都必须带可溯源的引用</strong>。
+            审查结论基于知识库检索与模型判断，<strong class="font-semibold">每条风险都必须带可溯源的引用</strong>。
             找不到依据的结论会被标成"无引用"，模型编造的引用会被剔除并单列。
           </p>
         </div>
@@ -383,7 +383,7 @@ onMounted(async () => {
             </p>
             <p class="mt-0.5 text-[11px] leading-relaxed text-wood-muted">
               模型在结论中引用了下列文献，但它们在知识库中并不存在。这些引用已被剔除，
-              未参与上面的任何结论——<strong class="font-semibold">这一块存在的意义是证明系统在拦模型胡说</strong>。
+              未参与上面的任何结论。
             </p>
             <ul class="mt-1.5 space-y-1">
               <li

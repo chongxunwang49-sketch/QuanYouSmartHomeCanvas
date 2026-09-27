@@ -115,7 +115,7 @@ async function confirm() {
             <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-accent-gold" />
             <span>
               <strong class="font-semibold">这次消耗的额度不退。</strong>
-              额度在任务开始时就已经计入今日用量（演示环境每天重置）。
+              额度在任务开始时就已经计入今日用量，明天会重新计算。
             </span>
           </li>
           <li class="flex gap-2">

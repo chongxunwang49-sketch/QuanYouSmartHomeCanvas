@@ -96,7 +96,6 @@ function orientationText(v: string | null | undefined): string {
             <span>户型概览</span>
           </h2>
           <div class="flex items-center gap-2">
-            <span v-if="s.layout.value?.mode" class="tag">mode: {{ s.layout.value.mode }}</span>
             <span class="tag">
               置信度
               <span class="num font-semibold text-wood-dark">

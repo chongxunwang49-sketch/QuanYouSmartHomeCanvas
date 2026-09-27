@@ -95,7 +95,7 @@ async function afterCancel() {
 }
 
 const traceCode = computed(() =>
-  s.status.value ? `TRACE: ${s.status.value.trace_id.slice(0, 12)}` : '',
+  '',
 )
 </script>
 
@@ -127,12 +127,12 @@ const traceCode = computed(() =>
         <AppIcon name="warning-circle" :size="20" class="mt-0.5 shrink-0 text-accent-red" />
         <div class="min-w-0">
           <p class="text-[13px] font-bold text-wood-dark">
-            仅识别出房间名，其余结构字段为空 —— 需人工复核
+            只读出了房间名，其余信息为空 —— 需人工复核
           </p>
           <p class="mt-1 text-[11px] leading-relaxed text-wood-muted">
             {{
               s.layout.value?.safety_notice ||
-              '本地兜底模型只输出了房间名称，墙体、门窗、尺寸与面积均不可用。所有依赖这些数据的后续操作已被禁用。'
+              '这次只读出了房间名称，墙体、门窗、尺寸与面积都不可用。依赖这些数据的功能本次无法使用。'
             }}
           </p>
         </div>

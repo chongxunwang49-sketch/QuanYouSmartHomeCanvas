@@ -145,7 +145,7 @@ async function submit() {
       tags: tagText.value.split(/[,\s，、]+/).map((t) => t.trim()).filter(Boolean),
     })
     lastUpload.value = r
-    toast.success(`已入库 ${r.written} 条 chunk，库内共 ${r.chunk_count} 条`)
+    toast.success(`已入库 ${r.written} 段资料，库内共 ${r.chunk_count} 段`)
     title.value = ''
     tagText.value = ''
     text.value = ''
@@ -158,31 +158,42 @@ async function submit() {
   }
 }
 
-/** RAG 链路：这部分是真实实现的，逐步说明 */
+/**
+ * 知识库这条链在做什么。
+ *
+ * ⚠️ 这四条原来写的是**实现**：模型名 `bge-large-zh-v1.5`、向量库 `ChromaDB`、
+ *    内部字段 `source_ids` / `invented_citations`、「上传与离线脚本共用同一份切块实现」。
+ *    验收阶段要求界面上不出现这类工程细节，所以改成"对用户意味着什么"的说法：
+ *    四步还是那四步，但不再解释这套系统是怎么搭的。
+ *
+ * ⚠️ `tests/test_frontend_contract.py` 里那条「脚本里给模板用的字符串也不能带
+ *    Markdown 强调」的用例，就是被这里原来的 `**不抛异常**` 引出来的 ——
+ *    改这四条时别把 `**` 带回来（界面按纯文本渲染，会原样显示成星号）。
+ */
 const PIPELINE = [
   {
     step: '01',
     icon: 'file-text',
-    title: '语料入库',
-    desc: 'Markdown 文档经两级切分：先按标题层级切（保留章节语义），再按长度递归切（控制单块体积）。上传与离线脚本共用同一份切块实现。',
+    title: '资料入库',
+    desc: '把上传的文档按章节整理成一段段可检索的知识，长文会自动分段。',
   },
   {
     step: '02',
     icon: 'cube',
-    title: '向量化',
-    desc: 'bge-large-zh-v1.5，1024 维。批量 16 条一批，同一段文字重复入库不会产生副本。',
+    title: '语义索引',
+    desc: '按意思建立索引，所以换个问法也能找到同一段资料，不只是对关键词。',
   },
   {
     step: '03',
     icon: 'magnifying-glass',
-    title: '检索',
-    desc: 'ChromaDB 嵌入式持久化，余弦空间。检索失败返回空结果而不抛异常 —— 知识库挂了不该让整条审查链断掉。',
+    title: '找出依据',
+    desc: '做诊断、审查与问答之前，先在这里把相关的原文找出来。',
   },
   {
     step: '04',
     icon: 'shield-check',
-    title: '引用校验',
-    desc: '模型给出的 source_ids 必须能在检索结果里找到对应块，否则该引用被剔除并计入 invented_citations。',
+    title: '核对出处',
+    desc: '每条引用都要能对回原文；对不上的引用会被剔除 —— 宁可少说，也不编。',
   },
 ]
 
@@ -196,7 +207,7 @@ onMounted(load)
       title="知识库管理"
       :status="
         data?.available
-          ? { icon: 'check-circle', text: `已就绪 · ${data.chunk_count} 条 chunk` }
+          ? { icon: 'check-circle', text: `已就绪 · ${data.chunk_count} 段资料` }
           : { icon: 'warning-circle', text: '不可用', tone: 'gold' }
       "
     />
@@ -244,33 +255,34 @@ onMounted(load)
           />
           <div class="min-w-0">
             <p class="text-[14px] font-bold text-wood-dark">
-              {{ data.available ? '知识库向量集合可用' : '知识库当前不可用' }}
+              {{ data.available ? '知识库可用' : '知识库当前不可用' }}
             </p>
-            <p class="mt-0.5 break-words font-mono text-[11px] leading-relaxed text-wood-muted">
+            <p class="mt-0.5 break-words text-[11px] leading-relaxed text-wood-muted">
               {{ data.available
-                ? `${data.collection} · ${data.chunk_count} 条 chunk · ${data.document_count} 篇文档`
+                ? `${data.chunk_count} 段资料 · ${data.document_count} 篇文档`
                 : data.reason }}
             </p>
           </div>
         </div>
 
-        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <!--
+          ⚠️ 原来这三格写的是「向量库 / ChromaDB 嵌入式 / <服务器上的绝对路径>」、
+             「嵌入模型 / bge-large-zh-v1.5 / 1024 维 · 余弦空间」——
+             技术选型与**服务器文件系统路径**都在界面上，业主看不懂也用不上，
+             验收阶段按需求去掉。换成两格用户真正关心的计数。
+        -->
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div class="rounded-xl border border-warm-border bg-white p-3">
-            <p class="text-[10px] font-semibold uppercase text-wood-muted">向量库</p>
-            <p class="mt-0.5 text-[13px] font-semibold text-wood-dark">ChromaDB 嵌入式</p>
-            <p class="mt-0.5 break-all font-mono text-[10px] text-wood-muted">{{ data.path }}</p>
-          </div>
-          <div class="rounded-xl border border-warm-border bg-white p-3">
-            <p class="text-[10px] font-semibold uppercase text-wood-muted">嵌入模型</p>
-            <p class="mt-0.5 text-[13px] font-semibold text-wood-dark">bge-large-zh-v1.5</p>
-            <p class="mt-0.5 font-mono text-[10px] text-wood-muted">1024 维 · 余弦空间</p>
-          </div>
-          <div class="rounded-xl border border-warm-border bg-white p-3">
-            <p class="text-[10px] font-semibold uppercase text-wood-muted">文档 / chunk</p>
+            <p class="text-[10px] font-semibold uppercase text-wood-muted">已收录资料</p>
             <p class="num mt-0.5 text-[13px] font-semibold text-wood-dark">
-              {{ data.document_count }} / {{ data.chunk_count }}
+              {{ data.document_count }} 篇
             </p>
-            <p class="mt-0.5 font-mono text-[10px] text-wood-muted">按来源聚合</p>
+          </div>
+          <div class="rounded-xl border border-warm-border bg-white p-3">
+            <p class="text-[10px] font-semibold uppercase text-wood-muted">知识片段</p>
+            <p class="num mt-0.5 text-[13px] font-semibold text-wood-dark">
+              {{ data.chunk_count }} 段
+            </p>
           </div>
         </div>
 
@@ -284,8 +296,8 @@ onMounted(load)
             <li
               v-for="t in [
                 '避坑审查仍可运行，但所有结论都会标记为「无引用依据」',
-                '方案生成与预算、材料选型不受影响（它们不依赖向量库）',
-                '系统整体标记为降级状态，界面会显著提示',
+                '方案生成、预算与材料选型不受影响',
+                '界面上会明确提示，不会悄悄跳过',
               ]"
               :key="t"
               class="flex items-start gap-1.5 text-[11px] leading-relaxed text-wood-muted"
@@ -308,8 +320,7 @@ onMounted(load)
         </span>
       </h2>
       <p class="mb-3 text-[11px] leading-relaxed text-wood-muted">
-        按来源聚合。清单只读元数据、不读正文 —— 几百条 chunk 的正文有好几 MB，
-        而清单用不上它们。每页 {{ PAGE_SIZE }} 篇。
+        按来源汇总，列出每份资料被切成了多少段。每页 {{ PAGE_SIZE }} 篇。
       </p>
 
       <div class="overflow-hidden rounded-xl border border-warm-border">
@@ -317,7 +328,7 @@ onMounted(load)
           <thead class="bg-warm-sidebar/70 text-left text-wood-muted">
             <tr>
               <th class="px-3 py-2 font-semibold">来源</th>
-              <th class="w-16 px-2 py-2 text-right font-semibold">chunk</th>
+              <th class="w-16 px-2 py-2 text-right font-semibold">片段</th>
               <th class="w-28 px-2 py-2 font-semibold">类型</th>
               <th class="px-2 py-2 font-semibold">标签</th>
             </tr>
@@ -391,8 +402,7 @@ onMounted(load)
         <span>入库一篇文档</span>
       </h2>
       <p class="mb-3 text-[11px] leading-relaxed text-wood-muted">
-        入库是<strong class="font-semibold">幂等</strong>的：同一份内容再传一次是覆盖而不是追加，
-        不会让同一条规则在检索结果里出来两次。
+        同一份内容重复上传会<strong class="font-semibold">覆盖</strong>旧版本，不会在检索结果里出现两次。
       </p>
 
       <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -441,11 +451,10 @@ onMounted(load)
 
           <div class="rounded-xl border border-warm-border bg-warm-sidebar/50 p-3">
             <p class="text-[11px] leading-relaxed text-wood-muted">
-              入库这一步要<strong class="font-semibold">同步等向量化</strong>（几十条 chunk 约几秒），
-              所以单次有
-              <span class="font-mono">{{ maxChars.toLocaleString() }}</span>
-              字符的上限。超过上限的长文档请拆成多篇分批入库 ——
-              分批不影响检索，同一份资料切出来的块在库里是等价的。
+              单次最多
+              <span class="num font-semibold">{{ maxChars.toLocaleString() }}</span>
+              字符。更长的文档请拆成几篇分批上传 —— 分批不影响检索，
+              同一份资料分几次传进来效果是一样的。
             </p>
           </div>
         </div>
@@ -482,24 +491,24 @@ onMounted(load)
             class="rounded-xl border border-botanical/30 bg-botanical-surface p-3"
           >
             <p class="text-[12px] font-semibold text-wood-dark">
-              已写入 {{ lastUpload.written }} 条 chunk
+              已写入 {{ lastUpload.written }} 段资料
             </p>
-            <p class="mt-0.5 break-all font-mono text-[10.5px] text-wood-muted">
+            <p class="mt-0.5 break-all text-[10.5px] text-wood-muted">
               {{ lastUpload.source }}
             </p>
             <p class="mt-0.5 text-[11px] text-wood-muted">
-              库内共 {{ lastUpload.chunk_count }} 条。
+              库内共 {{ lastUpload.chunk_count }} 段。
             </p>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ══ RAG 链路 ══ -->
+    <!-- ══ 知识库在做什么 ══ -->
     <section class="card p-4">
       <h2 class="mb-3 flex items-center gap-2 font-serif text-[16px] font-semibold text-wood-dark">
         <AppIcon name="cube" :size="17" class="text-botanical" />
-        <span>检索链路</span>
+        <span>知识库在做什么</span>
       </h2>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div
@@ -534,12 +543,11 @@ onMounted(load)
         <div class="rounded-xl border border-warm-border bg-white p-3">
           <p class="flex items-center gap-1.5 text-[12px] font-semibold text-wood-dark">
             <AppIcon name="list-checks" :size="14" class="text-botanical" />
-            <span>离线语料</span>
+            <span>公司资料</span>
           </p>
           <p class="mt-1.5 text-[11px] leading-relaxed text-wood-muted">
-            经白名单逐目录采集，只采清单内列出的资料，
-            <strong class="font-semibold">上游文件一律不修改</strong>。
-            这部分是避坑审查与材料选型的主要依据来源。
+            收录规范、工艺与报价方面的标准资料。这部分是避坑审查与材料选型
+            的主要依据来源。
           </p>
         </div>
         <div class="rounded-xl border border-warm-border bg-white p-3">
@@ -548,9 +556,8 @@ onMounted(load)
             <span>用户上传</span>
           </p>
           <p class="mt-1.5 text-[11px] leading-relaxed text-wood-muted">
-            就是上面「入库一篇文档」写进去的那一类，来源单独标识，
-            与白名单语料分得开 —— 一条结论引的是公司自有资料还是临时上传的，
-            在引用里看得出来。
+            你自己传进来的资料，来源单独标识 —— 一条结论引的是公司资料
+            还是临时上传的，在引用里看得出来。
           </p>
         </div>
       </div>

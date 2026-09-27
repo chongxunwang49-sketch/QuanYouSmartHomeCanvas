@@ -124,7 +124,7 @@ const MISSING_LABEL: Record<string, string> = {
           }} · {{ label(GRADE_LABEL, plan.budget_grade) }}
         </h2>
         <p class="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-wood-muted">
-          {{ space?.summary || budget?.narrative?.summary || '该分支未产出设计说明' }}
+          {{ space?.summary || budget?.narrative?.summary || '本方案未产出设计说明' }}
         </p>
       </div>
 
@@ -148,7 +148,7 @@ const MISSING_LABEL: Record<string, string> = {
             ¥ {{ priceText.min }} - {{ priceText.max }}
             <span class="text-[12px] font-medium">万</span>
           </span>
-          <span v-else class="text-[15px] font-semibold text-wood-muted">预算分支未产出</span>
+          <span v-else class="text-[15px] font-semibold text-wood-muted">预算未产出</span>
         </div>
         <div class="text-right">
           <div class="flex items-center justify-end gap-1 text-[12px] text-wood-dark">

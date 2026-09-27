@@ -118,12 +118,13 @@ export function useFrameStats() {
       // 每个窗口只降一档，降完重新观察 —— 一次降到底会让画质骤变，
       // 而问题可能只是那一瞬间的后台任务抢了 GPU。
       if (!dropped && measured < DEGRADE_BELOW_FPS && tier.value < 2) {
-        const before = tier.value
         tier.value = (tier.value + 1) as QualityTier
         dropped = true
+        // ⚠️ 文案里**不写档位号与帧率阈值** —— 那是内部机制。
+        //    原来写的是「实测 28 fps（低于 30），已自动降低画质第 2 档」，
+        //    验收阶段按"界面不出现工程细节"的要求改成一句话。
         degradeNote.value =
-          `实测 ${Math.round(measured)} fps（低于 ${DEGRADE_BELOW_FPS}），` +
-          `已自动降低画质第 ${before + 1} 档以保证流畅度`
+          '当前设备性能有限，已自动降低画面精细度以保证流畅。'
       } else if (measured >= DEGRADE_BELOW_FPS) {
         dropped = false
       }

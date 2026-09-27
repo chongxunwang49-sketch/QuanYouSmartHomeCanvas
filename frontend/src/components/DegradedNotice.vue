@@ -33,13 +33,13 @@ withDefaults(
       <AppIcon name="warning-circle" :size="compact ? 16 : 20" class="mt-0.5 shrink-0 text-accent-gold" />
       <div class="min-w-0 flex-1">
         <p class="text-[13px] font-bold text-wood-dark">
-          {{ compact ? '本项已降级产出' : '本次结果为降级模式' }}
+          {{ compact ? '本项未完整产出' : '本次结果不够完整' }}
         </p>
         <p class="mt-0.5 text-[11px] leading-relaxed text-wood-muted">
           {{
             compact
-              ? '部分内容来自兜底路径，完整度低于正常水平。'
-              : '系统在部分环节走了兜底路径（本地模型 / 规则回退 / 分支超时）。结果仍可用，但完整度低于正常水平——请按下面的原因逐条判断。'
+              ? '部分内容没能完整产出，可用但不完整。'
+              : '有环节没能正常完成，结果仍然可用，但完整度低于平时 —— 下面逐条说明了原因。'
           }}
         </p>
         <ul v-if="reasons.length" class="mt-2 space-y-1">

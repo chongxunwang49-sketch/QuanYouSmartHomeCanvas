@@ -133,7 +133,7 @@ export function provideParseSession(): ParseSession {
   })
 
   const blockedReason = computed(() => {
-    if (isDegradedBasic.value) return '当前为降级解析结果，结构与面积字段不可用'
+    if (isDegradedBasic.value) return '这次解析只读出了房间名，墙体、门窗与面积都不可用'
     // 后端拒绝时会说清"缺什么"与"怎么办"，**原样展示** ——
     // 不要改写成"系统繁忙"这种糊弄话（DegradedNotice 的立场）。
     const cap = opCapability('generate_plan')

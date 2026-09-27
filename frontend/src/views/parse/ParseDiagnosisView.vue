@@ -207,35 +207,14 @@ function dimOf(key: string): DiagnosisItem | null {
         </ul>
       </div>
 
-      <!-- 执行轨迹：工程细节，不占首屏 -->
-      <div v-if="s.result.value?.trace?.length" class="card p-4">
-        <h2 class="mb-2 flex items-center gap-2 font-serif text-[15px] font-semibold text-wood-dark">
-          <AppIcon name="list-checks" :size="16" class="text-botanical" />
-          <span>执行轨迹</span>
-          <span class="tag">{{ s.result.value.trace.length }} 步</span>
-        </h2>
-        <ul class="flex flex-col gap-1">
-          <li
-            v-for="(t, i) in s.result.value.trace"
-            :key="i"
-            class="flex items-center gap-2 rounded-lg bg-warm-sidebar/40 px-2.5 py-1.5 font-mono text-[11px]"
-          >
-            <span class="text-wood-muted">{{ String(i + 1).padStart(2, '0') }}</span>
-            <span class="min-w-0 flex-1 truncate text-wood">
-              {{ t.agent || t.step || '—' }}
-            </span>
-            <span v-if="t.elapsed_ms" class="num text-wood-muted">{{ t.elapsed_ms }}ms</span>
-          </li>
-        </ul>
-      </div>
     </template>
 
-    <!-- 有结果但没有诊断（降级路径下可能发生） -->
+    <!-- 有结果但没有诊断（本次解析信息不完整时可能发生） -->
     <div v-else class="card">
       <EmptyState
         art="审查与风控-blocked_ldel"
         title="这次解析没有产出诊断"
-        description="诊断依赖墙体、门窗与面积数据。本次解析可能走了降级路径，结构字段不可用 —— 换一张更清晰的户型图重试通常能解决。"
+        description="诊断要拿墙体、门窗与面积来判断，这次这几项没读全。换一张更清晰的户型图重试通常能解决。"
       >
         <RouterLink class="btn-ghost px-4 py-2" to="/parse">
           <AppIcon name="upload-simple" :size="16" class="text-botanical" />

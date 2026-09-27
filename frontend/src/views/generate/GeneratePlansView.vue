@@ -67,7 +67,7 @@ function openDetail(plan: Plan) {
         v-if="s.poll.running.value"
         art="设计与户型-design-components_c2hs"
         title="三套方案正在并行生成"
-        description="每套方案要跑空间规划、造价明细、材料选型三个 Agent，再做一次汇聚审查。实测约 95 秒 —— 这期间可以切到别的子页，生成不会中断。"
+        description="每套方案都要排出空间规划、算出造价明细、选定材料，最后再统一复核一遍。约需 95 秒 —— 这期间可以切到别的子页，生成不会中断。"
       >
         <p class="text-[11px] text-wood-muted">
           当前阶段：{{ statusHeadline(s.status.value!) }}
@@ -77,7 +77,7 @@ function openDetail(plan: Plan) {
         v-else
         art="设计与户型-design-components_c2hs"
         title="还没有可对比的方案"
-        description="这一页要拿至少一套方案才能对比。先到「生成参数」里填好户型 ID 与风格档位，再按页面右上角的「开始生成」。"
+        description="这一页要拿至少一套方案才能对比。先到「生成参数」里选好户型与风格档位，再按页面右上角的「开始生成」。"
       >
         <RouterLink class="btn-ghost px-4 py-2" to="/generate">
           <AppIcon name="gear" :size="16" class="text-botanical" />
@@ -117,7 +117,7 @@ function openDetail(plan: Plan) {
         <p class="mt-0.5 text-[11px] leading-relaxed text-wood-muted">
           <template v-if="s.selectedPlan.value">
             3D 装修漫游会在这份户型上放入<strong class="font-semibold">这一套</strong>方案的家具 ——
-            户型几何与「户型解析」的 3D 漫游是同一份，不重新建模。
+            房子与「户型解析」里的 3D 漫游是同一套，看到的就是这个户型。
           </template>
           <template v-else>
             在卡片上点「选这套」。选定之后才能进 3D 装修漫游 ——
@@ -153,24 +153,37 @@ function openDetail(plan: Plan) {
       </ul>
     </section>
 
-    <!-- ══ 错误 ══ -->
+    <!--
+      ══ 未能完成的环节 ══
+
+      ⚠️ 原来这里叫「执行中的错误」，逐条打印 `[A-04] LLM 调用失败: [deepseek] HTTP 500: …`
+         —— 内部环节代号加异常原文，是给开发者看的，不该出现在业主面前的界面上。
+
+      但**这块不能整块删掉**：生成确实可能缺东西，"什么都不显示"就是静默失败，
+      而本项目的第一条纪律是不许静默降级。所以留着，只把话说成人话：
+      去掉环节代号，去掉等宽字体（那是"原始日志"的视觉暗示），
+      句子本身由后端给（后端已改成用户向文案）。
+    -->
     <section
       v-if="s.result.value?.errors?.length"
       class="rounded-xl border border-accent-red/30 bg-accent-red/5 p-3.5"
     >
       <p class="flex items-center gap-1.5 text-[12px] font-bold text-wood-dark">
-        <AppIcon name="bug" :size="14" class="text-accent-red" />
-        <span>执行中的错误（{{ s.result.value.errors.length }}）</span>
+        <AppIcon name="warning-circle" :size="14" class="text-accent-red" />
+        <span>有 {{ s.result.value.errors.length }} 个环节没能完成</span>
       </p>
       <ul class="mt-1.5 space-y-1">
         <li
           v-for="(e, i) in s.result.value.errors"
           :key="i"
-          class="break-words font-mono text-[11px] leading-relaxed text-wood"
+          class="break-words text-[11px] leading-relaxed text-wood"
         >
-          [{{ e.agent || '—' }}] {{ e.message }}
+          {{ e.message }}
         </li>
       </ul>
+      <p class="mt-1.5 text-[11px] leading-relaxed text-wood-muted">
+        缺的内容会在对应方案上标注出来。稍后重试通常能补上。
+      </p>
     </section>
 
     <PlanDrawer :plan="activePlan" :open="drawerOpen" @close="drawerOpen = false" />

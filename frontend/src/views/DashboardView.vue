@@ -230,7 +230,7 @@ const checkEntries = computed(() => Object.entries(health.checks))
     <PageHeader
       :breadcrumb="['全友·智绘家', '工作台总览']"
       :title="auth.isLoggedIn ? `你好，${auth.displayName}` : '工作台总览'"
-      :status="{ icon: 'leaf', text: 'Botanical Warmth · Nature Edition' }"
+      :status="{ icon: 'leaf', text: '今天可以从这里开始' }"
     />
 
     <!--
@@ -361,7 +361,7 @@ const checkEntries = computed(() => Object.entries(health.checks))
           <span>累计</span>
         </h2>
         <span class="text-[11px] text-wood-muted">
-          跨会话持久化的真实计数 · 与下面「仅本会话」的那个列表不是一回事
+          历史累计 · 与下面「最近任务」口径不同
         </span>
       </div>
 
@@ -402,7 +402,7 @@ const checkEntries = computed(() => Object.entries(health.checks))
               {{ tasks.runningCount }} 个进行中
             </span>
           </div>
-          <span class="text-[11px] text-wood-muted">仅本会话 · 结果在后端保留 1 小时</span>
+          <span class="text-[11px] text-wood-muted">最近任务 · 结果保留 1 小时</span>
         </div>
 
         <EmptyState
@@ -442,7 +442,7 @@ const checkEntries = computed(() => Object.entries(health.checks))
                     v-if="t.degraded"
                     class="rounded border border-accent-gold/30 bg-wood-light px-1.5 text-[10px] font-semibold text-accent-gold"
                   >
-                    降级
+                    未完整
                   </span>
                 </span>
                 <span class="mt-0.5 block truncate text-[11px] text-wood-muted">
@@ -480,7 +480,7 @@ const checkEntries = computed(() => Object.entries(health.checks))
                   : 'border-warm-border bg-warm-sidebar text-wood-muted'
             "
           >
-            {{ health.status === 'ok' ? '正常' : health.status === 'degraded' ? '降级' : '未知' }}
+            {{ health.status === 'ok' ? '正常' : health.status === 'degraded' ? '部分受限' : '未知' }}
           </span>
         </div>
 
